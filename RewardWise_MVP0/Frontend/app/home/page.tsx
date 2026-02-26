@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import TropicalBackground from "@/components/TropicalBackground";
 // import TopNav from "@/components/TopNav";
 
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/components/AuthProvider";
 import { useSearchFill } from "@/context/SearchFillContext";
 import { useABTest } from "@/context/ABTestContext";
 
