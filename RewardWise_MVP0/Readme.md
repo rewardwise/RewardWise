@@ -1,32 +1,26 @@
 
-# RewardWise — Complete System Documentation Structure
+# RewardWise
 
-> Repository: RewardWise
-> Architecture: Next.js + FastAPI + Supabase
-> Purpose: AI-powered travel rewards optimization engine
+**AI-Powered Travel Rewards Optimization Engine**
 
----
+RewardWise is a deterministic decision engine that evaluates whether a user should pay cash or redeem points for a flight — and identifies the optimal loyalty program and transfer path.
 
-# 1. System Architecture Overview
+Unlike conversational AI systems, RewardWise is built as a financial optimization system focused on explainability, valuation accuracy, and portfolio efficiency.
 
-## 1.1 Product Overview
 
-RewardWise is an AI-powered travel decision engine that determines:
+## Architecture Overview
 
-> Should the user pay cash or use points — and which program gives the best value?
+**Stack**
 
-Core capabilities:
+* Frontend: Next.js
+* Backend: FastAPI
+* Database: Supabase (PostgreSQL)
+* Cache: Redis
+* External APIs: seats.aero, Cash Pricing API
+* Deployment: Vercel (frontend), Railway/Render (backend)
 
-* Multi-program portfolio modeling
-* Transfer partner evaluation
-* Seat availability lookup
-* Real-time cash price comparison
-* Single-verdict recommendation
-* Valuation + optimization engine
 
----
-
-## 1.2 High-Level Architecture
+## High-Level System Architecture
 
 ```mermaid
 graph TB
@@ -47,8 +41,8 @@ graph TB
     
     subgraph External APIs
         SEATS[seats.aero API]
-        FLIGHTS[Google Flights / Cash API]
-        PLAID[Plaid (optional future)]
+        FLIGHTS[Cash Price API]
+        PLAID[Plaid - Future]
     end
     
     WEB --> API
@@ -61,42 +55,37 @@ graph TB
     API --> DB
 ```
 
----
 
-## 1.3 Core Architectural Principles
+## Core Principles
 
-RewardWise is built around:
+### 1. Deterministic Verdict System
 
-1. **Deterministic Verdict System**
+* One clear recommendation
+* No ambiguity
+* Fully explainable decision logic
 
-   * One clear output
-   * No ambiguity
-   * Explainable logic
+### 2. Program-Normalized Data Model
 
-2. **Program-Normalized Data Model**
+* Unified schema across issuers and programs
+* Transferable programs separated from airline/hotel programs
 
-   * Unified schema for all loyalty programs
-   * Transferable vs airline vs hotel programs separated
+### 3. Multi-Layer Optimization Pipeline
 
-3. **Multi-layer Decision Engine**
+* Availability validation
+* Cash price comparison
+* Transfer path modeling
+* Effective point valuation
+* Heuristic optimization
 
-   * Availability
-   * Cash comparison
-   * Transfer path cost
-   * Point valuation
-   * Optimization heuristics
+### 4. ML-Ready Architecture
 
-4. **Future ML-ready Architecture**
+* Seat availability prediction (future)
+* Dynamic valuation modeling (future)
+* Transfer success probability modeling (future)
 
-   * Availability prediction
-   * Dynamic valuation models
-   * Transfer success probability
+# Backend — FastAPI
 
----
-
-# 2. Backend — FastAPI Application
-
-## 2.1 Entry Point
+## Entry Point
 
 `main.py` initializes:
 
@@ -106,9 +95,8 @@ RewardWise is built around:
 * Admin routes
 * Health endpoints
 
----
 
-## 2.2 Core Modules
+## Core Modules
 
 | Module           | Responsibility                  |
 | ---------------- | ------------------------------- |
@@ -123,13 +111,13 @@ RewardWise is built around:
 | models/          | Pydantic schemas                |
 | database/        | Supabase ORM layer              |
 
+# Recommendation Engine
+
+The Recommendation Engine evaluates multiple redemption strategies and produces a single verdict.
+
 ---
 
-# 3. Recommendation Engine
-
-This is RewardWise’s brain.
-
-## 3.1 Decision Pipeline
+## Decision Pipeline
 
 ```mermaid
 flowchart TD
@@ -144,34 +132,34 @@ flowchart TD
     A --> B --> C --> D --> E --> F --> G
 ```
 
----
+## Core Valuation Logic
 
-## 3.2 Decision Formula
-
-Core evaluation:
+### Basic Formula
 
 ```
 Point Value = Cash Price / Points Required
 ```
 
-Enhanced evaluation:
+### Enhanced Formula
 
 ```
 Effective Value = (Cash Price - Taxes) / (Points + Transfer Cost)
 ```
 
-Optimization rules:
 
-* Reject options below user threshold (e.g., 1.2 cpp)
-* Penalize long transfer chains
+## Optimization Rules
+
+* Reject options below user-defined threshold (e.g., 1.2 cpp)
+* Penalize multi-hop transfer chains
 * Penalize low availability confidence
 * Reward direct transfer partners
+* Factor in transfer ratios
+* Consider taxes and fees
 
----
 
-## 3.3 Transfer Graph Modeling
+## Transfer Graph Modeling
 
-Programs modeled as directed graph:
+Programs are modeled as a directed graph:
 
 ```
 Chase → United
@@ -179,18 +167,17 @@ Amex → Air Canada
 Capital One → British Airways
 ```
 
-Graph supports:
+Supports:
 
 * Direct transfer
 * Multi-hop transfer
 * Transfer bonuses (future)
 * Transfer timing constraints
 
----
 
-# 4. Database Schema
+# Database Schema
 
-## 4.1 Core Tables
+## Core Entity Model
 
 ```mermaid
 erDiagram
@@ -238,90 +225,92 @@ erDiagram
     }
 ```
 
----
 
-# 5. Frontend — Next.js
+# Frontend — Next.js
 
-## 5.1 Route Map
+## Route Map
 
-| Route           | Purpose         |
-| --------------- | --------------- |
-| /               | Landing page    |
-| /search         | Flight search   |
-| /wallet         | Manage wallet   |
-| /recommendation | Verdict display |
-| /profile        | Settings        |
-
----
-
-## 5.2 Core Components
-
-| Component         | Purpose                       |
-| ----------------- | ----------------------------- |
-| SearchWizard      | Multi-step flight search      |
-| WalletManager     | Program + balance selection   |
-| VerdictCard       | Single recommendation display |
-| TransferBreakdown | Transfer explanation          |
-| ValueMeter        | CPP visualization             |
+| Route             | Purpose         |
+| ----------------- | --------------- |
+| `/`               | Landing page    |
+| `/search`         | Flight search   |
+| `/wallet`         | Manage wallet   |
+| `/recommendation` | Verdict display |
+| `/profile`        | Settings        |
 
 ---
 
-# 6. EPIC Breakdown
+## Core UI Components
 
-## EPIC-0: DB & Canonical Dataset
+| Component         | Purpose                      |
+| ----------------- | ---------------------------- |
+| SearchWizard      | Multi-step search            |
+| WalletManager     | Manage programs and balances |
+| VerdictCard       | Final recommendation display |
+| TransferBreakdown | Shows transfer path          |
+| ValueMeter        | CPP visualization            |
+
+
+# EPIC Roadmap
+
+## EPIC-0: Canonical Data Model
 
 * issuers
 * programs
 * transfer_paths
 * cards
 
-## EPIC-1: UI ↔ Backend Integration
+## EPIC-1: API Integration
 
 * Wallet API
 * Search API
-* Basic verdict
+* Basic verdict output
 
-## EPIC-2: Recommendation Engine
+## EPIC-2: Optimization Engine
 
-* Full decision pipeline
-* Transfer graph
-* Value computation
+* Full transfer graph
+* Valuation heuristics
+* Confidence scoring
 
 ## EPIC-3: ML Layer (Future)
 
 * Seat availability prediction
-* Dynamic valuation model
+* Dynamic point valuation
 * User preference learning
 
----
 
-# 7. Deployment
+# Deployment
 
-| Layer      | Platform          |
-| ---------- | ----------------- |
-| Frontend   | Vercel            |
-| Backend    | Railway / Render  |
-| DB         | Supabase          |
-| Cache      | Redis             |
-| Domain     | rewardwise.ai     |
-| Monitoring | Sentry (optional) |
+| Layer      | Platform         |
+| ---------- | ---------------- |
+| Frontend   | Vercel           |
+| Backend    | Railway / Render |
+| Database   | Supabase         |
+| Cache      | Redis            |
+| Monitoring | Sentry           |
+| Domain     | rewardwise.ai    |
 
----
 
-# 8. Environment Variables
+# Environment Variables
 
-Backend:
+## Backend
 
-* SUPABASE_URL
-* SUPABASE_SERVICE_ROLE_KEY
-* SEATS_AERO_API_KEY
-* CASH_PRICE_API_KEY
-* REDIS_URL
+* `SUPABASE_URL`
+* `SUPABASE_SERVICE_ROLE_KEY`
+* `SEATS_AERO_API_KEY`
+* `CASH_PRICE_API_KEY`
+* `REDIS_URL`
 
-Frontend:
+## Frontend
 
-* NEXT_PUBLIC_API_URL
-* NEXT_PUBLIC_SUPABASE_URL
-* NEXT_PUBLIC_SUPABASE_ANON_KEY
+* `NEXT_PUBLIC_API_URL`
+* `NEXT_PUBLIC_SUPABASE_URL`
+* `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 
----
+
+
+RewardWise is a deterministic optimization engine focused on:
+
+* Portfolio efficiency
+* Valuation accuracy
+* Explainable decision logic
