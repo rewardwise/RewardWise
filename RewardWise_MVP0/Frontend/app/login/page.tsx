@@ -5,7 +5,7 @@
 import { useState, useContext } from "react";
 import { useRouter } from "next/navigation";
 
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/context/AuthProvider";
 import { useSearchFill } from "@/context/SearchFillContext";
 
 import TropicalBackground from "@/components/TropicalBackground";
@@ -23,7 +23,7 @@ import {
 
 export default function LoginPage() {
 	const router = useRouter();
-	const { login } = useAuth();
+	const { signInWithEmail } = useAuth();
 	const { pendingSearch } = useSearchFill();
 
 	const [email, setEmail] = useState("");
@@ -32,7 +32,7 @@ export default function LoginPage() {
 	const [errors, setErrors] = useState<any>({});
 	const [loading, setLoading] = useState(false);
 
-	const handleSubmit = (e: React.FormEvent) => {
+	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
 
 		const errs: any = {};
@@ -44,11 +44,15 @@ export default function LoginPage() {
 
 		setLoading(true);
 
-		setTimeout(() => {
-			login(email);
+		const { error } = await signInWithEmail(email, password);
 
-			router.push(pendingSearch ? "/search" : "/dashboard");
-		}, 1000);
+		if (error) {
+			setErrors({ general: error.message });
+			setLoading(false);
+			return;
+		}
+
+		router.push(pendingSearch ? "/search" : "/dashboard");
 	};
 
 	return (

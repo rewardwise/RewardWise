@@ -5,7 +5,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/context/AuthProvider";
 import TropicalBackground from "@/components/TropicalBackground";
 
 import {
@@ -20,7 +20,7 @@ import {
 
 export default function SignUpPage() {
 	const router = useRouter();
-	const { login } = useAuth();
+	const { signInWithGoogle } = useAuth();
 
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
@@ -43,16 +43,12 @@ export default function SignUpPage() {
 		return Object.keys(errs).length === 0;
 	};
 
-	const handleSubmit = (e: React.FormEvent) => {
+	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
 		if (!validate()) return;
 
 		setLoading(true);
-
-		setTimeout(() => {
-			login(email);
-			router.push("/wallet-setup");
-		}, 1000);
+		await signInWithGoogle();
 	};
 
 	return (
@@ -179,10 +175,7 @@ focus:outline-none focus:ring-2 focus:ring-emerald-500`}
 						</p>
 
 						<button
-							onClick={() => {
-								login(email || "demo@rewardwise.com");
-								router.push("/wallet-setup");
-							}}
+							onClick={() => signInWithGoogle()}
 							className="text-blue-400 hover:text-blue-300 text-sm font-medium"
 						>
 							Just show me my wallet value →
