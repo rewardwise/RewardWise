@@ -25,6 +25,11 @@ export default function WalletSetupPage() {
 	};
 
 	const handleSave = async () => {
+		if (!user) {
+			setError("User not authenticated.");
+			return;
+		}
+
 		if (selectedCards.length === 0) return;
 
 		setSaving(true);
@@ -36,6 +41,7 @@ export default function WalletSetupPage() {
 		const selectedCardData = selectedCards.map(
 			(cardId) => AVAILABLE_CARDS.find((c) => c.id === cardId)!,
 		);
+
 		const programNames = [...new Set(selectedCardData.map((c) => c.program))];
 
 		const { data: programs, error: programError } = await supabase
@@ -51,10 +57,10 @@ export default function WalletSetupPage() {
 
 		const programMap = new Map(programs.map((p) => [p.name, p.id]));
 
-		// Check all programs were found
 		const missingPrograms = programNames.filter(
 			(name) => !programMap.has(name),
 		);
+
 		if (missingPrograms.length > 0) {
 			setError(
 				`Reward programs not found in database: ${missingPrograms.join(", ")}`,
@@ -64,7 +70,7 @@ export default function WalletSetupPage() {
 		}
 
 		const cardsToInsert = selectedCardData.map((card) => ({
-			user_id: user!.id,
+			user_id: user.id, // Safe because of guard at top
 			card_name: card.name,
 			reward_program_id: programMap.get(card.program)!,
 		}));
