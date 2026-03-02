@@ -5,7 +5,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-import { useAuth } from "@/context/AuthContext";
+import { useAuth } from "@/context/AuthProvider";
 import { useSearchFill } from "@/context/SearchFillContext";
 import { useABTest } from "@/context/ABTestContext";
 
@@ -36,7 +36,8 @@ const REWARD_PROGRAMS = [
 export default function LandingPage() {
 	const router = useRouter();
 
-	const { isAuthenticated, login } = useAuth();
+	const { user } = useAuth();
+	const isAuthenticated = !!user;
 	const { searchFill, setPendingSearch } = useSearchFill();
 
 	/* STATE */
@@ -154,8 +155,6 @@ export default function LandingPage() {
 				balances,
 			});
 
-			login(signupEmail);
-
 			router.push("/search");
 		}, 1000);
 	};
@@ -165,7 +164,7 @@ export default function LandingPage() {
 		if (!isAuthenticated) return;
 
 		router.replace(teaserResult ? "/search" : "/home");
-	}, [isAuthenticated]);
+	}, [isAuthenticated, teaserResult, router]);
 
 	return (
 		<div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-cyan-950 relative">
@@ -214,25 +213,17 @@ export default function LandingPage() {
 							Log In
 						</button>
 					</div>
-					{loading ? null : user ? (
-						<div className="flex items-center gap-4">
-							<Link
-								href="/home"
-								className="text-white hover:text-emerald-300 font-medium"
-							>
-								Home
-							</Link>
-							<button
-								onClick={signOut}
-								className="text-emerald-400 hover:text-emerald-300 font-medium"
-							>
-								Log Out
-							</button>
-						</div>
+					{isAuthenticated ? (
+						<button
+							onClick={() => router.push("/home")}
+							className="text-emerald-400 hover:text-emerald-300 font-medium text-sm"
+						>
+							Home
+						</button>
 					) : (
 						<button
-							onClick={signInWithGoogle}
-							className="text-emerald-400 hover:text-emerald-300 font-medium"
+							onClick={() => router.push("/login")}
+							className="text-emerald-400 hover:text-emerald-300 font-medium text-sm"
 						>
 							Log In
 						</button>
