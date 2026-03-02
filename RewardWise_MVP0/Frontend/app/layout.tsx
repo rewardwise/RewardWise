@@ -1,3 +1,5 @@
+/** @format */
+
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AuthProvider } from "@/components/AuthProvider";
@@ -5,37 +7,42 @@ import { SearchFillProvider } from "@/context/SearchFillContext";
 import { ABTestProvider } from "@/context/ABTestContext";
 import "./globals.css";
 
+/* ADD THESE */
+import { AuthProvider } from "@/context/AuthContext";
+import { SearchFillProvider } from "@/context/SearchFillContext";
+import { ABTestProvider } from "@/context/ABTestContext";
 const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
+	variable: "--font-geist-sans",
+	subsets: ["latin"],
 });
 
 const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
+	variable: "--font-geist-mono",
+	subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
-  title: "RewardWise",
-  description: "Smart reward point optimization",
+	title: "RewardWise",
+	description: "One verdict, not 47 options",
 };
 
 export default function RootLayout({
-  children,
+	children,
 }: Readonly<{
-  children: React.ReactNode;
+	children: React.ReactNode;
 }>) {
-  return (
-    <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        <AuthProvider>
-          <SearchFillProvider>
-            <ABTestProvider>{children}</ABTestProvider>
-          </SearchFillProvider>
-        </AuthProvider>
-      </body>
-    </html>
-  );
+	return (
+		<html lang="en">
+			<body
+				className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+			>
+				{/* PROVIDERS WRAP CHILDREN */}
+				<AuthProvider>
+					<ABTestProvider>
+						<SearchFillProvider>{children}</SearchFillProvider>
+					</ABTestProvider>
+				</AuthProvider>
+			</body>
+		</html>
+	);
 }
