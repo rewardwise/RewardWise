@@ -2,12 +2,11 @@
 
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import "./globals.css";
-
-/* ADD THESE */
-import { AuthProvider } from "@/context/AuthContext";
+import { AuthProvider } from "@/context/AuthProvider";
 import { SearchFillProvider } from "@/context/SearchFillContext";
 import { ABTestProvider } from "@/context/ABTestContext";
+import "./globals.css";
+
 const geistSans = Geist({
 	variable: "--font-geist-sans",
 	subsets: ["latin"],
