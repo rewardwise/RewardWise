@@ -15,7 +15,7 @@ const portfolioRoutes = [
 ];
 
 // Routes that require auth only (no portfolio needed)
-const authOnlyRoutes = ["/wallet-setup"];
+const authOnlyRoutes = ["/wallet-setup", "/reset-password"];
 
 export async function middleware(request: NextRequest) {
 	let supabaseResponse = NextResponse.next({ request });
