@@ -9,7 +9,13 @@ export async function GET(request: Request) {
     const supabase = await createClient();
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (!error) {
-      // Check if user has cards (portfolio)
+      // If an explicit redirect was requested (e.g. password reset), honor it
+      const next = searchParams.get("next");
+      if (next) {
+        return NextResponse.redirect(`${origin}${next}`);
+      }
+
+      // Otherwise, route based on portfolio state
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         const { count } = await supabase
