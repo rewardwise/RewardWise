@@ -13,6 +13,7 @@ export default function WalletSetupPage() {
 	const router = useRouter();
 	const { user, checkPortfolio } = useAuth();
 	const [selectedCards, setSelectedCards] = useState<string[]>([]);
+	const [balances, setBalances] = useState<Record<string, number>>({});
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
@@ -70,9 +71,10 @@ export default function WalletSetupPage() {
 		}
 
 		const cardsToInsert = selectedCardData.map((card) => ({
-			user_id: user.id, // Safe because of guard at top
+			user_id: user.id,
 			card_name: card.name,
 			reward_program_id: programMap.get(card.program)!,
+			points_balance: balances[card.id] || 0,
 		}));
 
 		const { error: insertError } = await supabase
@@ -114,29 +116,49 @@ export default function WalletSetupPage() {
 				<div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-8">
 					{AVAILABLE_CARDS.map((card) => {
 						const isSelected = selectedCards.includes(card.id);
+
 						return (
-							<button
+							<div
 								key={card.id}
-								onClick={() => toggleCard(card.id)}
-								className={`flex items-center gap-3 p-4 rounded-lg border text-left transition-colors ${
+								className={`p-4 rounded-lg border transition-colors ${
 									isSelected
 										? "border-emerald-500 bg-emerald-500/10"
-										: "border-gray-700 bg-gray-800/50 hover:border-gray-500"
+										: "border-gray-700 bg-gray-800/50"
 								}`}
 							>
-								<span className="text-2xl">{card.logo}</span>
-								<div className="flex-1 min-w-0">
-									<p className="text-white text-sm font-medium truncate">
-										{card.name}
-									</p>
-									<p className="text-gray-400 text-xs truncate">
-										{card.program}
-									</p>
-								</div>
+								<button
+									onClick={() => toggleCard(card.id)}
+									className="flex items-center gap-3 w-full text-left"
+								>
+									<span className="text-2xl">{card.logo}</span>
+
+									<div className="flex-1">
+										<p className="text-white text-sm font-medium">
+											{card.name}
+										</p>
+										<p className="text-gray-400 text-xs">{card.program}</p>
+									</div>
+
+									{isSelected && (
+										<CheckCircle className="w-5 h-5 text-emerald-400" />
+									)}
+								</button>
+
 								{isSelected && (
-									<CheckCircle className="w-5 h-5 text-emerald-400 flex-shrink-0" />
+									<input
+										type="number"
+										placeholder="Points balance"
+										value={balances[card.id] || ""}
+										onChange={(e) =>
+											setBalances({
+												...balances,
+												[card.id]: parseInt(e.target.value) || 0,
+											})
+										}
+										className="mt-3 w-full bg-gray-900 border border-gray-700 rounded py-2 px-3 text-white text-sm"
+									/>
 								)}
-							</button>
+							</div>
 						);
 					})}
 				</div>
