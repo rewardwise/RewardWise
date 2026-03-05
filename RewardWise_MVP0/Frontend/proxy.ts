@@ -1,5 +1,4 @@
 /** @format */
-
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -15,9 +14,9 @@ const portfolioRoutes = [
 ];
 
 // Routes that require auth only (no portfolio needed)
-const authOnlyRoutes = ["/wallet-setup"];
+const authOnlyRoutes = ["/wallet-setup", "/reset-password"];
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
 	let supabaseResponse = NextResponse.next({ request });
 
 	const supabase = createServerClient(

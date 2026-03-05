@@ -52,7 +52,7 @@ export default function LoginPage() {
 			return;
 		}
 
-		router.push(pendingSearch ? "/search" : "/dashboard");
+		router.push(pendingSearch ? "/search" : "/home");
 	};
 
 	return (
