@@ -155,6 +155,13 @@ export default function WalletSetupPage() {
 						`Continue with ${selectedCards.length} card${selectedCards.length !== 1 ? "s" : ""}`
 					)}
 				</button>
+
+				<button
+					onClick={() => router.push("/home?skip=true")}
+					className="w-full mt-4 text-gray-400 hover:text-white text-sm underline"
+				>
+					Skip for now
+				</button>
 			</div>
 		</div>
 	);

@@ -1,12 +1,11 @@
 /** @format */
 
 "use client";
-import React from "react";
-import { useState, useEffect, useContext } from "react";
+
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 import TropicalBackground from "@/components/TropicalBackground";
-// import TopNav from "@/components/TopNav";
 
 import { useAuth } from "@/context/AuthProvider";
 import { useSearchFill } from "@/context/SearchFillContext";
@@ -16,7 +15,8 @@ import { MapPin, Calendar, Plane, User, Search, Loader2 } from "lucide-react";
 
 export default function HomePage() {
 	const router = useRouter();
-	// const { incrementSearch } = useAuth();
+
+	const { searchCount, setSearchCount } = useAuth();
 	const { searchFill } = useSearchFill();
 	const abTests = useABTest();
 
@@ -29,17 +29,22 @@ export default function HomePage() {
 	const [tripType, setTripType] = useState("roundtrip");
 	const [searching, setSearching] = useState(false);
 
+	const [searchError, setSearchError] = useState("");
+	const [verdict, setVerdict] = useState(null);
+	/* Autofill from Zoe */
 	useEffect(() => {
 		if (!searchFill) return;
 
 		if (searchFill.origin) setOrigin(searchFill.origin);
 		if (searchFill.destination) setDestination(searchFill.destination);
+		if (searchFill.cabin) setCabin(searchFill.cabin);
+		if (searchFill.travelers) setTravelers(searchFill.travelers);
 	}, [searchFill]);
 
 	const runSearch = () => {
 		if (!origin || !destination) return;
 
-		// incrementSearch();
+		setSearchCount(searchCount + 1);
 		setSearching(true);
 
 		setTimeout(() => {
@@ -52,8 +57,6 @@ export default function HomePage() {
 			<TropicalBackground />
 
 			<div className="relative z-10">
-				{/* <TopNav activeTab="home" /> */}
-
 				<main className="max-w-5xl mx-auto px-6 py-6">
 					{/* HEADER */}
 					<div className="mb-6">
@@ -76,7 +79,7 @@ export default function HomePage() {
 								className={`px-4 py-1.5 rounded-lg text-xs font-medium ${
 									tripType === type
 										? "bg-emerald-500 text-white"
-										: "bg-gray-800 text-gray-400"
+										: "bg-gray-800 text-gray-400 hover:bg-gray-700"
 								}`}
 							>
 								{type === "roundtrip" ? "Round Trip" : "One Way"}
@@ -85,40 +88,112 @@ export default function HomePage() {
 					</div>
 
 					{/* SEARCH GRID */}
-					<div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-						<Field icon={<MapPin />} label="FROM">
+					<div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+						<div>
+							<label className="block text-emerald-400 text-xs mb-1 flex items-center gap-1">
+								<MapPin className="w-3 h-3" /> FROM
+							</label>
+
 							<input
 								value={origin}
 								onChange={(e) => setOrigin(e.target.value)}
 								placeholder="City or airport"
-								className="input"
+								className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
 							/>
-						</Field>
+						</div>
 
-						<Field icon={<MapPin />} label="TO">
+						<div>
+							<label className="block text-emerald-400 text-xs mb-1 flex items-center gap-1">
+								<MapPin className="w-3 h-3" /> TO
+							</label>
+
 							<input
 								value={destination}
 								onChange={(e) => setDestination(e.target.value)}
 								placeholder="City or airport"
-								className="input"
+								className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
 							/>
-						</Field>
+						</div>
 
-						<Field icon={<Calendar />} label="DEPART">
+						<div>
+							<label className="block text-emerald-400 text-xs mb-1 flex items-center gap-1">
+								<Calendar className="w-3 h-3" /> DEPART
+							</label>
+
 							<input
 								type="date"
+								min={new Date().toISOString().split("T")[0]}
 								value={departDate}
 								onChange={(e) => setDepartDate(e.target.value)}
-								className="input"
+								className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm [color-scheme:dark]"
 							/>
-						</Field>
+						</div>
+					</div>
+
+					{/* SECOND ROW */}
+					<div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+						{tripType === "roundtrip" ? (
+							<div>
+								<label className="block text-emerald-400 text-xs mb-1 flex items-center gap-1">
+									<Calendar className="w-3 h-3" /> RETURN
+								</label>
+
+								<input
+									type="date"
+									min={new Date().toISOString().split("T")[0]}
+									value={returnDate}
+									onChange={(e) => setReturnDate(e.target.value)}
+									className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm [color-scheme:dark]"
+								/>
+							</div>
+						) : (
+							<div />
+						)}
+
+						<div>
+							<label className="block text-emerald-400 text-xs mb-1 flex items-center gap-1">
+								<User className="w-3 h-3" /> TRAVELERS
+							</label>
+
+							<select
+								value={travelers}
+								onChange={(e) => setTravelers(e.target.value)}
+								className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white"
+							>
+								{[1, 2, 3, 4].map((n) => (
+									<option key={n} value={n}>
+										{n} Traveler{n > 1 ? "s" : ""}
+									</option>
+								))}
+							</select>
+						</div>
+
+						<div>
+							<label className="block text-emerald-400 text-xs mb-1 flex items-center gap-1">
+								<Plane className="w-3 h-3" /> CABIN
+							</label>
+
+							<select
+								value={cabin}
+								onChange={(e) => setCabin(e.target.value)}
+								className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white"
+							>
+								<option value="economy">Economy</option>
+								<option value="premium">Premium</option>
+								<option value="business">Business</option>
+								<option value="first">First</option>
+							</select>
+						</div>
 					</div>
 
 					{/* SEARCH BUTTON */}
 					<button
-						onClick={runSearch}
+						onClick={() => {
+							setVerdict(null);
+							runSearch();
+						}}
 						disabled={searching}
-						className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 rounded-lg flex items-center justify-center gap-2"
+						className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-700 text-white font-semibold py-3 rounded-lg flex items-center justify-center gap-2 mb-2"
 					>
 						{searching ? (
 							<>
@@ -132,6 +207,12 @@ export default function HomePage() {
 							</>
 						)}
 					</button>
+
+					{searchError && (
+						<p className="text-red-400 text-sm text-center mb-4">
+							{searchError}
+						</p>
+					)}
 				</main>
 			</div>
 		</div>

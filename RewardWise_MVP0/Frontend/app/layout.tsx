@@ -5,6 +5,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { AuthProvider } from "@/context/AuthProvider";
 import { SearchFillProvider } from "@/context/SearchFillContext";
 import { ABTestProvider } from "@/context/ABTestContext";
+import TopNav from "@/components/TopNav";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -24,18 +25,23 @@ export const metadata: Metadata = {
 
 export default function RootLayout({
 	children,
-}: Readonly<{
+}: {
 	children: React.ReactNode;
-}>) {
+}) {
 	return (
 		<html lang="en">
 			<body
 				className={`${geistSans.variable} ${geistMono.variable} antialiased`}
 			>
-				{/* PROVIDERS WRAP CHILDREN */}
 				<AuthProvider>
 					<ABTestProvider>
-						<SearchFillProvider>{children}</SearchFillProvider>
+						<SearchFillProvider>
+							{/* GLOBAL NAVBAR */}
+							<TopNav />
+
+							{/* PAGE CONTENT */}
+							{children}
+						</SearchFillProvider>
 					</ABTestProvider>
 				</AuthProvider>
 			</body>
