@@ -7,7 +7,7 @@ import { SearchFillProvider } from "@/context/SearchFillContext";
 import { ABTestProvider } from "@/context/ABTestContext";
 import TopNav from "@/components/TopNav";
 import "./globals.css";
-
+import NavbarWrapper from "@/components/NavbarWrapper";
 const geistSans = Geist({
 	variable: "--font-geist-sans",
 	subsets: ["latin"],
@@ -37,8 +37,8 @@ export default function RootLayout({
 					<ABTestProvider>
 						<SearchFillProvider>
 							{/* GLOBAL NAVBAR */}
-							<TopNav />
 
+							<NavbarWrapper />
 							{/* PAGE CONTENT */}
 							{children}
 						</SearchFillProvider>
