@@ -14,7 +14,14 @@ const portfolioRoutes = [
 ];
 
 // Routes that require auth only (no portfolio needed)
-const authOnlyRoutes = ["/wallet-setup", "/reset-password"];
+const authOnlyRoutes = [
+	"/wallet-setup",
+	"/home",
+	"/trips",
+	"/circle",
+	"/history",
+	"/profile",
+];
 
 export async function proxy(request: NextRequest) {
 	let supabaseResponse = NextResponse.next({ request });
@@ -71,7 +78,7 @@ export async function proxy(request: NextRequest) {
 
 		if ((count ?? 0) === 0 && !skip) {
 			const url = request.nextUrl.clone();
-			url.pathname = "/wallet-setup";
+			url.pathname = "/";
 			return NextResponse.redirect(url);
 		}
 	}

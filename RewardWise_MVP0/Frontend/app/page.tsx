@@ -185,7 +185,7 @@ export default function LandingPage() {
 						<span className="font-bold text-lg text-white">RewardWise</span>
 					</div>
 
-					<div className="flex items-center gap-4">
+					<div className="flex items-center gap-6">
 						<button
 							onClick={() => router.push("/about")}
 							className="text-gray-300 hover:text-white font-medium text-sm"
@@ -213,21 +213,6 @@ export default function LandingPage() {
 							Log In
 						</button>
 					</div>
-					{isAuthenticated ? (
-						<button
-							onClick={() => router.push("/home")}
-							className="text-emerald-400 hover:text-emerald-300 font-medium text-sm"
-						>
-							Home
-						</button>
-					) : (
-						<button
-							onClick={() => router.push("/login")}
-							className="text-emerald-400 hover:text-emerald-300 font-medium text-sm"
-						>
-							Log In
-						</button>
-					)}
 				</header>
 
 				<main id="main-content" className="max-w-2xl mx-auto px-6 py-8">
