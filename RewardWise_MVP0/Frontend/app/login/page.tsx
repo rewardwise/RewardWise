@@ -52,7 +52,10 @@ export default function LoginPage() {
 			return;
 		}
 
-		router.push(pendingSearch ? "/search" : "/home");
+		// allow auth state to update before redirect
+		setTimeout(() => {
+			router.push(pendingSearch ? "/search" : "/home");
+		}, 100);
 	};
 
 	return (

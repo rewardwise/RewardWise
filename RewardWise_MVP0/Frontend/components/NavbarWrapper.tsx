@@ -10,7 +10,7 @@ export default function NavbarWrapper() {
 	const { user } = useAuth();
 	const pathname = usePathname();
 
-	const publicRoutes = ["/", "/login", "/signup"];
+	const publicRoutes = ["/", "/login", "/signup", "/about"];
 
 	if (!user || publicRoutes.includes(pathname)) return null;
 
