@@ -3,7 +3,8 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
+
 import {
 	Plane,
 	Home,
@@ -17,47 +18,50 @@ import {
 	TrendingUp,
 } from "lucide-react";
 
-export default function TopNav({ activeTab = "home" }) {
+export default function TopNav() {
 	const router = useRouter();
+	const pathname = usePathname();
+
 	const [showAlerts, setShowAlerts] = useState(false);
 
 	const alerts = [
 		{
 			id: 1,
 			icon: AlertTriangle,
-			color: "amber",
 			title: "45K Marriott points expiring",
 			desc: "90 days left — transfer or book to save ~$540",
-			action: "Fix this",
 			page: "/health-check",
 		},
 		{
 			id: 2,
 			icon: Gift,
-			color: "emerald",
 			title: "Amex → BA: 30% transfer bonus",
 			desc: "80,000 MR → 104,000 Avios. Ends Mar 15",
-			action: "View",
 			page: "/transfer-optimizer",
 		},
 		{
 			id: 3,
 			icon: TrendingUp,
-			color: "blue",
 			title: "Chase → Hyatt: 25% bonus",
 			desc: "50,000 UR → 62,500 Hyatt points. Ends Mar 31",
-			action: "View",
 			page: "/transfer-optimizer",
 		},
 		{
 			id: 4,
 			icon: Plane,
-			color: "purple",
 			title: "SFO→NRT: 2 biz seats opened",
 			desc: "ANA NH105 · 85K pts/person · usually gone in 48hrs",
-			action: "Book",
 			page: "/search",
 		},
+	];
+
+	const tabs = [
+		{ id: "home", icon: Home, label: "Home", page: "/home" },
+		{ id: "trips", icon: Plane, label: "Trips", page: "/trips" },
+		{ id: "circle", icon: Globe, label: "Circle", page: "/circle" },
+		{ id: "history", icon: Clock, label: "History", page: "/history" },
+		{ id: "profile", icon: User, label: "Profile", page: "/profile" },
+		{ id: "about", icon: Info, label: "About", page: "/about" },
 	];
 
 	return (
@@ -72,29 +76,26 @@ export default function TopNav({ activeTab = "home" }) {
 					<span className="font-bold text-white">RewardWise</span>
 				</div>
 
-				{/* Navigation Tabs */}
+				{/* Tabs */}
 				<div className="flex items-center gap-1">
-					{[
-						{ id: "home", icon: Home, label: "Home", page: "/home" },
-						{ id: "trip", icon: Plane, label: "Trips", page: "/trips" },
-						{ id: "circle", icon: Globe, label: "Circle", page: "/circle" },
-						{ id: "history", icon: Clock, label: "History", page: "/history" },
-						{ id: "profile", icon: User, label: "Profile", page: "/profile" },
-						{ id: "about", icon: Info, label: "About", page: "/about" },
-					].map((tab) => (
-						<button
-							key={tab.id}
-							onClick={() => router.push(tab.page)}
-							className={`flex items-center gap-1.5 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-								activeTab === tab.id
-									? "text-emerald-400 bg-emerald-500/10"
-									: "text-gray-400 hover:text-white hover:bg-gray-800/50"
-							}`}
-						>
-							<tab.icon className="w-4 h-4" />
-							<span className="hidden sm:inline">{tab.label}</span>
-						</button>
-					))}
+					{tabs.map((tab) => {
+						const active = pathname.startsWith(tab.page);
+
+						return (
+							<button
+								key={tab.id}
+								onClick={() => router.push(tab.page)}
+								className={`flex items-center gap-1.5 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+									active
+										? "text-emerald-400 bg-emerald-500/10"
+										: "text-gray-400 hover:text-white hover:bg-gray-800/50"
+								}`}
+							>
+								<tab.icon className="w-4 h-4" />
+								<span className="hidden sm:inline">{tab.label}</span>
+							</button>
+						);
+					})}
 
 					{/* Alerts */}
 					<div className="relative">
@@ -103,6 +104,7 @@ export default function TopNav({ activeTab = "home" }) {
 							className="relative px-3 py-2.5 text-gray-400 hover:text-white"
 						>
 							<Bell className="w-4 h-4" />
+
 							<span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-[10px] text-white flex items-center justify-center">
 								{alerts.length}
 							</span>
