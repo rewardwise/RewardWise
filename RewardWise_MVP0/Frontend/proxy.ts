@@ -1,9 +1,17 @@
 /** @format */
+
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-// Routes that require auth + cards (portfolio)
-const portfolioRoutes = [
+/*
+Public routes (no authentication required)
+*/
+const publicRoutes = ["/", "/about", "/login", "/signup"];
+
+/*
+Routes that require authentication
+*/
+const protectedRoutes = [
 	"/home",
 	"/dashboard",
 	"/search",
@@ -11,16 +19,10 @@ const portfolioRoutes = [
 	"/trips",
 	"/watchlist",
 	"/concierge",
-];
-
-// Routes that require auth only (no portfolio needed)
-const authOnlyRoutes = [
-	"/wallet-setup",
-	"/home",
-	"/trips",
-	"/circle",
-	"/history",
 	"/profile",
+	"/history",
+	"/circle",
+	"/wallet-setup",
 ];
 
 export async function proxy(request: NextRequest) {
@@ -38,7 +40,9 @@ export async function proxy(request: NextRequest) {
 					cookiesToSet.forEach(({ name, value }) =>
 						request.cookies.set(name, value),
 					);
+
 					supabaseResponse = NextResponse.next({ request });
+
 					cookiesToSet.forEach(({ name, value, options }) =>
 						supabaseResponse.cookies.set(name, value, options),
 					);
@@ -53,34 +57,21 @@ export async function proxy(request: NextRequest) {
 
 	const pathname = request.nextUrl.pathname;
 
-	const isPortfolioRoute = portfolioRoutes.some((route) =>
-		pathname.startsWith(route),
+	const isPublic = publicRoutes.some(
+		(route) => pathname === route || pathname.startsWith(route + "/"),
 	);
-	const isAuthOnlyRoute = authOnlyRoutes.some((route) =>
+
+	const isProtected = protectedRoutes.some((route) =>
 		pathname.startsWith(route),
 	);
 
-	// Not logged in → redirect to landing
-	if ((isPortfolioRoute || isAuthOnlyRoute) && !user) {
+	/*
+	Block protected routes if user not logged in
+	*/
+	if (isProtected && !user) {
 		const url = request.nextUrl.clone();
-		url.pathname = "/";
+		url.pathname = "/login";
 		return NextResponse.redirect(url);
-	}
-
-	// Logged in, trying to access a portfolio route → check cards
-	if (isPortfolioRoute && user) {
-		const { count } = await supabase
-			.from("cards")
-			.select("*", { count: "exact", head: true })
-			.eq("user_id", user.id);
-
-		const skip = request.nextUrl.searchParams.get("skip");
-
-		if ((count ?? 0) === 0 && !skip) {
-			const url = request.nextUrl.clone();
-			url.pathname = "/";
-			return NextResponse.redirect(url);
-		}
 	}
 
 	return supabaseResponse;
