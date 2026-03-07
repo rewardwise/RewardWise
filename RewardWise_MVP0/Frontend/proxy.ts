@@ -78,7 +78,7 @@ export async function proxy(request: NextRequest) {
 
 		if ((count ?? 0) === 0 && !skip) {
 			const url = request.nextUrl.clone();
-			url.pathname = "/";
+			url.pathname = "/wallet-setup";
 			return NextResponse.redirect(url);
 		}
 	}
