@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 
 import { useAuth } from "@/context/AuthProvider";
 import { useSearchFill } from "@/context/SearchFillContext";
+import { createClient } from "@/utils/supabase/client";
 
 import TropicalBackground from "@/components/TropicalBackground";
 
@@ -56,10 +57,24 @@ export default function LoginPage() {
 			return;
 		}
 
-		// allow auth state to update before redirect
-		setTimeout(() => {
-			router.push(pendingSearch ? "/search" : "/home");
-		}, 100);
+		const supabase = createClient();
+		const { data: { user: loggedInUser } } = await supabase.auth.getUser();
+		if (loggedInUser) {
+			const { count } = await supabase
+				.from("cards")
+				.select("*", { count: "exact", head: true })
+				.eq("user_id", loggedInUser.id);
+			const hasCards = (count ?? 0) > 0;
+			if (pendingSearch && hasCards) {
+				router.push("/search");
+			} else if (hasCards) {
+				router.push("/home");
+			} else {
+				router.push("/wallet-setup");
+			}
+		} else {
+			router.push("/home");
+		}
 	};
 
 	return (

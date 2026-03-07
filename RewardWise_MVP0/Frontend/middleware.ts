@@ -63,10 +63,30 @@ export async function middleware(request: NextRequest) {
 		pathname.startsWith(route),
 	);
 
+	const isPortfolioRoute = isProtected && !authOnlyRoutes.some((route) =>
+		pathname.startsWith(route),
+	);
+
 	if (isProtected && !user) {
 		const url = request.nextUrl.clone();
 		url.pathname = "/login";
 		return NextResponse.redirect(url);
+	}
+
+	// Logged in, trying to access a portfolio route → check cards
+	if (isPortfolioRoute && user) {
+		const { count } = await supabase
+			.from("cards")
+			.select("*", { count: "exact", head: true })
+			.eq("user_id", user.id);
+
+		const skip = request.nextUrl.searchParams.get("skip");
+
+		if ((count ?? 0) === 0 && !skip) {
+			const url = request.nextUrl.clone();
+			url.pathname = "/wallet-setup";
+			return NextResponse.redirect(url);
+		}
 	}
 
 	return supabaseResponse;
