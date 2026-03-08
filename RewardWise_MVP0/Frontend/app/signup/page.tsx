@@ -2,7 +2,7 @@
 
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { useAuth } from "@/context/AuthProvider";
@@ -27,7 +27,7 @@ export default function SignUpPage() {
 	const [showPassword, setShowPassword] = useState(false);
 	const [errors, setErrors] = useState<Record<string, string>>({});
 	const [loading, setLoading] = useState(false);
-
+	const { user } = useAuth();
 	const validate = () => {
 		const errs: Record<string, string> = {};
 
@@ -50,7 +50,12 @@ export default function SignUpPage() {
 		setLoading(true);
 		await signInWithGoogle();
 	};
+	useEffect(() => {
+		if (user === null) return;
+		if (user) router.replace("/home");
+	}, [user, router]);
 
+	if (user) return null;
 	return (
 		<div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-cyan-950 relative">
 			<TropicalBackground />

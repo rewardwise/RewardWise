@@ -3,14 +3,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-/*
-Public routes (no authentication required)
-*/
 const publicRoutes = ["/", "/about", "/login", "/signup"];
 
-/*
-Routes that require authentication
-*/
 const protectedRoutes = [
 	"/home",
 	"/dashboard",
@@ -25,7 +19,7 @@ const protectedRoutes = [
 	"/wallet-setup",
 ];
 
-export async function proxy(request: NextRequest) {
+export async function middleware(request: NextRequest) {
 	let supabaseResponse = NextResponse.next({ request });
 
 	const supabase = createServerClient(
@@ -65,9 +59,6 @@ export async function proxy(request: NextRequest) {
 		pathname.startsWith(route),
 	);
 
-	/*
-	Block protected routes if user not logged in
-	*/
 	if (isProtected && !user) {
 		const url = request.nextUrl.clone();
 		url.pathname = "/login";

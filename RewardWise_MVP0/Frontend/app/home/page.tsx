@@ -16,7 +16,7 @@ import { MapPin, Calendar, Plane, User, Search, Loader2 } from "lucide-react";
 export default function HomePage() {
 	const router = useRouter();
 
-	const { searchCount, setSearchCount } = useAuth();
+	const { user, searchCount, setSearchCount } = useAuth();
 	const { searchFill } = useSearchFill();
 	const abTests = useABTest();
 
@@ -31,6 +31,10 @@ export default function HomePage() {
 
 	const [searchError, setSearchError] = useState("");
 	const [verdict, setVerdict] = useState(null);
+	useEffect(() => {
+		if (user === null) return; // auth still loading
+		if (!user) router.replace("/login");
+	}, [user]);
 	/* Autofill from Zoe */
 	useEffect(() => {
 		if (!searchFill) return;
@@ -41,17 +45,46 @@ export default function HomePage() {
 		if (searchFill.travelers) setTravelers(searchFill.travelers);
 	}, [searchFill]);
 
-	const runSearch = () => {
-		if (!origin || !destination) return;
+	const runSearch = async () => {
+		if (!origin || !destination) {
+			setSearchError("Please enter origin and destination");
+			return;
+		}
 
-		setSearchCount(searchCount + 1);
 		setSearching(true);
+		setSearchError("");
 
-		setTimeout(() => {
-			setSearching(false);
-		}, 2500);
+		try {
+			const response = await fetch("http://127.0.0.1:8000/api/search", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					origin,
+					destination,
+					departDate,
+					returnDate,
+					travelers,
+					cabin,
+					tripType,
+				}),
+			});
+
+			const data = await response.json();
+
+			console.log("Search result:", data);
+
+			setVerdict(data);
+			setSearchCount(searchCount + 1);
+		} catch (err) {
+			console.error(err);
+			setSearchError("Search failed. Check backend connection.");
+		}
+
+		setSearching(false);
 	};
-
+	if (!user) return null;
 	return (
 		<div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-cyan-950 relative">
 			<TropicalBackground />
