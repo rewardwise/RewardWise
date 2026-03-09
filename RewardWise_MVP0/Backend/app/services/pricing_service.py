@@ -1,5 +1,6 @@
 import httpx
 import os
+from typing import Optional
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -10,8 +11,9 @@ CABIN_CLASS_MAP = {
     "economy": 1,
     "premium": 2,
     "business": 3,
-    "first": 4
+    "first": 4,
 }
+
 
 def _parse_flight(f: dict) -> dict:
     """Extract rich details from a single SerpAPI flight object."""
@@ -53,22 +55,36 @@ def _parse_flight(f: dict) -> dict:
         ],
     }
 
-async def get_cash_price(origin: str, destination: str, date: str, cabin: str) -> dict:
+
+async def get_cash_price(
+    origin: str,
+    destination: str,
+    date: str,
+    cabin: str,
+    travelers: int = 1,
+    return_date: Optional[str] = None,
+) -> dict:
     api_key = os.getenv("SERPAPI_KEY")
     if not api_key:
         return {"cash_price": None, "currency": "USD", "source": "google_flights", "flights": []}
+
+    is_roundtrip = bool(return_date)
 
     params = {
         "engine": "google_flights",
         "departure_id": origin.upper(),
         "arrival_id": destination.upper(),
         "outbound_date": date,
-        "type": "2",  # one-way
+        "type": "1" if is_roundtrip else "2",  # 1=round-trip, 2=one-way
         "travel_class": CABIN_CLASS_MAP.get(cabin.lower(), 1),
+        "adults": travelers,
         "currency": "USD",
         "hl": "en",
-        "api_key": api_key
+        "api_key": api_key,
     }
+
+    if is_roundtrip:
+        params["return_date"] = return_date
 
     try:
         async with httpx.AsyncClient() as client:
@@ -100,7 +116,14 @@ async def get_cash_price(origin: str, destination: str, date: str, cabin: str) -
             "flights": top_flights,
             "price_level": price_insights.get("price_level"),       # "low", "typical", "high"
             "typical_price_range": price_insights.get("typical_price_range"),  # [min, max]
+            "is_roundtrip": is_roundtrip,
         }
 
     except Exception as e:
-        return {"cash_price": None, "currency": "USD", "source": "google_flights", "flights": [], "error": str(e)}
+        return {
+            "cash_price": None,
+            "currency": "USD",
+            "source": "google_flights",
+            "flights": [],
+            "error": str(e),
+        }
