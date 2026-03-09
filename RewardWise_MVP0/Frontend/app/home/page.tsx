@@ -4,9 +4,10 @@ import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import TropicalBackground from "@/components/TropicalBackground";
 import { useAuth } from "@/context/AuthProvider";
+import { useWallet } from "@/context/WalletContext";
 import { useSearchFill } from "@/context/SearchFillContext";
 import { useABTest } from "@/context/ABTestContext";
-import { MapPin, Calendar, Plane, User, Search, Loader2 } from "lucide-react";
+import { MapPin, Calendar, Plane, User, Search, Loader2, Star, Lock } from "lucide-react";
 
 interface AwardOption {
   program: string;
@@ -30,6 +31,7 @@ interface SearchResult {
 export default function HomePage() {
   const router = useRouter();
   const { searchCount, setSearchCount } = useAuth();
+  const { userPrograms, hasWallet, cards } = useWallet();
   const { searchFill } = useSearchFill();
   const abTests = useABTest();
   const [origin, setOrigin] = useState("");
@@ -75,6 +77,24 @@ export default function HomePage() {
       setSearching(false);
     }
   };
+
+  // Split results into user's programs vs others
+  const yourOptions = results?.award_options.filter((opt) =>
+    userPrograms.includes(opt.program.toLowerCase())
+  ) ?? [];
+
+  const otherOptions = results?.award_options.filter((opt) =>
+    !userPrograms.includes(opt.program.toLowerCase())
+  ) ?? [];
+
+  // Best option for verdict banner
+  const bestOption = yourOptions.length > 0
+    ? yourOptions.reduce((a, b) => a.points <= b.points ? a : b)
+    : null;
+
+  const cppVerdict = bestOption && results?.cash_price
+    ? (results.cash_price / bestOption.points * 100).toFixed(2)
+    : null;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-cyan-950 relative">
@@ -216,44 +236,111 @@ export default function HomePage() {
 
           {/* RESULTS */}
           {results && (
-            <div className="mt-2">
-              {/* CASH PRICE BANNER */}
-              <div className="bg-gray-800 rounded-xl p-4 mb-4 flex items-center justify-between">
+            <div className="mt-2 space-y-4">
+
+              {/* VERDICT BANNER */}
+              {bestOption && cppVerdict ? (
+                <div className="bg-emerald-500/10 border border-emerald-500/40 rounded-xl p-4">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Star className="w-4 h-4 text-emerald-400" />
+                    <span className="text-emerald-400 text-sm font-semibold">Best use of your points</span>
+                  </div>
+                  <p className="text-white font-bold text-lg capitalize">
+                    {bestOption.program} — {bestOption.points.toLocaleString()} pts
+                  </p>
+                  <p className="text-gray-400 text-xs mt-0.5">
+                    {cppVerdict}¢ per point · {results.cash_price ? `vs $${results.cash_price} cash` : ""}
+                    {" · "}{bestOption.direct ? "Direct" : "Connecting"}
+                  </p>
+                </div>
+              ) : results.award_options.length > 0 && !hasWallet ? (
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
+                  <p className="text-amber-400 text-sm font-semibold mb-1">No wallet set up yet</p>
+                  <p className="text-gray-400 text-xs mb-2">Add your cards to see which programs you can redeem with.</p>
+                  <button
+                    onClick={() => router.push("/wallet-setup")}
+                    className="text-xs bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg"
+                  >
+                    Set up wallet →
+                  </button>
+                </div>
+              ) : null}
+
+              {/* CASH PRICE */}
+              <div className="bg-gray-800 rounded-xl p-4 flex items-center justify-between">
                 <span className="text-gray-400 text-sm">Best cash price</span>
                 <span className="text-white font-bold text-lg">
                   {results.cash_price ? `$${results.cash_price}` : "N/A"}
                 </span>
               </div>
 
-              {/* AWARD OPTIONS */}
-              <h2 className="text-emerald-400 text-sm font-semibold mb-2">
-                Award Availability ({results.award_options.length} programs)
-              </h2>
-              {results.award_options.length === 0 ? (
-                <p className="text-gray-500 text-sm">No award availability found for this route and date.</p>
-              ) : (
-                <div className="flex flex-col gap-3">
-                  {results.award_options.map((opt, i) => (
-                    <div key={i} className="bg-gray-800 rounded-xl p-4 flex items-center justify-between">
-                      <div>
-                        <p className="text-white font-semibold capitalize">{opt.program}</p>
-                        <p className="text-gray-400 text-xs mt-0.5">
-                          {opt.airlines || "Various airlines"} · {opt.direct ? "Direct" : "Connecting"}
-                        </p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-emerald-400 font-bold">{opt.points.toLocaleString()} pts</p>
-                        {opt.remaining_seats > 0 && (
-                          <p className="text-gray-500 text-xs">{opt.remaining_seats} seats left</p>
-                        )}
-                      </div>
+              {/* YOUR PROGRAMS */}
+              {hasWallet && (
+                <div>
+                  <h2 className="text-emerald-400 text-sm font-semibold mb-2 flex items-center gap-1">
+                    <Star className="w-3.5 h-3.5" />
+                    Your programs ({yourOptions.length})
+                  </h2>
+                  {yourOptions.length === 0 ? (
+                    <div className="bg-gray-800/50 rounded-xl p-4 text-center">
+                      <p className="text-gray-500 text-sm">No availability in your programs for this route.</p>
+                      <p className="text-gray-600 text-xs mt-1">Check other programs below or try a different date.</p>
                     </div>
-                  ))}
+                  ) : (
+                    <div className="flex flex-col gap-2">
+                      {yourOptions.map((opt, i) => (
+                        <AwardCard key={i} opt={opt} highlight />
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
+
+              {/* OTHER PROGRAMS */}
+              <div>
+                <h2 className="text-gray-400 text-sm font-semibold mb-2 flex items-center gap-1">
+                  <Lock className="w-3.5 h-3.5" />
+                  {hasWallet ? `Other programs (${otherOptions.length})` : `All programs (${results.award_options.length})`}
+                </h2>
+                {(hasWallet ? otherOptions : results.award_options).length === 0 ? (
+                  <p className="text-gray-600 text-sm">No other availability found.</p>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {(hasWallet ? otherOptions : results.award_options).map((opt, i) => (
+                      <AwardCard key={i} opt={opt} highlight={false} />
+                    ))}
+                  </div>
+                )}
+              </div>
+
             </div>
           )}
         </main>
+      </div>
+    </div>
+  );
+}
+
+function AwardCard({ opt, highlight }: { opt: AwardOption; highlight: boolean }) {
+  return (
+    <div className={`rounded-xl p-4 flex items-center justify-between ${
+      highlight ? "bg-gray-800 border border-emerald-500/20" : "bg-gray-800/50"
+    }`}>
+      <div>
+        <p className={`font-semibold capitalize ${highlight ? "text-white" : "text-gray-400"}`}>
+          {opt.program}
+        </p>
+        <p className="text-gray-500 text-xs mt-0.5">
+          {opt.airlines || "Various airlines"} · {opt.direct ? "Direct" : "Connecting"}
+        </p>
+      </div>
+      <div className="text-right">
+        <p className={`font-bold ${highlight ? "text-emerald-400" : "text-gray-500"}`}>
+          {opt.points.toLocaleString()} pts
+        </p>
+        {opt.remaining_seats > 0 && (
+          <p className="text-gray-600 text-xs">{opt.remaining_seats} seats left</p>
+        )}
       </div>
     </div>
   );
