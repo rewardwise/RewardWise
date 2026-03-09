@@ -54,12 +54,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			return;
 		}
 
-		const { count } = await supabase
+		const { data } = await supabase
 			.from("cards")
-			.select("*", { count: "exact", head: true })
-			.eq("user_id", currentUser.id);
-
-		setHasCards((count ?? 0) > 0);
+			.select("id")
+			.eq("user_id", currentUser.id)
+			.limit(1);
+			setHasCards((data?.length ?? 0) > 0);
 	}, [supabase]);
 
 	// INITIAL SESSION LOAD

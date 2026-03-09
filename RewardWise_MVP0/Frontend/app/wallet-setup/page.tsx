@@ -87,7 +87,7 @@ export default function WalletSetupPage() {
 			return;
 		}
 
-		await checkPortfolio();
+		await checkPortfolio().catch(() => {});
 		router.push("/home");
 	};
 
