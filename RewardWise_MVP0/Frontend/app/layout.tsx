@@ -1,5 +1,6 @@
 /** @format */
 
+import { WalletProvider } from "@/context/WalletContext";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AuthProvider } from "@/context/AuthProvider";
@@ -32,8 +33,10 @@ export default function RootLayout({
 		<html lang="en">
 			<body
 				className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+				suppressHydrationWarning
 			>
 				<AuthProvider>
+					<WalletProvider>
 					<ABTestProvider>
 						<SearchFillProvider>
 							{/* GLOBAL NAVBAR */}
@@ -43,6 +46,7 @@ export default function RootLayout({
 							{children}
 						</SearchFillProvider>
 					</ABTestProvider>
+					</WalletProvider>
 				</AuthProvider>
 			</body>
 		</html>
