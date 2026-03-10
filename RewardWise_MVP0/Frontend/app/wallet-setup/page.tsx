@@ -417,13 +417,6 @@ export default function WalletSetupPage() {
 								</button>
 
 								<button
-									onClick={() => setShowPortfolio(true)}
-									className="flex-1 border border-emerald-500 text-emerald-400 py-3 rounded-lg hover:bg-emerald-500/10 font-medium"
-								>
-									View Portfolio
-								</button>
-
-								<button
 									onClick={handleSave}
 									disabled={selectedCards.length === 0}
 									className="flex-1 bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-700 disabled:text-gray-500 text-white font-semibold py-3 rounded-lg"
