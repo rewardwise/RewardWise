@@ -17,32 +17,35 @@ export default function AboutPage() {
 			<TropicalBackground />
 
 			<div className="relative z-10">
-				<header className="flex justify-between items-center px-6 py-4">
-					<div
-						className="flex items-center gap-2 cursor-pointer"
-						onClick={() => router.push("/")}
-					>
-						<Plane className="w-6 h-6 text-blue-400" />
-						<span className="font-bold text-lg text-white">RewardWise</span>
-					</div>
-
-					<div className="flex items-center gap-4">
-						<button
+				{user ? (
+					<TopNav />
+				) : (
+					<header className="flex justify-between items-center px-6 py-4">
+						<div
+							className="flex items-center gap-2 cursor-pointer"
 							onClick={() => router.push("/")}
-							className="text-gray-300 hover:text-white font-medium text-sm"
 						>
-							Home
-						</button>
+							<Plane className="w-6 h-6 text-blue-400" />
+							<span className="font-bold text-lg text-white">RewardWise</span>
+						</div>
 
-						<button
-							onClick={() => router.push("/login")}
-							className="text-emerald-400 hover:text-emerald-300 font-medium text-sm"
-						>
-							Log In
-						</button>
-					</div>
-				</header>
+						<div className="flex items-center gap-4">
+							<button
+								onClick={() => router.push("/")}
+								className="text-gray-300 hover:text-white font-medium text-sm"
+							>
+								Home
+							</button>
 
+							<button
+								onClick={() => router.push("/login")}
+								className="text-emerald-400 hover:text-emerald-300 font-medium text-sm"
+							>
+								Log In
+							</button>
+						</div>
+					</header>
+				)}
 				<main className="max-w-3xl mx-auto px-6 py-10">
 					{/* Hero */}
 					<div className="text-center mb-10">
@@ -222,18 +225,27 @@ export default function AboutPage() {
 					</div>
 
 					{/* CTA */}
-					<div className="text-center mt-12 pb-16">
+					{user ? (
 						<button
-							onClick={() => router.push("/signup")}
+							onClick={() => router.push("/home")}
 							className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold px-10 py-4 rounded-xl text-lg flex items-center gap-3 mx-auto transition-all"
 						>
-							Get Started — It's Free <ArrowRight className="w-5 h-5" />
+							Go to Dashboard <ArrowRight className="w-5 h-5" />
 						</button>
+					) : (
+						<>
+							<button
+								onClick={() => router.push("/signup")}
+								className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold px-10 py-4 rounded-xl text-lg flex items-center gap-3 mx-auto transition-all"
+							>
+								Get Started — It's Free <ArrowRight className="w-5 h-5" />
+							</button>
 
-						<p className="text-gray-400 text-sm mt-4">
-							No credit card required. Set up in 30 seconds.
-						</p>
-					</div>
+							<p className="text-gray-400 text-sm mt-4">
+								No credit card required. Set up in 30 seconds.
+							</p>
+						</>
+					)}
 				</main>
 			</div>
 		</div>

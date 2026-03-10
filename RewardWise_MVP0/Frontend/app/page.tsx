@@ -87,7 +87,10 @@ export default function LandingPage() {
 			prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id],
 		);
 	};
-
+	useEffect(() => {
+		if (user === null) return;
+		if (user) router.replace("/home");
+	}, [user, router]);
 	const updateBalance = (id: string, val: string) => {
 		setBalances((prev: any) => ({ ...prev, [id]: val }));
 	};

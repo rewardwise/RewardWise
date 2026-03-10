@@ -2,7 +2,7 @@
 
 "use client";
 
-import { useState, useContext } from "react";
+import { useState, useContext, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 import { useAuth } from "@/context/AuthProvider";
@@ -31,7 +31,11 @@ export default function LoginPage() {
 	const [showPassword, setShowPassword] = useState(false);
 	const [errors, setErrors] = useState<any>({});
 	const [loading, setLoading] = useState(false);
+	const { user } = useAuth();
 
+	useEffect(() => {
+		if (user) router.replace("/home");
+	}, [user]);
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
 
