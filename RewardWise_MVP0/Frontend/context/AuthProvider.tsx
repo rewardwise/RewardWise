@@ -13,18 +13,22 @@ import {
 import { Session, User } from "@supabase/supabase-js";
 import { createClient } from "@/utils/supabase/client";
 
-//  TYPES
+// TYPES
 type AuthContextType = {
 	user: User | null;
 	session: Session | null;
 	loading: boolean;
 	hasCards: boolean | null;
 
+	// AUTH
+	signUpWithEmail: (email: string, password: string) => Promise<{ error: any }>;
+	signInWithEmail: (email: string, password: string) => Promise<{ error: any }>;
 	signInWithGoogle: () => Promise<void>;
 	signOut: () => Promise<void>;
+
 	checkPortfolio: () => Promise<void>;
-	signInWithEmail: (email: string, password: string) => Promise<{ error: any }>;
-	// App-level state
+
+	// App state
 	subscription: string;
 	setSubscription: (value: string) => void;
 
@@ -42,8 +46,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	const [hasCards, setHasCards] = useState<boolean | null>(null);
 	const [subscription, setSubscription] = useState("free");
 	const [searchCount, setSearchCount] = useState(0);
+
 	const supabase = createClient();
 
+	// CHECK PORTFOLIO
 	const checkPortfolio = useCallback(async () => {
 		const {
 			data: { user: currentUser },
@@ -59,18 +65,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			.select("id")
 			.eq("user_id", currentUser.id)
 			.limit(1);
-			setHasCards((data?.length ?? 0) > 0);
+
+		setHasCards((data?.length ?? 0) > 0);
 	}, [supabase]);
 
-	// INITIAL SESSION LOAD
+	// INITIAL SESSION
 	useEffect(() => {
 		const loadSession = async () => {
-			const { data, error } = await supabase.auth.getSession();
-
-			if (error) {
-				setLoading(false);
-				return;
-			}
+			const { data } = await supabase.auth.getSession();
 
 			const session = data.session;
 
@@ -82,7 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		loadSession();
 
 		const { data: listener } = supabase.auth.onAuthStateChange(
-			(_event: string, session: Session | null) => {
+			(_event, session) => {
 				setSession(session);
 				setUser(session?.user ?? null);
 				setLoading(false);
@@ -100,22 +102,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		};
 	}, [supabase, checkPortfolio]);
 
-	// RE-CHECK PORTFOLIO IF USER CHANGES
+	// RECHECK PORTFOLIO
 	useEffect(() => {
-		if (user) {
-			checkPortfolio();
-		}
+		if (user) checkPortfolio();
 	}, [user, checkPortfolio]);
 
-	// AUTH METHODS
-	const signInWithGoogle = async () => {
-		await supabase.auth.signInWithOAuth({
-			provider: "google",
+	// EMAIL SIGNUP
+	const signUpWithEmail = async (email: string, password: string) => {
+		const { error } = await supabase.auth.signUp({
+			email,
+			password,
 			options: {
-				redirectTo: `${window.location.origin}/auth/callback`,
+				emailRedirectTo: `${window.location.origin}/auth/callback`,
 			},
 		});
+
+		return { error };
 	};
+
+	// EMAIL LOGIN
 	const signInWithEmail = async (email: string, password: string) => {
 		const { error } = await supabase.auth.signInWithPassword({
 			email,
@@ -124,12 +129,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 		return { error };
 	};
+
+	// GOOGLE LOGIN / SIGNUP
+	const signInWithGoogle = async () => {
+		await supabase.auth.signInWithOAuth({
+			provider: "google",
+			options: {
+				redirectTo: `${window.location.origin}/auth/callback`,
+			},
+		});
+	};
+
+	// SIGN OUT
 	const signOut = async () => {
 		await supabase.auth.signOut();
 		setHasCards(null);
 	};
 
-	// CONTEXT VALUE
 	return (
 		<AuthContext.Provider
 			value={{
@@ -137,10 +153,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				session,
 				loading,
 				hasCards,
-				signInWithGoogle,
+
+				signUpWithEmail,
 				signInWithEmail,
+				signInWithGoogle,
 				signOut,
+
 				checkPortfolio,
+
 				subscription,
 				setSubscription,
 				searchCount,
@@ -155,7 +175,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 // HOOK
 export function useAuth() {
 	const context = useContext(AuthContext);
-	if (context === undefined) {
+	if (!context) {
 		throw new Error("useAuth must be used within an AuthProvider");
 	}
 	return context;

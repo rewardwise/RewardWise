@@ -2,7 +2,7 @@
 
 "use client";
 
-import { useState, useContext, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 
 import { useAuth } from "@/context/AuthProvider";
@@ -20,10 +20,10 @@ import {
 	Loader2,
 	Sparkles,
 } from "lucide-react";
-
+import { FcGoogle } from "react-icons/fc";
 export default function LoginPage() {
 	const router = useRouter();
-	const { signInWithEmail } = useAuth();
+	const { signInWithEmail, signInWithGoogle, user } = useAuth();
 	const { pendingSearch } = useSearchFill();
 
 	const [email, setEmail] = useState("");
@@ -31,11 +31,11 @@ export default function LoginPage() {
 	const [showPassword, setShowPassword] = useState(false);
 	const [errors, setErrors] = useState<any>({});
 	const [loading, setLoading] = useState(false);
-	const { user } = useAuth();
-
 	useEffect(() => {
-		if (user) router.replace("/home");
-	}, [user]);
+		if (user) {
+			router.replace(pendingSearch ? "/search" : "/home");
+		}
+	}, [user, pendingSearch, router]);
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
 
@@ -207,6 +207,23 @@ focus:outline-none focus:ring-2 focus:ring-emerald-500`}
 							Sign Up
 						</button>
 					</p>
+					<div className="mt-6">
+						<div className="flex items-center mb-4">
+							<div className="flex-1 border-t border-gray-700"></div>
+							<span className="px-3 text-gray-400 text-sm">
+								Or continue with
+							</span>
+							<div className="flex-1 border-t border-gray-700"></div>
+						</div>
+
+						<button
+							onClick={signInWithGoogle}
+							className="w-full bg-gray-800 hover:bg-gray-700 text-white font-semibold py-3 rounded-lg flex items-center justify-center gap-3 transition-colors"
+						>
+							<FcGoogle size={20} />
+							Sign in with Google
+						</button>
+					</div>
 				</div>
 			</div>
 		</div>

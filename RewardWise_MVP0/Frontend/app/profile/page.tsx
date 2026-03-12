@@ -5,7 +5,9 @@
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthProvider";
 import TopNav from "@/components/TopNav";
+import { createClient } from "@/utils/supabase/client";
 
+const supabase = createClient();
 import {
 	User,
 	Wallet,
@@ -153,6 +155,36 @@ export default function ProfilePage() {
 					>
 						<LogOut className="w-5 h-5" />
 						Log Out
+					</button>
+					<button
+						onClick={async () => {
+							if (
+								!confirm("This will permanently delete your account. Continue?")
+							)
+								return;
+
+							const {
+								data: { session },
+							} = await supabase.auth.getSession();
+
+							if (!session) {
+								alert("Not authenticated");
+								return;
+							}
+
+							await fetch("/api/delete-account", {
+								method: "DELETE",
+								headers: {
+									Authorization: `Bearer ${session.access_token}`,
+								},
+							});
+
+							await signOut();
+							router.replace("/");
+						}}
+						className="w-full bg-red-900/20 hover:bg-red-900/30 text-red-500 font-medium py-3 rounded-xl border border-red-900/30 flex items-center justify-center gap-2"
+					>
+						Delete Account
 					</button>
 				</div>
 			</main>

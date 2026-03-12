@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { FcGoogle } from "react-icons/fc";
 
 import { useAuth } from "@/context/AuthProvider";
 import TropicalBackground from "@/components/TropicalBackground";
@@ -20,14 +21,14 @@ import {
 
 export default function SignUpPage() {
 	const router = useRouter();
-	const { signInWithGoogle } = useAuth();
+	const { signInWithGoogle, signUpWithEmail, user } = useAuth();
 
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
 	const [showPassword, setShowPassword] = useState(false);
 	const [errors, setErrors] = useState<Record<string, string>>({});
 	const [loading, setLoading] = useState(false);
-	const { user } = useAuth();
+
 	const validate = () => {
 		const errs: Record<string, string> = {};
 
@@ -48,13 +49,21 @@ export default function SignUpPage() {
 		if (!validate()) return;
 
 		setLoading(true);
-		await signInWithGoogle();
+
+		const { error } = await signUpWithEmail(email, password);
+
+		if (error) {
+			setErrors({ general: error.message });
+		} else {
+			setErrors({ general: "Check your email to confirm your account." });
+		}
+		setLoading(false);
 	};
 	useEffect(() => {
-		if (user === null) return;
-		if (user) router.replace("/home");
+		if (user) {
+			router.replace("/home");
+		}
 	}, [user, router]);
-
 	if (user) return null;
 	return (
 		<div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-cyan-950 relative">
@@ -173,15 +182,32 @@ focus:outline-none focus:ring-2 focus:ring-emerald-500`}
 							Log In
 						</button>
 					</p>
+					<div className="mt-6">
+						<div className="flex items-center mb-4">
+							<div className="flex-1 border-t border-gray-700"></div>
+							<span className="px-3 text-gray-400 text-sm">
+								Or continue with
+							</span>
+							<div className="flex-1 border-t border-gray-700"></div>
+						</div>
+
+						<button
+							type="button"
+							onClick={signInWithGoogle}
+							className="w-full bg-gray-800 hover:bg-gray-700 text-white font-semibold py-3 rounded-lg flex items-center justify-center gap-3 transition-colors"
+						>
+							<FcGoogle size={20} />
+							Sign up with Google
+						</button>
+					</div>
 
 					<div className="mt-3 pt-3 border-t border-gray-700/50 text-center">
 						<p className="text-gray-500 text-xs mb-1">
 							Not planning a trip yet?
 						</p>
-
 						<button
-							onClick={() => signInWithGoogle()}
-							className="text-blue-400 hover:text-blue-300 text-sm font-medium"
+							onClick={() => router.push("/home")}
+							className="text-emerald-400 hover:text-emerald-300 text-sm"
 						>
 							Just show me my wallet value →
 						</button>
