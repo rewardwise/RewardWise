@@ -17,6 +17,7 @@ class VerdictRow(TypedDict, total=False):
     id: str
     search_id: str
     recommendation: Literal["use_points", "pay_cash", "wait"]
+    top_program: str | None        # e.g. "united", "aeroplan" — best program by CPP
     summary: str | None
     details: dict[str, Any] | None
     calculated_cpp: float | None

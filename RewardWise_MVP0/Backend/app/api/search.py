@@ -1,7 +1,10 @@
-from fastapi import APIRouter, Query
+import asyncio
 from typing import Optional
-from app.services.seats_service import search_award_availability, get_trip_detail
+
+from fastapi import APIRouter, Query
+
 from app.services.pricing_service import get_cash_price
+from app.services.seats_service import get_trip_detail, search_award_availability
 
 router = APIRouter()
 
@@ -15,16 +18,20 @@ async def search(
     travelers: int = Query(default=1),
     return_date: Optional[str] = Query(default=None),
 ):
-    # Always search the outbound leg
-    award_options = await search_award_availability(origin, destination, date, cabin)
-    cash_data = await get_cash_price(origin, destination, date, cabin, travelers, return_date)
-
-    # For round trips: also search the return leg award availability
-    return_award_options = []
+    # Fetch outbound award availability + cash price in parallel
+    gather_tasks = [
+        search_award_availability(origin, destination, date, cabin),
+        get_cash_price(origin, destination, date, cabin, travelers, return_date),
+    ]
     if return_date:
-        return_award_options = await search_award_availability(
-            destination, origin, return_date, cabin
+        gather_tasks.append(
+            search_award_availability(destination, origin, return_date, cabin)
         )
+
+    results = await asyncio.gather(*gather_tasks)
+    award_options = results[0]
+    cash_data = results[1]
+    return_award_options = results[2] if return_date else []
 
     return {
         "origin": origin.upper(),
