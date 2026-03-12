@@ -560,7 +560,10 @@ export default function HomePage() {
         params.append("return_date", returnDate);
       }
       const res = await fetch(`http://localhost:8000/api/search?${params.toString()}`, { method: "POST" });
-      if (!res.ok) throw new Error(`Server error: ${res.status}`);
+      if (!res.ok) {
+  const errData = await res.json();
+  throw new Error(errData.detail ?? `Server error: ${res.status}`);
+}
       setResults(await res.json());
     } catch (err: any) {
       setSearchError(err.message || "Something went wrong. Try again.");
@@ -572,10 +575,11 @@ export default function HomePage() {
   // ── Derived splits ────────────────────────────────────────────────────────
   const numTravelers = results?.travelers ?? travelers;
 
-  const yourOptions = results?.award_options.filter((o) => userPrograms.includes(o.program.toLowerCase())) ?? [];
-  const otherOptions = results?.award_options.filter((o) => !userPrograms.includes(o.program.toLowerCase())) ?? [];
-  const yourReturnOptions = results?.return_award_options?.filter((o) => userPrograms.includes(o.program.toLowerCase())) ?? [];
-  const otherReturnOptions = results?.return_award_options?.filter((o) => !userPrograms.includes(o.program.toLowerCase())) ?? [];
+// FIXED — safe null check before filter
+const yourOptions = (results?.award_options ?? []).filter((o) => userPrograms.includes(o.program.toLowerCase()));
+const otherOptions = (results?.award_options ?? []).filter((o) => !userPrograms.includes(o.program.toLowerCase()));
+const yourReturnOptions = (results?.return_award_options ?? []).filter((o) => userPrograms.includes(o.program.toLowerCase()));
+const otherReturnOptions = (results?.return_award_options ?? []).filter((o) => !userPrograms.includes(o.program.toLowerCase()));
 
   const isRoundTrip = results?.is_roundtrip ?? false;
 
