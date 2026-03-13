@@ -58,6 +58,12 @@ async def search(
     outbound_awards = await search_award_availability(
         origin, destination, departure_date, cabin
     )
+
+    # Filter outbound results to seats >= travelers
+    outbound_awards = [
+        a for a in outbound_awards
+        if a.get("remaining_seats", 0) >= travelers
+    ]
     cash_data = await get_cash_price(
         origin, destination, departure_date, cabin, travelers, return_date
     )
@@ -77,26 +83,34 @@ async def search(
 
     # --- Build award options with CPP ---
     results = []
+
     for award in outbound_awards:
         points = award.get("points")
         if not points:
             continue
-        cpp = calculate_cpp(cash_price or 0, award.get("taxes", 0), points)
+
+        taxes = award.get("taxes", 0)
+
+        # Only compute CPP if we have a valid cash price
+        cpp = None
+        if cash_price is not None and points:
+            cpp = calculate_cpp(cash_price, taxes, points)
+
         results.append({
-            "program":         award.get("program"),
-            "points":          points,
-            "cash_price":      cash_price,
-            "taxes":           award.get("taxes", 0),
-            "cpp":             cpp,
+            "program": award.get("program"),
+            "points": points,
+            "cash_price": cash_price,
+            "taxes": taxes,
+            "cpp": cpp,
             "remaining_seats": award.get("remaining_seats"),
-            "direct":          award.get("direct", False),
-            "airlines":        award.get("airlines", ""),
-            "trip_ids":        award.get("trip_ids", []),
-            "trips":           award.get("trips", []),
-            "source":          award.get("source"),
+            "direct": award.get("direct", False),
+            "airlines": award.get("airlines", ""),
+            "trip_ids": award.get("trip_ids", []),
+            "trips": award.get("trips", []),
+            "source": award.get("source"),
         })
 
-    results.sort(key=lambda x: x["cpp"], reverse=True)
+    results.sort(key=lambda x: x["cpp"] or 0, reverse=True)
 
     # --- AI Verdict (Gemini Flash 2.0) ---
     # TODO: replace None with user's actual programs once wallet auth is wired into search
