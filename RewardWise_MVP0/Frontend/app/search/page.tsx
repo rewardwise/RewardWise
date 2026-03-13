@@ -11,7 +11,9 @@ export default function SearchPage() {
 
 	return (
 		<main className="min-h-screen bg-gray-50 flex flex-col items-center justify-start gap-8 p-10">
-			<h1 className="text-3xl font-bold text-gray-900">RewardWise Search</h1>
+			<h1 className="text-3xl font-bold text-gray-900">
+				MyTravelWallet Search
+			</h1>
 			<SearchForm onResults={setResults} onLoading={setLoading} />
 			{loading && (
 				<p className="text-indigo-500 font-medium animate-pulse">

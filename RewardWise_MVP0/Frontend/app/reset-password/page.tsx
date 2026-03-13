@@ -1,15 +1,10 @@
+/** @format */
+
 "use client";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-	Plane,
-	Lock,
-	Eye,
-	EyeOff,
-	Loader2,
-	CheckCircle,
-} from "lucide-react";
+import { Plane, Lock, Eye, EyeOff, Loader2, CheckCircle } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import TropicalBackground from "@/components/TropicalBackground";
 
@@ -61,7 +56,7 @@ export default function ResetPasswordPage() {
 				<div className="bg-gray-900/90 backdrop-blur rounded-xl p-8 w-full max-w-md shadow-2xl">
 					<div className="flex items-center gap-2 mb-6">
 						<Plane className="w-6 h-6 text-blue-400" />
-						<span className="font-bold text-lg text-white">RewardWise</span>
+						<span className="font-bold text-lg text-white">MyTravelWallet</span>
 					</div>
 
 					{success ? (

@@ -15,7 +15,7 @@ export default function DashboardPage() {
 				<div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
 					<Link href="/" className="flex items-center gap-2 text-gray-900">
 						<Plane className="w-6 h-6" />
-						<span className="font-bold text-lg">RewardWise</span>
+						<span className="font-bold text-lg">MyTravelWallet</span>
 					</Link>
 					<div className="flex items-center gap-4">
 						<span className="text-gray-600 text-sm">{user?.email}</span>
@@ -38,7 +38,7 @@ export default function DashboardPage() {
 					!
 				</h1>
 				<p className="text-gray-600 mt-2">
-					Your RewardWise dashboard is ready.
+					Your MyTravelWallet dashboard is ready.
 				</p>
 			</main>
 		</div>

@@ -73,7 +73,7 @@ export default function TopNav() {
 					onClick={() => router.push("/home")}
 				>
 					<Plane className="w-5 h-5 text-blue-400" />
-					<span className="font-bold text-white">RewardWise</span>
+					<span className="font-bold text-white">MyTravelWallet</span>
 				</div>
 
 				{/* Tabs */}

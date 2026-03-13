@@ -185,7 +185,7 @@ export default function LandingPage() {
 				<header className="flex justify-between items-center px-6 py-4">
 					<div className="flex items-center gap-2">
 						<Plane className="w-6 h-6 text-blue-400" />
-						<span className="font-bold text-lg text-white">RewardWise</span>
+						<span className="font-bold text-lg text-white">MyTravelWallet</span>
 					</div>
 
 					<div className="flex items-center gap-6">
@@ -231,8 +231,8 @@ export default function LandingPage() {
 									<span className="text-emerald-400">You just travel.</span>
 								</h1>
 								<p className="text-gray-300 text-lg max-w-md mx-auto">
-									RewardWise sees your entire rewards portfolio and makes the
-									smartest booking decision for you.
+									MyTravelWallet sees your entire rewards portfolio and makes
+									the smartest booking decision for you.
 								</p>
 							</div>
 
@@ -658,7 +658,7 @@ export default function LandingPage() {
 					)}
 				</main>
 				<footer className="text-center py-8 text-gray-300 text-sm">
-					<p>© 2026 RewardWise. One verdict, not 47 options.</p>
+					<p>© 2026 MyTravelWallet. One verdict, not 47 options.</p>
 
 					<button
 						onClick={() => router.push("/about")}

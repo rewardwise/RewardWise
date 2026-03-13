@@ -26,7 +26,9 @@ export default function AboutPage() {
 							onClick={() => router.push("/")}
 						>
 							<Plane className="w-6 h-6 text-blue-400" />
-							<span className="font-bold text-lg text-white">RewardWise</span>
+							<span className="font-bold text-lg text-white">
+								MyTravelWallet
+							</span>
 						</div>
 
 						<div className="flex items-center gap-4">
@@ -50,7 +52,7 @@ export default function AboutPage() {
 					{/* Hero */}
 					<div className="text-center mb-10">
 						<h1 className="text-4xl md:text-5xl font-bold text-white mb-4 leading-tight">
-							About <span className="text-emerald-400">RewardWise</span>
+							About <span className="text-emerald-400">MyTravelWallet</span>
 						</h1>
 
 						<p className="text-gray-300 text-lg">
@@ -71,8 +73,8 @@ export default function AboutPage() {
 					<div className="bg-gray-900/80 backdrop-blur rounded-2xl p-8 mb-10 border border-gray-700/50">
 						<div className="space-y-5 text-gray-300 leading-relaxed text-[17px]">
 							<p>
-								Hi, I'm Sabby Nagi — and I built RewardWise because my family
-								needed it.
+								Hi, I'm Sabby Nagi — and I built MyTravelWallet because my
+								family needed it.
 							</p>
 
 							<p>
@@ -123,8 +125,8 @@ export default function AboutPage() {
 							</p>
 
 							<p>
-								That's RewardWise. You tell us where you want to go. We look at
-								everything — your balances, every transfer partner, every
+								That's MyTravelWallet. You tell us where you want to go. We look
+								at everything — your balances, every transfer partner, every
 								routing, cash prices vs. points prices — and we give you one
 								clear answer.
 								<span className="text-white font-medium">

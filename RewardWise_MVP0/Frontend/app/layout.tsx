@@ -20,7 +20,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-	title: "RewardWise",
+	title: "MyTravelWallet",
 	description: "One verdict, not 47 options",
 };
 
@@ -37,15 +37,15 @@ export default function RootLayout({
 			>
 				<AuthProvider>
 					<WalletProvider>
-					<ABTestProvider>
-						<SearchFillProvider>
-							{/* GLOBAL NAVBAR */}
+						<ABTestProvider>
+							<SearchFillProvider>
+								{/* GLOBAL NAVBAR */}
 
-							<NavbarWrapper />
-							{/* PAGE CONTENT */}
-							{children}
-						</SearchFillProvider>
-					</ABTestProvider>
+								<NavbarWrapper />
+								{/* PAGE CONTENT */}
+								{children}
+							</SearchFillProvider>
+						</ABTestProvider>
 					</WalletProvider>
 				</AuthProvider>
 			</body>

@@ -77,7 +77,7 @@ export default function LoginPage() {
 
 					<div className="flex items-center gap-2 mb-6">
 						<Plane className="w-6 h-6 text-blue-400" />
-						<span className="font-bold text-lg text-white">RewardWise</span>
+						<span className="font-bold text-lg text-white">MyTravelWallet</span>
 					</div>
 
 					<h1 id="main-content" className="text-2xl font-bold text-white mb-2">

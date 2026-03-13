@@ -1,3 +1,5 @@
+/** @format */
+
 "use client";
 
 import { useState } from "react";
@@ -29,7 +31,7 @@ export default function ForgotPasswordPage() {
 			email,
 			{
 				redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
-			}
+			},
 		);
 
 		setLoading(false);
@@ -57,7 +59,7 @@ export default function ForgotPasswordPage() {
 
 					<div className="flex items-center gap-2 mb-6">
 						<Plane className="w-6 h-6 text-blue-400" />
-						<span className="font-bold text-lg text-white">RewardWise</span>
+						<span className="font-bold text-lg text-white">MyTravelWallet</span>
 					</div>
 
 					{sent ? (
