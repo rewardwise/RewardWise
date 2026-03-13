@@ -143,7 +143,6 @@ function FlightCard({ flight }: { flight: CashFlight }) {
           <p className="text-gray-600 text-xs">{expanded ? "▲ less" : "▼ details"}</p>
         </div>
       </button>
-
       {expanded && (
         <div className="border-t border-gray-700/50 px-4 pb-4 pt-3 space-y-3">
           {flight.legs.map((leg, i) => (
@@ -173,6 +172,144 @@ function FlightCard({ flight }: { flight: CashFlight }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── DEBUG PANEL ──────────────────────────────────────────────────────────────
+// 🧪 Temporary — shows raw cash vs points data from API to verify verdict accuracy.
+// Remove before production.
+
+function DebugAwardRow({ option, numTravelers }: { option: any; numTravelers: number }) {
+  const pts = option.points * numTravelers;
+  return (
+    <div className="bg-gray-800/60 rounded-lg border border-white/5 px-4 py-3 flex items-center gap-3">
+      {/* Program initial avatar */}
+      <div className="w-7 h-7 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center flex-shrink-0">
+        <span className="text-indigo-300 text-[10px] font-bold uppercase">
+          {option.program?.slice(0, 2)}
+        </span>
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5">
+          <span className="text-white font-semibold text-sm capitalize">{option.program}</span>
+        </div>
+        <div className="flex items-center gap-1.5 mt-0.5">
+          <span className="text-gray-500 text-xs">
+            {option.direct ? "Nonstop" : "Connecting"}
+          </span>
+          {option.remaining_seats > 0 && (
+            <>
+              <span className="text-gray-700">·</span>
+              <span className={`text-xs ${option.remaining_seats <= 3 ? "text-amber-400" : "text-gray-500"}`}>
+                {option.remaining_seats} seat{option.remaining_seats !== 1 ? "s" : ""} left
+              </span>
+            </>
+          )}
+          {option.airlines && option.airlines !== option.program && (
+            <>
+              <span className="text-gray-700">·</span>
+              <span className="text-gray-500 text-xs">{option.airlines}</span>
+            </>
+          )}
+        </div>
+      </div>
+      <div className="text-right flex-shrink-0">
+        <p className="text-emerald-400 font-bold text-sm">{pts.toLocaleString()} pts</p>
+        {option.taxes > 0 && (
+          <p className="text-gray-500 text-xs">+${(option.taxes/100).toFixed(2)} fees</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DebugComparisonPanel({ results, numTravelers }: { results: SearchResult; numTravelers: number }) {
+  const isRoundTrip = results.is_roundtrip;
+  const priceLevelColor = results.price_level === "low"
+    ? "bg-emerald-500/15 text-emerald-400"
+    : results.price_level === "high"
+    ? "bg-red-500/15 text-red-400"
+    : "bg-gray-700/60 text-gray-400";
+  const priceLevelLabel = results.price_level === "low" ? "🟢 Low"
+    : results.price_level === "high" ? "🔴 High" : "🟡 Typical";
+
+  return (
+    <div className="rounded-xl overflow-hidden border border-white/5 bg-gray-900/40">
+      {/* Header */}
+      <div className="px-4 py-2.5 flex items-center justify-between border-b border-white/5 bg-gray-800/40">
+        <span className="text-gray-400 text-xs font-semibold">🧪 Debug — Raw API Data</span>
+        <span className="text-gray-600 text-[10px]">remove before launch</span>
+      </div>
+
+      {/* Two columns */}
+      <div className="grid grid-cols-2 divide-x divide-white/5">
+
+        {/* LEFT — Cash (SerpAPI) */}
+        <div className="p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-gray-200 text-sm font-semibold">Cash Prices</h2>
+            {results.price_level && (
+              <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${priceLevelColor}`}>
+                {priceLevelLabel}
+              </span>
+            )}
+          </div>
+          {results.flights && results.flights.length > 0 ? (
+            <div className="space-y-2">
+              {results.flights.map((flight, i) => (
+                <FlightCard key={i} flight={flight} />
+              ))}
+            </div>
+          ) : results.cash_price ? (
+            <div className="bg-gray-800/60 rounded-lg border border-white/5 px-4 py-3 flex items-center justify-between">
+              <span className="text-gray-400 text-sm">Best cash price</span>
+              <span className="text-white font-bold">${results.cash_price}</span>
+            </div>
+          ) : (
+            <p className="text-gray-600 text-sm">No cash data returned</p>
+          )}
+        </div>
+
+        {/* RIGHT — Points (seats.aero) */}
+        <div className="p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-gray-200 text-sm font-semibold">
+              Award Options {isRoundTrip ? "(Outbound)" : ""}
+            </h2>
+            <span className="text-xs bg-gray-700/60 text-gray-400 px-2 py-0.5 rounded-full">
+              {results.award_options?.length ?? 0} programs
+            </span>
+          </div>
+          {results.award_options?.length > 0 ? (
+            <div className="space-y-2">
+              {results.award_options.map((opt, i) => (
+                <DebugAwardRow key={i} option={opt} numTravelers={numTravelers} />
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-600 text-sm">No award availability</p>
+          )}
+
+          {/* Return leg if roundtrip */}
+          {isRoundTrip && results.return_award_options?.length > 0 && (
+            <div className="mt-4">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-gray-200 text-sm font-semibold">Award Options (Return)</h2>
+                <span className="text-xs bg-gray-700/60 text-gray-400 px-2 py-0.5 rounded-full">
+                  {results.return_award_options.length} programs
+                </span>
+              </div>
+              <div className="space-y-2">
+                {results.return_award_options.map((opt, i) => (
+                  <DebugAwardRow key={i} option={opt} numTravelers={numTravelers} />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+      </div>
     </div>
   );
 }
@@ -218,7 +355,6 @@ export default function HomePage() {
     setResults(null);
     setSearching(true);
     setSearchCount(searchCount + 1);
-
     try {
       const params = new URLSearchParams({
         origin,
@@ -230,7 +366,9 @@ export default function HomePage() {
       if (tripType === "roundtrip" && returnDate) {
         params.append("return_date", returnDate);
       }
-      const res = await fetch(`http://localhost:8000/api/search?${params.toString()}`, { method: "POST" });
+      const res = await fetch(`http://localhost:8000/api/search?${params.toString()}`, {
+        method: "POST",
+      });
       if (!res.ok) {
         const errData = await res.json().catch(() => null);
         const detail = errData?.detail;
@@ -249,7 +387,6 @@ export default function HomePage() {
 
   const numTravelers = results?.travelers ?? travelers;
 
-  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-cyan-950 relative">
       <TropicalBackground />
@@ -384,11 +521,11 @@ export default function HomePage() {
             <p className="text-red-400 text-sm text-center mb-4">{searchError}</p>
           )}
 
-          {/* ── RESULTS ─────────────────────────────────────────────────── */}
+          {/* ── RESULTS ───────────────────────────────────────────────── */}
           {results && (
             <div className="mt-2 space-y-4">
 
-              {/* VERDICT CARD — Gemini-powered */}
+              {/* VERDICT CARD */}
               {results.verdict ? (
                 <VerdictCard
                   verdict={results.verdict}
@@ -419,34 +556,8 @@ export default function HomePage() {
                 </div>
               ) : null}
 
-              {/* CASH PRICE / FLIGHTS */}
-              {results.flights && results.flights.length > 0 ? (
-                <div className="bg-gray-900/40 border border-white/5 rounded-xl p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <h2 className="text-gray-200 text-sm font-semibold">Cash Prices</h2>
-                    {results.price_level && (
-                      <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
-                        results.price_level === "low"  ? "bg-emerald-500/15 text-emerald-400" :
-                        results.price_level === "high" ? "bg-red-500/15 text-red-400" :
-                                                         "bg-gray-700/60 text-gray-400"
-                      }`}>
-                        {results.price_level === "low" ? "🟢 Low" :
-                         results.price_level === "high" ? "🔴 High" : "🟡 Typical"}
-                      </span>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    {results.flights.map((flight, i) => (
-                      <FlightCard key={i} flight={flight} />
-                    ))}
-                  </div>
-                </div>
-              ) : results.cash_price ? (
-                <div className="bg-gray-900/40 border border-white/5 rounded-xl p-4 flex items-center justify-between">
-                  <span className="text-gray-400 text-sm">Best cash price</span>
-                  <span className="text-white font-bold text-lg">${results.cash_price}</span>
-                </div>
-              ) : null}
+              {/* 🧪 DEBUG PANEL
+              <DebugComparisonPanel results={results} numTravelers={numTravelers} /> */}
 
             </div>
           )}
