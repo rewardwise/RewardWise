@@ -12,12 +12,14 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # CORS (for Next.js frontend)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # update later for prod
+    allow_origins=[
+        "http://localhost:3000",
+        "https://reward-wise.vercel.app",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 # Include routers
 app.include_router(health.router, prefix="/api")
 app.include_router(wallet.router, prefix="/api")
