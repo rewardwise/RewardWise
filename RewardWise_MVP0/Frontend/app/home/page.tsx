@@ -377,7 +377,7 @@ function DebugComparisonPanel({
 
 export default function HomePage() {
 	const router = useRouter();
-	const { searchCount, setSearchCount } = useAuth();
+	const { searchCount, setSearchCount, session } = useAuth();
 	const { userPrograms, hasWallet } = useWallet();
 	const { searchFill } = useSearchFill();
 	useABTest();
@@ -427,8 +427,15 @@ export default function HomePage() {
 			}
 			const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
+			if (!session?.access_token) {
+				throw new Error("You must be logged in to run searches.");
+			}
+
 			const res = await fetch(`${API_URL}/api/search?${params.toString()}`, {
 				method: "POST",
+				headers: {
+					Authorization: `Bearer ${session.access_token}`,
+				},
 			});
 			if (!res.ok) {
 				const errData = await res.json().catch(() => null);

@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { useAuth } from "@/context/AuthProvider";
 
 interface SearchFormProps {
   onResults: (data: any) => void;
@@ -7,6 +8,7 @@ interface SearchFormProps {
 }
 
 export default function SearchForm({ onResults, onLoading }: SearchFormProps) {
+  const { session } = useAuth();
   const [origin, setOrigin] = useState("");
   const [destination, setDestination] = useState("");
   const [date, setDate] = useState("");
@@ -14,11 +16,20 @@ export default function SearchForm({ onResults, onLoading }: SearchFormProps) {
 
   const handleSubmit = async () => {
     if (!origin || !destination || !date) return;
+    if (!session?.access_token) {
+      console.error("Missing auth session token; cannot store searches with user_id.");
+      return;
+    }
     onLoading(true);
     try {
       const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/search?origin=${origin}&destination=${destination}&date=${date}&cabin=${cabin}`,
-        { method: "POST" }
+        `${process.env.NEXT_PUBLIC_API_URL}/api/search?origin=${origin}&destination=${destination}&date=${date}&cabin=${cabin}`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        }
       );
       const data = await res.json();
       onResults(data);
