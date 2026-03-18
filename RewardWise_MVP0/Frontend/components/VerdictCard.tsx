@@ -1,7 +1,9 @@
 /** @format */
 "use client";
 
-import { ExternalLink, Search, Sparkles, Zap, PlaneTakeoff, PlaneLanding } from "lucide-react";
+import { useState } from "react";
+import { ExternalLink, Search, Sparkles, Zap, PlaneTakeoff, PlaneLanding, Bell, Check } from "lucide-react";
+import { useAlerts } from "@/context/AlertContext";
 
 // ─── TYPES ────────────────────────────────────────────────────────────────────
 
@@ -366,6 +368,29 @@ export default function VerdictCard({
   returnAwardOptions = [],
   flights = [],
 }: VerdictCardProps) {
+  const { addToWatchlist, isWatching } = useAlerts();
+  const alreadyWatching = isWatching(origin, destination, departDate);
+  const [justAdded, setJustAdded] = useState(false);
+
+  const handleSetAlert = () => {
+    if (alreadyWatching || justAdded) return;
+    const totalPts = !pay_cash && winner?.points ? winner.points * travelers : null;
+    addToWatchlist({
+      origin,
+      destination,
+      departDate,
+      returnDate,
+      cabin: cabin ?? "economy",
+      travelers,
+      isRoundtrip: isRoundtrip ?? false,
+      cashPrice,
+      pointsRequired: totalPts,
+      program: winner?.program ?? null,
+      verdict: pay_cash ? "cash" : "points",
+    });
+    setJustAdded(true);
+  };
+
   const { winner, pay_cash, booking_link, confidence } = verdict;
 
   const bookingUrl =
@@ -559,6 +584,23 @@ export default function VerdictCard({
                 </a>
               )}
               <p className="text-[10px] text-center mt-2" style={{ color: "#334155" }}>⚠ Verify availability before transferring points</p>
+              <button
+                onClick={handleSetAlert}
+                disabled={alreadyWatching || justAdded}
+                className="flex items-center justify-center gap-2 w-full text-sm font-semibold py-3 rounded-xl transition-all mt-2"
+                style={{
+                  background: alreadyWatching || justAdded ? "rgba(255,255,255,0.05)" : "rgba(251,191,36,0.1)",
+                  border: `1px solid ${alreadyWatching || justAdded ? "rgba(255,255,255,0.1)" : "rgba(251,191,36,0.3)"}`,
+                  color: alreadyWatching || justAdded ? "#64748b" : "#fbbf24",
+                  cursor: alreadyWatching || justAdded ? "default" : "pointer",
+                }}
+              >
+                {alreadyWatching || justAdded ? (
+                  <><Check className="w-4 h-4" /> Alert Set</>
+                ) : (
+                  <><Bell className="w-4 h-4" /> Set Alert for This Route</>
+                )}
+              </button>
             </>
           ) : (
             <>
@@ -571,6 +613,23 @@ export default function VerdictCard({
                 style={{ background: "linear-gradient(90deg, #10b981, #059669)", color: "#fff" }}>
                 Find Cash Fares <Search className="w-4 h-4" />
               </a>
+              <button
+                onClick={handleSetAlert}
+                disabled={alreadyWatching || justAdded}
+                className="flex items-center justify-center gap-2 w-full text-sm font-semibold py-3 rounded-xl transition-all mt-2"
+                style={{
+                  background: alreadyWatching || justAdded ? "rgba(255,255,255,0.05)" : "rgba(251,191,36,0.1)",
+                  border: `1px solid ${alreadyWatching || justAdded ? "rgba(255,255,255,0.1)" : "rgba(251,191,36,0.3)"}`,
+                  color: alreadyWatching || justAdded ? "#64748b" : "#fbbf24",
+                  cursor: alreadyWatching || justAdded ? "default" : "pointer",
+                }}
+              >
+                {alreadyWatching || justAdded ? (
+                  <><Check className="w-4 h-4" /> Alert Set</>
+                ) : (
+                  <><Bell className="w-4 h-4" /> Set Alert for This Route</>
+                )}
+              </button>
             </>
           )}
         </div>
