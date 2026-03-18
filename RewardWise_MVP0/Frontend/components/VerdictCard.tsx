@@ -441,7 +441,7 @@ function AwardLegRow({ direction, option, cabin, travelers, isReturn }: { direct
         <div className="text-right flex-shrink-0">
           <p className="font-bold text-sm" style={{ color: "#34d399" }}>{pts.toLocaleString()} pts</p>
           {option.taxes != null && option.taxes > 0 && (
-            <p className="text-xs" style={{ color: "#475569" }}>+${option.taxes} fees</p>
+            <p className="text-xs" style={{ color: "#475569" }}>+${Number(option.taxes).toFixed(2)} fees</p>
           )}
         </div>
       </div>
@@ -581,7 +581,7 @@ export default function VerdictCard({
                   {(bestOutbound.points * travelers).toLocaleString()} pts
                 </p>
                 <p className="text-[10px] mt-0.5" style={{ color: "#475569" }}>
-                  {bestOutbound.taxes && bestOutbound.taxes > 0 ? `+$${bestOutbound.taxes.toFixed(0)} fees · ` : ""}
+                  {bestOutbound.taxes && bestOutbound.taxes > 0 ? `+$${Number(bestOutbound.taxes).toFixed(2)} fees · ` : ""}
                   {fmtProgram(bestOutbound.program)}
                 </p>
               </div>
@@ -599,7 +599,7 @@ export default function VerdictCard({
         {!pay_cash && savings != null && savings > 0 && (
           <div className="rounded-xl p-3 text-center" style={{ background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.15)" }}>
             <p className="text-[10px] font-bold uppercase" style={{ color: "#64748b", letterSpacing: "0.08em" }}>You Save</p>
-            <p className="font-bold text-2xl" style={{ color: "#34d399" }}>~${savings.toLocaleString()}</p>
+            <p className="font-bold text-2xl" style={{ color: "#34d399" }}>~${savings.toFixed(2)}</p>
           </div>
         )}
 
@@ -674,7 +674,7 @@ export default function VerdictCard({
                 {savings != null && savings > 0 && (
                   <div className="text-right">
                     <p className="text-[10px] font-bold uppercase mb-0.5" style={{ color: "#64748b", letterSpacing: "0.12em" }}>You Save</p>
-                    <p className="text-2xl font-extrabold" style={{ color: "#34d399" }}>~${savings.toLocaleString()}</p>
+                    <p className="text-2xl font-extrabold" style={{ color: "#34d399" }}>~${savings.toFixed(2)}</p>
                   </div>
                 )}
               </div>
