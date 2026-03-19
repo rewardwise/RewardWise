@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { ArrowLeft, Plane, Mail, Loader2, CheckCircle } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import TropicalBackground from "@/components/TropicalBackground";
-
+import { isValidEmailFormat } from "@/utils/emailValidation";
 export default function ForgotPasswordPage() {
 	const router = useRouter();
 	const [email, setEmail] = useState("");
@@ -19,16 +19,17 @@ export default function ForgotPasswordPage() {
 		e.preventDefault();
 		setError("");
 
-		if (!email || !/\S+@\S+\.\S+/.test(email)) {
+		const cleanEmail = email.trim();
+
+		if (!cleanEmail || !isValidEmailFormat(cleanEmail)) {
 			setError("Please enter a valid email address");
 			return;
 		}
-
 		setLoading(true);
 
 		const supabase = createClient();
 		const { error: resetError } = await supabase.auth.resetPasswordForEmail(
-			email,
+			cleanEmail,
 			{
 				redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
 			},
@@ -70,8 +71,8 @@ export default function ForgotPasswordPage() {
 							</h1>
 							<p className="text-gray-400 mb-6">
 								We sent a password reset link to{" "}
-								<span className="text-white">{email}</span>. Click the link in
-								the email to reset your password.
+								<span className="text-white">{email.trim()}</span>. Click the
+								link in the email to reset your password.
 							</p>
 							<button
 								onClick={() => router.push("/login")}
@@ -118,7 +119,7 @@ export default function ForgotPasswordPage() {
 
 								<button
 									type="submit"
-									disabled={loading}
+									disabled={loading || !email.trim()}
 									className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-emerald-500/50 text-white font-semibold py-3 rounded-lg transition-colors flex items-center justify-center gap-2"
 								>
 									{loading ? (
