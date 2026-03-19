@@ -8,6 +8,7 @@ import { FcGoogle } from "react-icons/fc";
 
 import { useAuth } from "@/context/AuthProvider";
 import TropicalBackground from "@/components/TropicalBackground";
+import { validateSignupEmail } from "@/utils/emailValidation";
 
 import {
 	ArrowLeft,
@@ -32,9 +33,8 @@ export default function SignUpPage() {
 	const validate = () => {
 		const errs: Record<string, string> = {};
 
-		if (!email) errs.email = "Email address is required";
-		else if (!/\S+@\S+\.\S+/.test(email))
-			errs.email = "Please enter a valid email address";
+		const emailError = validateSignupEmail(email);
+		if (emailError) errs.email = emailError;
 
 		if (!password) errs.password = "Password is required";
 		else if (password.length < 8)
