@@ -202,7 +202,7 @@ function FlightCard({ flight }: { flight: CashFlight }) {
 
 export default function HomePage() {
 	const router = useRouter();
-	const { searchCount, setSearchCount } = useAuth();
+	const { searchCount, setSearchCount, session } = useAuth();
 	const { userPrograms, hasWallet } = useWallet();
 	const { searchFill } = useSearchFill();
 	useABTest();
@@ -271,9 +271,16 @@ export default function HomePage() {
 				params.append("return_date", returnDate);
 			}
 			const API_URL = process.env.NEXT_PUBLIC_API_URL;
-			const res = await fetch(`${API_URL}/api/search?${params.toString()}`, {
-				method: "POST",
-			});
+			if (!session?.access_token) {
+        throw new Error("You must be logged in to run searches.");
+      }
+
+      const res = await fetch(`${API_URL}/api/search?${params.toString()}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
 			if (!res.ok) {
 				const errData = await res.json().catch(() => null);
 				const detail = errData?.detail;
