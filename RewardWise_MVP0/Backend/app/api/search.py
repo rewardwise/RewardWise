@@ -1,289 +1,498 @@
-import asyncio
-from typing import Optional
+/** @format */
+"use client";
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import TropicalBackground from "@/components/TropicalBackground";
+import { useAuth } from "@/context/AuthProvider";
+import { useWallet } from "@/context/WalletContext";
+import { useSearchFill } from "@/context/SearchFillContext";
+import { useABTest } from "@/context/ABTestContext";
+import VerdictCard, { VerdictCardSkeleton } from "@/components/VerdictCard";
+import AirportSearch from "@/components/AirportSearch";
+import ZoeChat from "@/components/zoe/ZoeChat";
+import type { Message } from "@/components/zoe/ZoeChat";
+import {
+	Calendar,
+	Plane,
+	User,
+	Search,
+	Loader2,
+	ArrowRight,
+} from "lucide-react";
 
-from app.api.validators import SearchParams, limiter  # RW-047
-from app.cache import find_search_verdict_in_db, get_search_memory_cache
-from app.cache.types import SearchParams as CacheSearchParams
-from app.db import get_server_supabase, insert_one, insert_one_return_id
-from app.services.pricing_service import get_cash_price
-from app.services.seats_service import search_award_availability
-from app.services.verdict_service import generate_verdict  # RW-VerdictGenerator
-from app.utils.math_utils import calculate_cpp
-from app.validators.airport_codes import is_valid_airport_code  # RW-047
+// ─── INTERFACES ───────────────────────────────────────────────────────────────
 
-router = APIRouter()
+interface FlightLeg {
+	flight_number: string;
+	airline: string;
+	airline_logo: string;
+	airplane: string;
+	travel_class: string;
+	legroom: string;
+	duration: number;
+	departure_airport: string;
+	departure_iata: string;
+	departure_time: string;
+	arrival_airport: string;
+	arrival_iata: string;
+	arrival_time: string;
+	extensions: string[];
+	overnight: boolean;
+	often_delayed: boolean;
+}
 
+interface CashFlight {
+	price: number;
+	total_duration: number;
+	stops: number;
+	departure_airport: string;
+	departure_iata: string;
+	departure_time: string;
+	arrival_airport: string;
+	arrival_iata: string;
+	arrival_time: string;
+	carbon_emissions: number | null;
+	legs: FlightLeg[];
+}
 
-def get_search_params(
-    origin: str = Query(...),
-    destination: str = Query(...),
-    date: str = Query(...),
-    cabin: str = Query(default="economy"),
-    travelers: int = Query(default=1),
-    return_date: Optional[str] = Query(default=None),
-) -> SearchParams:
-    """Dependency that validates and returns typed search params (RW-047)."""
-    # RW-047: airport code validation
-    if not is_valid_airport_code(origin):
-        raise HTTPException(status_code=422, detail=f"Invalid origin airport code: '{origin}'")
-    if not is_valid_airport_code(destination):
-        raise HTTPException(status_code=422, detail=f"Invalid destination airport code: '{destination}'")
-    if origin.upper() == destination.upper():
-        raise HTTPException(status_code=422, detail="Origin and destination cannot be the same.")
-    try:
-        return SearchParams(
-            origin=origin,
-            destination=destination,
-            date=date,
-            cabin=cabin,
-            travelers=travelers,
-            return_date=return_date,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=422, detail=str(e))
+interface VerdictWinner {
+	program: string | null;
+	points: number | null;
+	taxes: number | null;
+	cpp: number | null;
+	direct: boolean | null;
+}
 
+interface BookingLink {
+	seats_aero_link: string | null;
+	airline_link: string | null;
+	preferred: "seats_aero" | "airline" | "none";
+}
 
-@router.post("/search")
-@limiter.limit("10/minute")  # RW-047: rate limit
-async def search(
-    request: Request,  # required by SlowAPI
-    params: SearchParams = Depends(get_search_params),
-):
-    origin = params.origin
-    destination = params.destination
-    departure_date = params.date
-    cabin = params.cabin.value
-    travelers = params.travelers
-    return_date = params.return_date
+interface Verdict {
+	verdict: string;
+	winner: VerdictWinner | null;
+	pay_cash: boolean;
+	confidence: "high" | "medium" | "low";
+	booking_note: string;
+	booking_link: BookingLink;
+}
 
-    # --- Auth: identify the user for search persistence ---
-    auth_header = request.headers.get("authorization")
-    if not auth_header:
-        raise HTTPException(status_code=401, detail="Missing authorization header")
-    token = auth_header.replace("Bearer ", "").strip()
-    if not token:
-        raise HTTPException(status_code=401, detail="Missing bearer token")
+interface SearchResult {
+	origin: string;
+	destination: string;
+	date: string;
+	cabin: string;
+	travelers: number;
+	is_roundtrip: boolean;
+	return_date: string | null;
+	cash_price: number | null;
+	price_level: string | null;
+	typical_price_range: [number, number] | null;
+	flights: CashFlight[];
+	award_options: any[];
+	return_award_options: any[];
+	verdict: Verdict;
+}
 
-    supabase = get_server_supabase()
-    try:
-        user_resp = supabase.auth.get_user(token)
-    except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Invalid auth token: {str(e)}")
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
 
-    user = None
-    if isinstance(user_resp, dict):
-        user = user_resp.get("user") or (user_resp.get("data") or {}).get("user")
-    else:
-        user = getattr(user_resp, "user", None)
+function formatDuration(mins: number) {
+	const h = Math.floor(mins / 60);
+	const m = mins % 60;
+	return `${h}h ${m}m`;
+}
 
-    user_id = None
-    if isinstance(user, dict):
-        user_id = user.get("id")
-    else:
-        user_id = getattr(user, "id", None) if user is not None else None
+// ─── CASH FLIGHT CARD ─────────────────────────────────────────────────────────
 
-    if not user_id:
-        raise HTTPException(status_code=401, detail="Invalid or expired session")
+function FlightCard({ flight }: { flight: CashFlight }) {
+	const [expanded, setExpanded] = useState(false);
 
-    # --- L1 memory + L2 Supabase cache lookup ---
-    cache_params: CacheSearchParams = {
-        "origin": origin,
-        "destination": destination,
-        "departure_date": departure_date,
-        "return_date": return_date,
-        "passengers": travelers,
-        "cabin": cabin,
-    }
+	return (
+		<div className="bg-gray-800/60 rounded-lg overflow-hidden border border-white/5">
+			<button
+				onClick={() => setExpanded(!expanded)}
+				className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-gray-700/50 transition-colors"
+			>
+				{flight.legs[0]?.airline_logo && (
+					<img
+						src={flight.legs[0].airline_logo}
+						alt={flight.legs[0].airline}
+						className="w-7 h-7 object-contain flex-shrink-0"
+					/>
+				)}
+				<div className="flex-1 min-w-0">
+					<div className="flex items-center gap-1.5">
+						<span className="text-white font-semibold text-sm">
+							{flight.departure_iata}
+						</span>
+						<ArrowRight className="w-3 h-3 text-gray-600" />
+						<span className="text-white font-semibold text-sm">
+							{flight.arrival_iata}
+						</span>
+						<span className="text-gray-500 text-xs ml-1">
+							{flight.departure_time?.slice(11, 16)} –{" "}
+							{flight.arrival_time?.slice(11, 16)}
+						</span>
+					</div>
+					<div className="flex items-center gap-1.5 mt-0.5">
+						<span className="text-gray-500 text-xs">
+							{formatDuration(flight.total_duration)}
+						</span>
+						<span className="text-gray-700">·</span>
+						<span className="text-gray-500 text-xs">
+							{flight.stops === 0
+								? "Nonstop"
+								: `${flight.stops} stop${flight.stops > 1 ? "s" : ""}`}
+						</span>
+						<span className="text-gray-700">·</span>
+						<span className="text-gray-500 text-xs">
+							{flight.legs[0]?.airline}
+						</span>
+					</div>
+				</div>
+				<div className="text-right flex-shrink-0">
+					<p className="text-white font-bold">${flight.price}</p>
+					<p className="text-gray-600 text-xs">
+						{expanded ? "▲ less" : "▼ details"}
+					</p>
+				</div>
+			</button>
+			{expanded && (
+				<div className="border-t border-gray-700/50 px-4 pb-4 pt-3 space-y-3">
+					{flight.legs.map((leg, i) => (
+						<div key={i} className="flex gap-3">
+							<div className="flex flex-col items-center">
+								<div className="w-2 h-2 rounded-full bg-emerald-500 mt-1" />
+								{i < flight.legs.length - 1 && (
+									<div className="w-px flex-1 bg-gray-700 my-1" />
+								)}
+							</div>
+							<div className="flex-1 pb-2">
+								<div className="flex items-center justify-between">
+									<div>
+										<p className="text-white text-sm font-medium">
+											{leg.departure_iata} → {leg.arrival_iata}
+										</p>
+										<p className="text-gray-500 text-xs">
+											{leg.departure_time?.slice(11, 16)} –{" "}
+											{leg.arrival_time?.slice(11, 16)}
+											{" · "}
+											{formatDuration(leg.duration)}
+										</p>
+									</div>
+									<div className="text-right">
+										<p className="text-gray-400 text-xs font-mono">
+											{leg.flight_number}
+										</p>
+										<p className="text-gray-600 text-xs">{leg.airplane}</p>
+									</div>
+								</div>
+							</div>
+						</div>
+					))}
+				</div>
+			)}
+		</div>
+	);
+}
 
-    memory_cache = get_search_memory_cache()
-    cached_payload = None
-    cached_verdict_details: dict | None = None
-    cached_verdict_row = None
+// ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 
-    try:
-        cached_payload = memory_cache.get(cache_params)
-    except Exception:
-        cached_payload = None
+export default function HomePage() {
+	const router = useRouter();
+	const { searchCount, setSearchCount, session } = useAuth();
+	const { userPrograms, hasWallet } = useWallet();
+	const { searchFill } = useSearchFill();
+	useABTest();
+	const [isChatOpen, setIsChatOpen] = useState(false);
+	const [chatMessages, setChatMessages] = useState<Message[]>([]);
+	const handleFillSearch = (data: any) => {
+		if (data.origin) setOrigin(data.origin);
+		if (data.destination) setDestination(data.destination);
+		if (data.cabin) setCabin(data.cabin);
 
-    if cached_payload:
-        cached_verdict_row = cached_payload.get("verdict") or None
-    else:
-        # Supabase-backed verdict reuse
-        try:
-            db_hit = find_search_verdict_in_db(supabase, cache_params)
-            if db_hit:
-                cached_verdict_row = db_hit.verdict
-                # Refresh L1 so next request is fast
-                try:
-                    memory_cache.set(
-                        cache_params,
-                        search_id=str(db_hit.search["id"]),
-                        verdict=db_hit.verdict,
-                    )
-                except Exception:
-                    pass
-        except Exception:
-            cached_verdict_row = None
+		if (data.travelers) setTravelers(data.travelers); // already number
 
-    if cached_verdict_row and cached_verdict_row.get("details"):
-        cached_verdict_details = cached_verdict_row["details"]
+		if (data.date) setDepartDate(data.date); // ✅ FIX
 
-    # --- Parallel fetch: biggest latency win ---
-    async def outbound_task():
-        raw = await search_award_availability(origin, destination, departure_date, cabin)
-        return [a for a in raw if a.get("remaining_seats", 0) >= travelers]
+		if (data.return_date) {
+			setReturnDate(data.return_date);
+			setTripType("roundtrip"); // optional but important
+		}
+	};
 
-    async def return_task():
-        if not return_date:
-            return []
-        raw = await search_award_availability(destination, origin, return_date, cabin)
-        return [a for a in raw if a.get("remaining_seats", 0) >= travelers]
+	const handleTriggerSearch = () => {
+		runSearch();
+	};
 
-    outbound_awards, cash_data, return_awards = await asyncio.gather(
-        outbound_task(),
-        get_cash_price(origin, destination, departure_date, cabin, travelers, return_date),
-        return_task(),
-    )
+	const [origin, setOrigin] = useState("");
+	const [destination, setDestination] = useState("");
+	const [departDate, setDepartDate] = useState("");
+	const [returnDate, setReturnDate] = useState("");
+	const [travelers, setTravelers] = useState(1);
+	const [cabin, setCabin] = useState("economy");
+	const [tripType, setTripType] = useState("roundtrip");
+	const [searching, setSearching] = useState(false);
+	const [searchError, setSearchError] = useState("");
+	const [results, setResults] = useState<SearchResult | null>(null);
 
-    cash_price = cash_data.get("cash_price")
+	useEffect(() => {
+		if (!searchFill) return;
+		if (searchFill.origin) setOrigin(searchFill.origin);
+		if (searchFill.destination) setDestination(searchFill.destination);
+		if (searchFill.cabin) setCabin(searchFill.cabin);
+		if (searchFill.travelers) setTravelers(Number(searchFill.travelers));
+	}, [searchFill]);
 
-    # --- Build outbound award options with CPP ---
-    results = []
-    for award in outbound_awards:
-        points = award.get("points")
-        if not points:
-            continue
-        # FIX: seats.aero returns taxes in cents — convert to dollars
-        taxes = (award.get("taxes") or 0) / 100
-        cpp = None
-        if cash_price is not None and points:
-            cpp = calculate_cpp(cash_price, taxes, points)
-        results.append({
-            "program": award.get("program"),
-            "points": points,
-            "cash_price": cash_price,
-            "taxes": taxes,
-            "cpp": cpp,
-            "remaining_seats": award.get("remaining_seats"),
-            "direct": award.get("direct", False),
-            "airlines": award.get("airlines", ""),
-            "trip_ids": award.get("trip_ids", []),
-            "trips": award.get("trips", []),
-            "source": award.get("source"),
-        })
-    results.sort(key=lambda x: x["cpp"] or 0, reverse=True)
-    award_options = results
+	const runSearch = async () => {
+		if (!origin || !destination || !departDate) {
+			setSearchError("Please fill in origin, destination, and departure date.");
+			return;
+		}
+		if (tripType === "roundtrip" && !returnDate) {
+			setSearchError("Please select a return date for round trips.");
+			return;
+		}
+		setSearchError("");
+		setResults(null);
+		setSearching(true);
+		setSearchCount(searchCount + 1);
+		try {
+			const params = new URLSearchParams({
+				origin,
+				destination,
+				date: departDate,
+				cabin,
+				travelers: travelers.toString(),
+			});
+			if (tripType === "roundtrip" && returnDate) {
+				params.append("return_date", returnDate);
+			}
+			const API_URL = process.env.NEXT_PUBLIC_API_URL;
+			if (!session?.access_token) {
+        throw new Error("You must be logged in to run searches.");
+      }
 
-    # --- Build return award options with CPP ---
-    return_results = []
-    for award in return_awards:
-        points = award.get("points")
-        if not points:
-            continue
-        # FIX: same cents → dollars conversion for return leg
-        taxes = (award.get("taxes") or 0) / 100
-        cpp = None
-        if cash_price is not None and points:
-            cpp = calculate_cpp(cash_price, taxes, points)
-        return_results.append({
-            "program": award.get("program"),
-            "points": points,
-            "cash_price": cash_price,
-            "taxes": taxes,
-            "cpp": cpp,
-            "remaining_seats": award.get("remaining_seats"),
-            "direct": award.get("direct", False),
-            "airlines": award.get("airlines", ""),
-            "trip_ids": award.get("trip_ids", []),
-            "trips": award.get("trips", []),
-            "source": award.get("source"),
-        })
-    return_results.sort(key=lambda x: x["cpp"] or 0, reverse=True)
-    return_award_options = return_results
+      const res = await fetch(`${API_URL}/api/search?${params.toString()}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+			if (!res.ok) {
+				const errData = await res.json().catch(() => null);
+				const detail = errData?.detail;
+				const message = Array.isArray(detail)
+					? (detail[0]?.msg?.replace("Value error, ", "") ??
+						`Server error: ${res.status}`)
+					: (detail ?? `Server error: ${res.status}`);
+				throw new Error(message);
+			}
+			setResults(await res.json());
+		} catch (err: any) {
+			setSearchError(err.message || "Something went wrong. Try again.");
+		} finally {
+			setSearching(false);
+		}
+	};
 
-    # --- AI Verdict with cache (Gemini Flash 2.0) ---
-    # TODO: replace None with user's actual programs once wallet auth is wired into search
-    verdict_details: dict
-    if cached_verdict_details is not None:
-        verdict_details = cached_verdict_details
-    else:
-        verdict_details = await generate_verdict(
-            origin=origin,
-            destination=destination,
-            date=departure_date,
-            cabin=cabin,
-            travelers=travelers,
-            is_roundtrip=return_date is not None,
-            return_date=return_date,
-            cash_price=cash_price,
-            award_options=award_options,
-            return_award_options=return_award_options,
-            user_programs=None,
-        )
+	const numTravelers = results?.travelers ?? travelers;
 
-    # --- Persist search + verdict into Supabase ---
-    try:
-        raw_query = str(getattr(request.url, "query", "")).strip() or None
-        search_row = {
-            "user_id": user_id,
-            "origin": origin,
-            "destination": destination,
-            "departure_date": departure_date,
-            "return_date": return_date,
-            "passengers": travelers,
-            "cabin": cabin,
-            "raw_query": raw_query,
-            "trip_type": "roundtrip" if return_date else "oneway",
-        }
-        search_id = insert_one_return_id(supabase, "searches", search_row)
+	return (
+		<div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-cyan-950 relative">
+			<TropicalBackground />
 
-        winner = (verdict_details.get("winner") or {}) if isinstance(verdict_details, dict) else {}
-        recommendation = "wait"
-        if isinstance(verdict_details, dict):
-            if verdict_details.get("pay_cash") is True:
-                recommendation = "pay_cash"
-            elif winner.get("program"):
-                recommendation = "use_points"
+			<div className="relative z-10">
+				<main className="max-w-5xl mx-auto px-6 py-6">
+					{/* HEADER */}
+					<div className="mb-6">
+						<h1 className="text-2xl font-bold text-white mb-1">
+							Let's optimize your wallet.
+						</h1>
+						<p className="text-gray-400 text-sm">
+							Search a route or ask Zoe — we'll find the best decision for your
+							rewards.
+						</p>
+					</div>
 
-        verdict_row = {
-            "search_id": search_id,
-            "recommendation": recommendation,
-            "summary": verdict_details.get("verdict") if isinstance(verdict_details, dict) else None,
-            "details": verdict_details if isinstance(verdict_details, dict) else None,
-            "calculated_cpp": None,
-            "cash_price_used": cash_price,
-            "points_cost_used": winner.get("points") if isinstance(winner, dict) else None,
-        }
-        insert_one(supabase, "verdicts", verdict_row)
+					{/* TRIP TYPE TOGGLE */}
+					<div className="flex gap-2 mb-3">
+						{(["roundtrip", "oneway"] as const).map((type) => (
+							<button
+								key={type}
+								onClick={() => {
+									setTripType(type);
+									if (type === "oneway") setReturnDate("");
+								}}
+								className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+									tripType === type
+										? "bg-emerald-500 text-white"
+										: "bg-gray-800 text-gray-400 hover:bg-gray-700"
+								}`}
+							>
+								{type === "roundtrip" ? "Round Trip" : "One Way"}
+							</button>
+						))}
+					</div>
 
-        # Refresh L1 cache for faster future searches
-        try:
-            memory_cache.set(cache_params, search_id=search_id, verdict=verdict_row)
-        except Exception:
-            pass
+					{/* SEARCH ROW 1 — Airport autocomplete inputs */}
+					<div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+						<AirportSearch
+							label="FROM"
+							value={origin}
+							onChange={setOrigin}
+							placeholder="City or airport"
+						/>
+						<AirportSearch
+							label="TO"
+							value={destination}
+							onChange={setDestination}
+							placeholder="City or airport"
+						/>
+						<div>
+							<label className="block text-emerald-400 text-xs mb-1 flex items-center gap-1">
+								<Calendar className="w-3 h-3" /> DEPART
+							</label>
+							<input
+								type="date"
+								min={new Date().toISOString().split("T")[0]}
+								value={departDate}
+								onChange={(e) => setDepartDate(e.target.value)}
+								className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm [color-scheme:dark]"
+							/>
+						</div>
+					</div>
 
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Supabase insert error (searches/verdicts): {getattr(e, 'details', str(e))}",
-        )
+					{/* SEARCH ROW 2 */}
+					<div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+						{tripType === "roundtrip" ? (
+							<div>
+								<label className="block text-emerald-400 text-xs mb-1 flex items-center gap-1">
+									<Calendar className="w-3 h-3" /> RETURN
+								</label>
+								<input
+									type="date"
+									min={departDate || new Date().toISOString().split("T")[0]}
+									value={returnDate}
+									onChange={(e) => setReturnDate(e.target.value)}
+									className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm [color-scheme:dark]"
+								/>
+							</div>
+						) : (
+							<div />
+						)}
+						<div>
+							<label className="block text-emerald-400 text-xs mb-1 flex items-center gap-1">
+								<User className="w-3 h-3" /> TRAVELERS
+							</label>
+							<select
+								value={travelers}
+								onChange={(e) => setTravelers(Number(e.target.value))}
+								className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
+							>
+								{[1, 2, 3, 4, 5, 6].map((n) => (
+									<option key={n} value={n}>
+										{n} Traveler{n > 1 ? "s" : ""}
+									</option>
+								))}
+							</select>
+						</div>
+						<div>
+							<label className="block text-emerald-400 text-xs mb-1 flex items-center gap-1">
+								<Plane className="w-3 h-3" /> CABIN
+							</label>
+							<select
+								value={cabin}
+								onChange={(e) => setCabin(e.target.value)}
+								className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
+							>
+								<option value="economy">Economy</option>
+								<option value="premium">Premium</option>
+								<option value="business">Business</option>
+								<option value="first">First</option>
+							</select>
+						</div>
+					</div>
 
-    return {
-        "origin": origin,
-        "destination": destination,
-        "date": departure_date,
-        "depart_date": departure_date,  # alias kept for frontend compatibility
-        "return_date": return_date,
-        "cabin": cabin,
-        "travelers": travelers,
-        "is_roundtrip": return_date is not None,
-        "cash_price": cash_price,
-        "price_level": cash_data.get("price_level"),
-        "typical_price_range": cash_data.get("typical_price_range"),
-        "flights": cash_data.get("flights", []),
-        "award_options": award_options,
-        "return_award_options": return_award_options,
-        "verdict": verdict_details,
-    }
+					{/* SEARCH BUTTON */}
+					<button
+						onClick={runSearch}
+						disabled={searching}
+						className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-700 text-white font-semibold py-3 rounded-lg flex items-center justify-center gap-2 mb-4 transition-colors"
+					>
+						{searching ? (
+							<>
+								<Loader2 className="w-5 h-5 animate-spin" /> Searching...
+							</>
+						) : (
+							<>
+								<Search className="w-5 h-5" /> Search Flights
+							</>
+						)}
+					</button>
+
+					{searchError && (
+						<p className="text-red-400 text-sm text-center mb-4">
+							{searchError}
+						</p>
+					)}
+
+					{/* ── RESULTS ───────────────────────────────────────────────── */}
+					{(searching || results) && (
+						<div className="mt-2 space-y-4">
+							{searching ? (
+								<VerdictCardSkeleton
+									origin={origin}
+									destination={destination}
+								/>
+							) : results?.verdict ? (
+								<VerdictCard
+									verdict={results.verdict}
+									cashPrice={results.cash_price}
+									origin={results.origin}
+									destination={results.destination}
+									departDate={results.date}
+									returnDate={results.return_date}
+									cabin={results.cabin}
+									travelers={numTravelers}
+									isRoundtrip={results.is_roundtrip}
+									awardOptions={results.award_options}
+									returnAwardOptions={results.return_award_options}
+									flights={results.flights}
+								/>
+							) : !hasWallet ? (
+								<div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
+									<p className="text-amber-400 text-sm font-semibold mb-1">
+										No wallet set up yet
+									</p>
+									<p className="text-gray-400 text-xs mb-2">
+										Add your loyalty programs to get a personalized verdict.
+									</p>
+									<button
+										onClick={() => router.push("/wallet-setup")}
+										className="text-xs bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg"
+									>
+										Set up wallet →
+									</button>
+								</div>
+							) : null}
+						</div>
+					)}
+
+					<ZoeChat
+						isOpen={isChatOpen}
+						setIsOpen={setIsChatOpen}
+						onFillSearch={handleFillSearch}
+						onTriggerSearch={handleTriggerSearch}
+						currentPage="home"
+						messages={chatMessages}
+						setMessages={setChatMessages}
+						isAuthenticated={true}
+					/>
+				</main>
+			</div>
+		</div>
+	);
+}
