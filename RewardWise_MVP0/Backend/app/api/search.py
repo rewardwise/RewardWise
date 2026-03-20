@@ -48,7 +48,7 @@ def get_search_params(
 @router.post("/search")
 @limiter.limit("10/minute")  # RW-047: rate limit
 async def search(
-    request: Request,                                # required by SlowAPI
+    request: Request,  # required by SlowAPI
     params: SearchParams = Depends(get_search_params),
 ):
     origin = params.origin
@@ -58,7 +58,7 @@ async def search(
     travelers = params.travelers
     return_date = params.return_date
 
-    # Identify the authenticated user so we can store 'searches.user_id'
+    # --- Auth: identify the user for search persistence ---
     auth_header = request.headers.get("authorization")
     if not auth_header:
         raise HTTPException(status_code=401, detail="Missing authorization header")
@@ -87,7 +87,7 @@ async def search(
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
 
-    #cache lookup L1 memory + L2 Supabase
+    # --- L1 memory + L2 Supabase cache lookup ---
     cache_params: CacheSearchParams = {
         "origin": origin,
         "destination": destination,
@@ -110,12 +110,12 @@ async def search(
     if cached_payload:
         cached_verdict_row = cached_payload.get("verdict") or None
     else:
-        # supabase backed verdict reuse
+        # Supabase-backed verdict reuse
         try:
             db_hit = find_search_verdict_in_db(supabase, cache_params)
             if db_hit:
                 cached_verdict_row = db_hit.verdict
-                #refreshd L1 so next request is fast
+                # Refresh L1 so next request is fast
                 try:
                     memory_cache.set(
                         cache_params,
@@ -130,7 +130,7 @@ async def search(
     if cached_verdict_row and cached_verdict_row.get("details"):
         cached_verdict_details = cached_verdict_row["details"]
 
-    #Fetched all external data in parallel biggest latency win
+    # --- Parallel fetch: biggest latency win ---
     async def outbound_task():
         raw = await search_award_availability(origin, destination, departure_date, cabin)
         return [a for a in raw if a.get("remaining_seats", 0) >= travelers]
@@ -146,23 +146,20 @@ async def search(
         get_cash_price(origin, destination, departure_date, cabin, travelers, return_date),
         return_task(),
     )
+
     cash_price = cash_data.get("cash_price")
 
-    # --- Build award options with CPP ---
+    # --- Build outbound award options with CPP ---
     results = []
-
     for award in outbound_awards:
         points = award.get("points")
         if not points:
             continue
-
-        taxes = award.get("taxes", 0)
-
-        # Only compute CPP if we have a valid cash price
+        # FIX: seats.aero returns taxes in cents — convert to dollars
+        taxes = (award.get("taxes") or 0) / 100
         cpp = None
         if cash_price is not None and points:
             cpp = calculate_cpp(cash_price, taxes, points)
-
         results.append({
             "program": award.get("program"),
             "points": points,
@@ -176,23 +173,20 @@ async def search(
             "trips": award.get("trips", []),
             "source": award.get("source"),
         })
-
     results.sort(key=lambda x: x["cpp"] or 0, reverse=True)
     award_options = results
 
+    # --- Build return award options with CPP ---
     return_results = []
     for award in return_awards:
         points = award.get("points")
         if not points:
             continue
-
-        taxes = award.get("taxes", 0)
-
-        # Only compute CPP if we have a valid cash price
+        # FIX: same cents → dollars conversion for return leg
+        taxes = (award.get("taxes") or 0) / 100
         cpp = None
         if cash_price is not None and points:
             cpp = calculate_cpp(cash_price, taxes, points)
-
         return_results.append({
             "program": award.get("program"),
             "points": points,
@@ -206,14 +200,11 @@ async def search(
             "trips": award.get("trips", []),
             "source": award.get("source"),
         })
-
     return_results.sort(key=lambda x: x["cpp"] or 0, reverse=True)
     return_award_options = return_results
 
-   
-    #  # --- AI Verdict with cache (Gemini Flash 2.0) ---
+    # --- AI Verdict with cache (Gemini Flash 2.0) ---
     # TODO: replace None with user's actual programs once wallet auth is wired into search
-    # e.g. user_programs = await get_user_programs(request)
     verdict_details: dict
     if cached_verdict_details is not None:
         verdict_details = cached_verdict_details
@@ -232,10 +223,9 @@ async def search(
             user_programs=None,
         )
 
-    #Persist search request and verdict into Supabase
+    # --- Persist search + verdict into Supabase ---
     try:
         raw_query = str(getattr(request.url, "query", "")).strip() or None
-
         search_row = {
             "user_id": user_id,
             "origin": origin,
@@ -247,7 +237,6 @@ async def search(
             "raw_query": raw_query,
             "trip_type": "roundtrip" if return_date else "oneway",
         }
-
         search_id = insert_one_return_id(supabase, "searches", search_row)
 
         winner = (verdict_details.get("winner") or {}) if isinstance(verdict_details, dict) else {}
@@ -267,29 +256,25 @@ async def search(
             "cash_price_used": cash_price,
             "points_cost_used": winner.get("points") if isinstance(winner, dict) else None,
         }
-
         insert_one(supabase, "verdicts", verdict_row)
 
-        #refresh L1 cache for faster future searches
+        # Refresh L1 cache for faster future searches
         try:
             memory_cache.set(cache_params, search_id=search_id, verdict=verdict_row)
-        except Exception as e:
+        except Exception:
             pass
 
     except Exception as e:
-        import traceback
-
         raise HTTPException(
             status_code=500,
             detail=f"Supabase insert error (searches/verdicts): {getattr(e, 'details', str(e))}",
         )
 
-   
     return {
         "origin": origin,
         "destination": destination,
-        "date": departure_date,  
-        "depart_date": departure_date,
+        "date": departure_date,
+        "depart_date": departure_date,  # alias kept for frontend compatibility
         "return_date": return_date,
         "cabin": cabin,
         "travelers": travelers,
