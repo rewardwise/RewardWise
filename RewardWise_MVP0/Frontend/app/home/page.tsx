@@ -8,9 +8,11 @@ import { useAuth } from "@/context/AuthProvider";
 import { useWallet } from "@/context/WalletContext";
 import { useSearchFill } from "@/context/SearchFillContext";
 import { useABTest } from "@/context/ABTestContext";
-import VerdictCard from "@/components/VerdictCard";
+import VerdictCard, { VerdictCardSkeleton } from "@/components/VerdictCard";
+import AirportSearch from "@/components/AirportSearch";
+import ZoeChat from "@/components/zoe/ZoeChat";
+import type { Message } from "@/components/zoe/ZoeChat";
 import {
-	MapPin,
 	Calendar,
 	Plane,
 	User,
@@ -106,6 +108,7 @@ function formatDuration(mins: number) {
 
 function FlightCard({ flight }: { flight: CashFlight }) {
 	const [expanded, setExpanded] = useState(false);
+
 	return (
 		<div className="bg-gray-800/60 rounded-lg overflow-hidden border border-white/5">
 			<button
@@ -195,192 +198,34 @@ function FlightCard({ flight }: { flight: CashFlight }) {
 	);
 }
 
-// ─── DEBUG PANEL ──────────────────────────────────────────────────────────────
-// 🧪 Temporary — shows raw cash vs points data from API to verify verdict accuracy.
-// Remove before production.
-
-function DebugAwardRow({
-	option,
-	numTravelers,
-}: {
-	option: any;
-	numTravelers: number;
-}) {
-	const pts = option.points * numTravelers;
-	return (
-		<div className="bg-gray-800/60 rounded-lg border border-white/5 px-4 py-3 flex items-center gap-3">
-			{/* Program initial avatar */}
-			<div className="w-7 h-7 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center flex-shrink-0">
-				<span className="text-indigo-300 text-[10px] font-bold uppercase">
-					{option.program?.slice(0, 2)}
-				</span>
-			</div>
-			<div className="flex-1 min-w-0">
-				<div className="flex items-center gap-1.5">
-					<span className="text-white font-semibold text-sm capitalize">
-						{option.program}
-					</span>
-				</div>
-				<div className="flex items-center gap-1.5 mt-0.5">
-					<span className="text-gray-500 text-xs">
-						{option.direct ? "Nonstop" : "Connecting"}
-					</span>
-					{option.remaining_seats > 0 && (
-						<>
-							<span className="text-gray-700">·</span>
-							<span
-								className={`text-xs ${option.remaining_seats <= 3 ? "text-amber-400" : "text-gray-500"}`}
-							>
-								{option.remaining_seats} seat
-								{option.remaining_seats !== 1 ? "s" : ""} left
-							</span>
-						</>
-					)}
-					{option.airlines && option.airlines !== option.program && (
-						<>
-							<span className="text-gray-700">·</span>
-							<span className="text-gray-500 text-xs">{option.airlines}</span>
-						</>
-					)}
-				</div>
-			</div>
-			<div className="text-right flex-shrink-0">
-				<p className="text-emerald-400 font-bold text-sm">
-					{pts.toLocaleString()} pts
-				</p>
-				{option.taxes > 0 && (
-					<p className="text-gray-500 text-xs">
-						+${(option.taxes / 100).toFixed(2)} fees
-					</p>
-				)}
-			</div>
-		</div>
-	);
-}
-
-function DebugComparisonPanel({
-	results,
-	numTravelers,
-}: {
-	results: SearchResult;
-	numTravelers: number;
-}) {
-	const isRoundTrip = results.is_roundtrip;
-	const priceLevelColor =
-		results.price_level === "low"
-			? "bg-emerald-500/15 text-emerald-400"
-			: results.price_level === "high"
-				? "bg-red-500/15 text-red-400"
-				: "bg-gray-700/60 text-gray-400";
-	const priceLevelLabel =
-		results.price_level === "low"
-			? "🟢 Low"
-			: results.price_level === "high"
-				? "🔴 High"
-				: "🟡 Typical";
-
-	return (
-		<div className="rounded-xl overflow-hidden border border-white/5 bg-gray-900/40">
-			{/* Header */}
-			<div className="px-4 py-2.5 flex items-center justify-between border-b border-white/5 bg-gray-800/40">
-				<span className="text-gray-400 text-xs font-semibold">
-					🧪 Debug — Raw API Data
-				</span>
-				<span className="text-gray-600 text-[10px]">remove before launch</span>
-			</div>
-
-			{/* Two columns */}
-			<div className="grid grid-cols-2 divide-x divide-white/5">
-				{/* LEFT — Cash (SerpAPI) */}
-				<div className="p-4">
-					<div className="flex items-center justify-between mb-3">
-						<h2 className="text-gray-200 text-sm font-semibold">Cash Prices</h2>
-						{results.price_level && (
-							<span
-								className={`text-xs px-2.5 py-1 rounded-full font-medium ${priceLevelColor}`}
-							>
-								{priceLevelLabel}
-							</span>
-						)}
-					</div>
-					{results.flights && results.flights.length > 0 ? (
-						<div className="space-y-2">
-							{results.flights.map((flight, i) => (
-								<FlightCard key={i} flight={flight} />
-							))}
-						</div>
-					) : results.cash_price ? (
-						<div className="bg-gray-800/60 rounded-lg border border-white/5 px-4 py-3 flex items-center justify-between">
-							<span className="text-gray-400 text-sm">Best cash price</span>
-							<span className="text-white font-bold">
-								${results.cash_price}
-							</span>
-						</div>
-					) : (
-						<p className="text-gray-600 text-sm">No cash data returned</p>
-					)}
-				</div>
-
-				{/* RIGHT — Points (seats.aero) */}
-				<div className="p-4">
-					<div className="flex items-center justify-between mb-3">
-						<h2 className="text-gray-200 text-sm font-semibold">
-							Award Options {isRoundTrip ? "(Outbound)" : ""}
-						</h2>
-						<span className="text-xs bg-gray-700/60 text-gray-400 px-2 py-0.5 rounded-full">
-							{results.award_options?.length ?? 0} programs
-						</span>
-					</div>
-					{results.award_options?.length > 0 ? (
-						<div className="space-y-2">
-							{results.award_options.map((opt, i) => (
-								<DebugAwardRow
-									key={i}
-									option={opt}
-									numTravelers={numTravelers}
-								/>
-							))}
-						</div>
-					) : (
-						<p className="text-gray-600 text-sm">No award availability</p>
-					)}
-
-					{/* Return leg if roundtrip */}
-					{isRoundTrip && results.return_award_options?.length > 0 && (
-						<div className="mt-4">
-							<div className="flex items-center justify-between mb-3">
-								<h2 className="text-gray-200 text-sm font-semibold">
-									Award Options (Return)
-								</h2>
-								<span className="text-xs bg-gray-700/60 text-gray-400 px-2 py-0.5 rounded-full">
-									{results.return_award_options.length} programs
-								</span>
-							</div>
-							<div className="space-y-2">
-								{results.return_award_options.map((opt, i) => (
-									<DebugAwardRow
-										key={i}
-										option={opt}
-										numTravelers={numTravelers}
-									/>
-								))}
-							</div>
-						</div>
-					)}
-				</div>
-			</div>
-		</div>
-	);
-}
-
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 
 export default function HomePage() {
 	const router = useRouter();
-	const { searchCount, setSearchCount } = useAuth();
+	const { searchCount, setSearchCount, session } = useAuth();
 	const { userPrograms, hasWallet } = useWallet();
 	const { searchFill } = useSearchFill();
 	useABTest();
+	const [isChatOpen, setIsChatOpen] = useState(false);
+	const [chatMessages, setChatMessages] = useState<Message[]>([]);
+	const handleFillSearch = (data: any) => {
+		if (data.origin) setOrigin(data.origin);
+		if (data.destination) setDestination(data.destination);
+		if (data.cabin) setCabin(data.cabin);
+
+		if (data.travelers) setTravelers(data.travelers); // already number
+
+		if (data.date) setDepartDate(data.date); // ✅ FIX
+
+		if (data.return_date) {
+			setReturnDate(data.return_date);
+			setTripType("roundtrip"); // optional but important
+		}
+	};
+
+	const handleTriggerSearch = () => {
+		runSearch();
+	};
 
 	const [origin, setOrigin] = useState("");
 	const [destination, setDestination] = useState("");
@@ -426,10 +271,16 @@ export default function HomePage() {
 				params.append("return_date", returnDate);
 			}
 			const API_URL = process.env.NEXT_PUBLIC_API_URL;
+			if (!session?.access_token) {
+        throw new Error("You must be logged in to run searches.");
+      }
 
-			const res = await fetch(`${API_URL}/api/search?${params.toString()}`, {
-				method: "POST",
-			});
+      const res = await fetch(`${API_URL}/api/search?${params.toString()}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
 			if (!res.ok) {
 				const errData = await res.json().catch(() => null);
 				const detail = errData?.detail;
@@ -486,32 +337,20 @@ export default function HomePage() {
 						))}
 					</div>
 
-					{/* SEARCH ROW 1 */}
+					{/* SEARCH ROW 1 — Airport autocomplete inputs */}
 					<div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
-						<div>
-							<label className="block text-emerald-400 text-xs mb-1 flex items-center gap-1">
-								<MapPin className="w-3 h-3" /> FROM
-							</label>
-							<input
-								value={origin}
-								onChange={(e) => setOrigin(e.target.value.toUpperCase())}
-								placeholder="e.g. EWR"
-								maxLength={3}
-								className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm uppercase"
-							/>
-						</div>
-						<div>
-							<label className="block text-emerald-400 text-xs mb-1 flex items-center gap-1">
-								<MapPin className="w-3 h-3" /> TO
-							</label>
-							<input
-								value={destination}
-								onChange={(e) => setDestination(e.target.value.toUpperCase())}
-								placeholder="e.g. LAX"
-								maxLength={3}
-								className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm uppercase"
-							/>
-						</div>
+						<AirportSearch
+							label="FROM"
+							value={origin}
+							onChange={setOrigin}
+							placeholder="City or airport"
+						/>
+						<AirportSearch
+							label="TO"
+							value={destination}
+							onChange={setDestination}
+							placeholder="City or airport"
+						/>
 						<div>
 							<label className="block text-emerald-400 text-xs mb-1 flex items-center gap-1">
 								<Calendar className="w-3 h-3" /> DEPART
@@ -601,10 +440,14 @@ export default function HomePage() {
 					)}
 
 					{/* ── RESULTS ───────────────────────────────────────────────── */}
-					{results && (
+					{(searching || results) && (
 						<div className="mt-2 space-y-4">
-							{/* VERDICT CARD */}
-							{results.verdict ? (
+							{searching ? (
+								<VerdictCardSkeleton
+									origin={origin}
+									destination={destination}
+								/>
+							) : results?.verdict ? (
 								<VerdictCard
 									verdict={results.verdict}
 									cashPrice={results.cash_price}
@@ -635,11 +478,19 @@ export default function HomePage() {
 									</button>
 								</div>
 							) : null}
-
-							{/* 🧪 DEBUG PANEL
-              <DebugComparisonPanel results={results} numTravelers={numTravelers} /> */}
 						</div>
 					)}
+
+					<ZoeChat
+						isOpen={isChatOpen}
+						setIsOpen={setIsChatOpen}
+						onFillSearch={handleFillSearch}
+						onTriggerSearch={handleTriggerSearch}
+						currentPage="home"
+						messages={chatMessages}
+						setMessages={setChatMessages}
+						isAuthenticated={true}
+					/>
 				</main>
 			</div>
 		</div>

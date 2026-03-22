@@ -18,6 +18,7 @@ import {
 	Star,
 	LogOut,
 } from "lucide-react";
+import TropicalBackground from "@/components/TropicalBackground";
 
 export default function ProfilePage() {
 	const router = useRouter();
@@ -70,9 +71,11 @@ export default function ProfilePage() {
 
 	return (
 		<div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-cyan-950">
-			<main className="max-w-xl mx-auto px-6 py-8">
-				<h1 className="text-3xl font-bold text-white mb-6">Profile</h1>
-
+			<TropicalBackground />
+			<main className="max-w-2xl mx-auto px-6 py-8">
+				<h1 className="text-3xl font-bold text-white mb-6 drop-shadow-lg">
+					Profile
+				</h1>
 				<div className="space-y-4">
 					{/* USER INFO */}
 					<div className="bg-gray-900/90 backdrop-blur rounded-xl p-6">
