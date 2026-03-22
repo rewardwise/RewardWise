@@ -3,6 +3,13 @@ import { createClient } from "@/utils/supabase/server";
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
+
+  // Supabase redirects here with error params when OTP/link is invalid or expired
+  const errorCode = searchParams.get("error_code");
+  if (errorCode === "otp_expired" || errorCode === "access_denied") {
+    return NextResponse.redirect(`${origin}/forgot-password?error=expired`);
+  }
+
   const code = searchParams.get("code");
 
   if (code) {

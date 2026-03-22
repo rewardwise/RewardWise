@@ -2,21 +2,34 @@
 
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Plane, Mail, Loader2, CheckCircle } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import TropicalBackground from "@/components/TropicalBackground";
+
 import { isValidEmailFormat } from "@/utils/emailValidation";
-export default function ForgotPasswordPage() {
+
+function ForgotPasswordForm() {
+
 	const router = useRouter();
+	const searchParams = useSearchParams();
 	const [email, setEmail] = useState("");
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState("");
 	const [sent, setSent] = useState(false);
 
+	useEffect(() => {
+		if (searchParams.get("error") === "expired") {
+			setError(
+				"Your reset link expired or was already used. Please request a new one.",
+			);
+		}
+	}, [searchParams]);
+
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
+		if (loading) return;
 		setError("");
 
 		const cleanEmail = email.trim();
@@ -131,10 +144,31 @@ export default function ForgotPasswordPage() {
 									)}
 								</button>
 							</form>
+
+							<p className="mt-4 text-gray-500 text-xs text-center">
+								Signed up with Google? Your password is managed by Google —{" "}
+								<a
+									href="https://myaccount.google.com/security"
+									target="_blank"
+									rel="noopener noreferrer"
+									className="text-gray-400 underline"
+								>
+									update it there
+								</a>{" "}
+								instead.
+							</p>
 						</>
 					)}
 				</div>
 			</div>
 		</div>
+	);
+}
+
+export default function ForgotPasswordPage() {
+	return (
+		<Suspense fallback={<div>Loading...</div>}>
+			<ForgotPasswordForm />
+		</Suspense>
 	);
 }
