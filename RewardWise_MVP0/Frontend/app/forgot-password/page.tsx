@@ -18,12 +18,15 @@ function ForgotPasswordForm() {
 
 	useEffect(() => {
 		if (searchParams.get("error") === "expired") {
-			setError("Your reset link expired or was already used. Please request a new one.");
+			setError(
+				"Your reset link expired or was already used. Please request a new one.",
+			);
 		}
 	}, [searchParams]);
 
 	const handleSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
+		if (loading) return;
 		setError("");
 
 		if (!email || !/\S+@\S+\.\S+/.test(email)) {
@@ -138,12 +141,18 @@ function ForgotPasswordForm() {
 								</button>
 							</form>
 
-						<p className="mt-4 text-gray-500 text-xs text-center">
-							Signed up with Google? Your password is managed by Google —{" "}
-							<a href="https://myaccount.google.com/security" target="_blank" rel="noopener noreferrer" className="text-gray-400 underline">
-								update it there
-							</a>{" "}instead.
-						</p>
+							<p className="mt-4 text-gray-500 text-xs text-center">
+								Signed up with Google? Your password is managed by Google —{" "}
+								<a
+									href="https://myaccount.google.com/security"
+									target="_blank"
+									rel="noopener noreferrer"
+									className="text-gray-400 underline"
+								>
+									update it there
+								</a>{" "}
+								instead.
+							</p>
 						</>
 					)}
 				</div>
@@ -154,7 +163,7 @@ function ForgotPasswordForm() {
 
 export default function ForgotPasswordPage() {
 	return (
-		<Suspense>
+		<Suspense fallback={<div>Loading...</div>}>
 			<ForgotPasswordForm />
 		</Suspense>
 	);
