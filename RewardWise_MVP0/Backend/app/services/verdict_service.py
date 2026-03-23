@@ -56,6 +56,15 @@ def _build_verdict(
         user_picks = [a for a in award_options if a.get("program", "").lower() in user_lower]
         if user_picks:
             candidates = user_picks
+        else:
+            # Award space exists but none from the user's programs
+            return {
+                "verdict": f"There's award space on this route but none of your programs cover it — just pay the ${cash_price:.0f} cash.",
+                "winner": None,
+                "pay_cash": True,
+                "confidence": "high",
+                "booking_note": "Book directly through Google Flights or the airline's site.",
+            }
 
     if not candidates:
         return {

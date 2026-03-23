@@ -461,6 +461,7 @@ export default function HomePage() {
 									awardOptions={results.award_options}
 									returnAwardOptions={results.return_award_options}
 									flights={results.flights}
+									userPrograms={userPrograms}
 								/>
 							) : !hasWallet ? (
 								<div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
