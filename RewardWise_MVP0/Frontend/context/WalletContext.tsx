@@ -24,22 +24,26 @@ const WalletContext = createContext<WalletContextType | undefined>(undefined);
 
 // Maps seats.aero source strings → friendly program names & card program names
 // This is the bridge between seats.aero "Source" field and our card data
-export const PROGRAM_ALIASES: Record<string, string[]> = {
-  united:       ["United MileagePlus"],
-  aeroplan:     ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
-  delta:        ["Delta SkyMiles"],
-  american:     ["Citi ThankYou Points", "Chase Ultimate Rewards"],
-  avianca:      ["Capital One Miles"],
-  british:      ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
-  virgin:       ["Chase Ultimate Rewards", "Capital One Miles"],
-  singapore:    ["Chase Ultimate Rewards", "Amex Membership Rewards"],
-  cathay:       ["Chase Ultimate Rewards", "Amex Membership Rewards"],
-  flying_blue:  ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
-  emirates:     ["Chase Ultimate Rewards", "Amex Membership Rewards"],
-  turkish:      ["Chase Ultimate Rewards"],
-  qantas:       ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
-  hyatt:        ["World of Hyatt"],
-  marriott:     ["Marriott Bonvoy"],
+const PROGRAM_ALIASES: Record<string, string[]> = {
+    united:         ["United MileagePlus"],
+    delta:          ["Delta SkyMiles"],
+    american:       ["Citi ThankYou Points", "Chase Ultimate Rewards"],
+    aeroplan:       ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
+    virginatlantic: ["Chase Ultimate Rewards", "Capital One Miles"],
+    flyingblue:     ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
+    british:        ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
+    singapore:      ["Chase Ultimate Rewards", "Amex Membership Rewards"],
+    cathay:         ["Chase Ultimate Rewards", "Amex Membership Rewards"],
+    emirates:       ["Chase Ultimate Rewards", "Amex Membership Rewards"],
+    turkish:        ["Chase Ultimate Rewards"],
+    qantas:         ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
+    avianca:        ["Capital One Miles"],
+    lifemiles:      ["Capital One Miles"],
+    etihad:         ["Amex Membership Rewards"],
+    qatar:          ["Amex Membership Rewards"],
+    ana:            ["Amex Membership Rewards"],
+    hyatt:          ["World of Hyatt"],
+    marriott:       ["Marriott Bonvoy"],
 };
 
 export function WalletProvider({ children }: { children: ReactNode }) {

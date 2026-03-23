@@ -118,6 +118,7 @@ interface VerdictCardProps {
   awardOptions?: AwardOption[];
   returnAwardOptions?: AwardOption[];
   flights?: CashFlight[];
+  userPrograms?: string[];
 }
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────────
@@ -464,6 +465,7 @@ export default function VerdictCard({
   awardOptions = [],
   returnAwardOptions = [],
   flights = [],
+  userPrograms = [],
 }: VerdictCardProps) {
   const { addToWatchlist, isWatching } = useAlerts();
   const alreadyWatching = isWatching(origin, destination, departDate);
@@ -497,8 +499,10 @@ export default function VerdictCard({
 
   const googleFlightsUrl = buildGoogleFlightsUrl(origin, destination, departDate, returnDate, cabin);
 
-  const bestOutbound = !pay_cash && winner?.program
-    ? (awardOptions.find((o) => o.program.toLowerCase() === winner.program!.toLowerCase()) ?? awardOptions[0])
+  const bestOutbound = winner?.program
+  ? (awardOptions.find((o) => o.program.toLowerCase() === winner.program!.toLowerCase()) ?? awardOptions[0])
+  : userPrograms.length
+    ? (awardOptions.find((o) => userPrograms.includes(o.program.toLowerCase())) ?? null)
     : awardOptions[0];
 
   const bestReturn = returnAwardOptions[0] ?? null;

@@ -2,7 +2,6 @@ import asyncio
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-
 from app.api.validators import SearchParams, limiter  # RW-047
 from app.cache import find_search_verdict_in_db, get_search_memory_cache
 from app.cache.types import SearchParams as CacheSearchParams
@@ -15,6 +14,39 @@ from app.validators.airport_codes import is_valid_airport_code  # RW-047
 
 router = APIRouter()
 
+# Maps seats.aero source strings → card program names that transfer there.
+# Mirrors WalletContext.tsx PROGRAM_ALIASES on the frontend.
+PROGRAM_ALIASES: dict[str, list[str]] = {
+    # ── Airline programs ──────────────────────────────────────────────
+    "united":           ["United MileagePlus"],
+    "delta":            ["Delta SkyMiles"],
+    "american":         ["Citi ThankYou Points", "Chase Ultimate Rewards"],
+    "alaska":           [],  # no major transferable card programs
+    "jetblue":          [],  # TrueBlue has no major transfer partners in wallet
+    "aeroplan":         ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
+    "virginatlantic":   ["Chase Ultimate Rewards", "Capital One Miles"],
+    "flyingblue":       ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
+    "british":          ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
+    "singapore":        ["Chase Ultimate Rewards", "Amex Membership Rewards"],
+    "cathay":           ["Chase Ultimate Rewards", "Amex Membership Rewards"],
+    "emirates":         ["Chase Ultimate Rewards", "Amex Membership Rewards"],
+    "turkish":          ["Chase Ultimate Rewards"],
+    "qantas":           ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
+    "avianca":          ["Capital One Miles"],
+    "lifemiles":        ["Capital One Miles"],  # same as avianca, different brand name
+    "etihad":           ["Amex Membership Rewards"],
+    "qatar":            ["Amex Membership Rewards"],
+    "saudia":           [],  # no transfer partners from major cards
+    "smiles":           [],  # GOL Smiles — no transfer partners from major cards
+    "azul":             [],  # no transfer partners
+    "korean":           [],  # no transfer partners from major cards
+    "ana":              ["Amex Membership Rewards"],
+    "air_france":       ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],  # = flyingblue
+    # ── Hotel programs ────────────────────────────────────────────────
+    "hyatt":            ["World of Hyatt"],
+    "marriott":         ["Marriott Bonvoy"],
+}
+
 
 def get_search_params(
     origin: str = Query(...),
@@ -25,7 +57,6 @@ def get_search_params(
     return_date: Optional[str] = Query(default=None),
 ) -> SearchParams:
     """Dependency that validates and returns typed search params (RW-047)."""
-    # RW-047: airport code validation
     if not is_valid_airport_code(origin):
         raise HTTPException(status_code=422, detail=f"Invalid origin airport code: '{origin}'")
     if not is_valid_airport_code(destination):
@@ -45,6 +76,35 @@ def get_search_params(
         raise HTTPException(status_code=422, detail=str(e))
 
 
+def _get_user_programs(supabase, user_id: str) -> list[str]:
+    """
+    Fetch the user's wallet cards from Supabase, map their reward program names
+    through PROGRAM_ALIASES, and return the list of seats.aero source strings
+    the user can actually redeem (e.g. ["united", "aeroplan", "delta"]).
+    Returns an empty list on any error so the search never hard-fails.
+    """
+    try:
+        resp = (
+            supabase
+            .from_("cards")
+            .select("reward_programs(name)")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        owned_program_names = [
+            row["reward_programs"]["name"]
+            for row in (resp.data or [])
+            if row.get("reward_programs")
+        ]
+        return [
+            source
+            for source, aliases in PROGRAM_ALIASES.items()
+            if any(alias in owned_program_names for alias in aliases)
+        ]
+    except Exception:
+        return []
+
+
 @router.post("/search")
 @limiter.limit("10/minute")  # RW-047: rate limit
 async def search(
@@ -58,7 +118,7 @@ async def search(
     travelers = params.travelers
     return_date = params.return_date
 
-    # --- Auth: identify the user for search persistence ---
+    # --- Auth: identify the user ---
     auth_header = request.headers.get("authorization")
     if not auth_header:
         raise HTTPException(status_code=401, detail="Missing authorization header")
@@ -87,6 +147,9 @@ async def search(
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
 
+    # --- Fetch user's redeemable programs from their wallet ---
+    user_programs = _get_user_programs(supabase, user_id)
+
     # --- L1 memory + L2 Supabase cache lookup ---
     cache_params: CacheSearchParams = {
         "origin": origin,
@@ -96,7 +159,6 @@ async def search(
         "passengers": travelers,
         "cabin": cabin,
     }
-
     memory_cache = get_search_memory_cache()
     cached_payload = None
     cached_verdict_details: dict | None = None
@@ -110,12 +172,10 @@ async def search(
     if cached_payload:
         cached_verdict_row = cached_payload.get("verdict") or None
     else:
-        # Supabase-backed verdict reuse
         try:
             db_hit = find_search_verdict_in_db(supabase, cache_params)
             if db_hit:
                 cached_verdict_row = db_hit.verdict
-                # Refresh L1 so next request is fast
                 try:
                     memory_cache.set(
                         cache_params,
@@ -130,7 +190,7 @@ async def search(
     if cached_verdict_row and cached_verdict_row.get("details"):
         cached_verdict_details = cached_verdict_row["details"]
 
-    # --- Parallel fetch: biggest latency win ---
+    # --- Parallel fetch ---
     async def outbound_task():
         raw = await search_award_availability(origin, destination, departure_date, cabin)
         return [a for a in raw if a.get("remaining_seats", 0) >= travelers]
@@ -155,7 +215,6 @@ async def search(
         points = award.get("points")
         if not points:
             continue
-        # FIX: seats.aero returns taxes in cents — convert to dollars
         taxes = (award.get("taxes") or 0) / 100
         cpp = None
         if cash_price is not None and points:
@@ -182,7 +241,6 @@ async def search(
         points = award.get("points")
         if not points:
             continue
-        # FIX: same cents → dollars conversion for return leg
         taxes = (award.get("taxes") or 0) / 100
         cpp = None
         if cash_price is not None and points:
@@ -203,8 +261,7 @@ async def search(
     return_results.sort(key=lambda x: x["cpp"] or 0, reverse=True)
     return_award_options = return_results
 
-    # --- AI Verdict with cache (Gemini Flash 2.0) ---
-    # TODO: replace None with user's actual programs once wallet auth is wired into search
+    # --- AI Verdict ---
     verdict_details: dict
     if cached_verdict_details is not None:
         verdict_details = cached_verdict_details
@@ -220,7 +277,7 @@ async def search(
             cash_price=cash_price,
             award_options=award_options,
             return_award_options=return_award_options,
-            user_programs=None,
+            user_programs=user_programs or None,
         )
 
     # --- Persist search + verdict into Supabase ---
@@ -258,7 +315,6 @@ async def search(
         }
         insert_one(supabase, "verdicts", verdict_row)
 
-        # Refresh L1 cache for faster future searches
         try:
             memory_cache.set(cache_params, search_id=search_id, verdict=verdict_row)
         except Exception:
@@ -274,7 +330,7 @@ async def search(
         "origin": origin,
         "destination": destination,
         "date": departure_date,
-        "depart_date": departure_date,  # alias kept for frontend compatibility
+        "depart_date": departure_date,
         "return_date": return_date,
         "cabin": cabin,
         "travelers": travelers,
@@ -286,4 +342,5 @@ async def search(
         "award_options": award_options,
         "return_award_options": return_award_options,
         "verdict": verdict_details,
+        "user_programs": user_programs,
     }
