@@ -2,97 +2,182 @@
 
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import TopNav from "@/components/TopNav";
 import TropicalBackground from "@/components/TropicalBackground";
+import { useAuth } from "@/context/AuthProvider";
+import { createClient } from "@/utils/supabase/client";
 
 import {
 	Star,
 	Heart,
 	ArrowLeft,
-	CheckCircle,
 	ChevronRight,
-	ChevronUp,
-	ChevronDown,
-	ThumbsUp,
-	ThumbsDown,
-	Info,
 } from "lucide-react";
+
 type Trip = {
-	id: number;
+	id: string;
+	verdictId: string | null;
+	recommendation: "use_points" | "pay_cash" | "wait" | null;
 	origin: string;
 	destination: string;
 	date: string;
-	airline: string;
+	returnDate?: string | null;
+	tripType: "roundtrip" | "oneway";
 	cabin: string;
-	pointsUsed: number;
-	program: string;
+	passengers: number;
+	createdAt: string;
 };
+
+type SearchRow = {
+	id: string;
+	origin: string;
+	destination: string;
+	departure_date: string;
+	return_date: string | null;
+	passengers: number;
+	cabin: string | null;
+	trip_type: "roundtrip" | "oneway";
+	created_at: string;
+	verdicts?:
+		| { id: string; recommendation: "use_points" | "pay_cash" | "wait" }[]
+		| { id: string; recommendation: "use_points" | "pay_cash" | "wait" }
+		| null;
+};
+
+function formatMonthYear(dateStr: string) {
+	return new Date(dateStr).toLocaleDateString("en-US", {
+		month: "short",
+		year: "numeric",
+	});
+}
+
+function formatDateNice(dateStr?: string | null) {
+	if (!dateStr) return "";
+	return new Date(dateStr).toLocaleDateString("en-US", {
+		month: "short",
+		day: "numeric",
+		year: "numeric",
+	});
+}
+
+function cabinLabel(cabin?: string | null) {
+	if (!cabin) return "Economy";
+	const labels: Record<string, string> = {
+		economy: "Economy",
+		premium: "Premium",
+		business: "Business",
+		first: "First",
+	};
+	return labels[cabin] ?? cabin;
+}
+
 export default function HistoryPage() {
 	const router = useRouter();
+	const { user, loading: authLoading } = useAuth();
+	const supabase = createClient();
 
 	const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
-	const [feedbackGiven, setFeedbackGiven] = useState<number[]>([]);
+	const [feedbackGiven, setFeedbackGiven] = useState<string[]>([]);
 	const [rating, setRating] = useState(0);
-	const [verdictAccuracy, setVerdictAccuracy] = useState(null);
 	const [comment, setComment] = useState("");
+	const [didBook, setDidBook] = useState<boolean | null>(null);
 	const [submitted, setSubmitted] = useState(false);
+	const [trips, setTrips] = useState<Trip[]>([]);
+	const [loadingTrips, setLoadingTrips] = useState(true);
+	const [loadError, setLoadError] = useState("");
+	const [submitError, setSubmitError] = useState("");
+	const [submitting, setSubmitting] = useState(false);
 
-	const [priorities, setPriorities] = useState([
-		"Price/value",
-		"Direct flights",
-		"Airline quality",
-		"Schedule/timing",
-		"Lounge access",
-	]);
+	useEffect(() => {
+		const loadTrips = async () => {
+			if (authLoading) return;
+			if (!user) {
+				setTrips([]);
+				setLoadingTrips(false);
+				return;
+			}
 
-	const origOrder = [
-		"Price/value",
-		"Direct flights",
-		"Airline quality",
-		"Schedule/timing",
-		"Lounge access",
-	];
+			setLoadingTrips(true);
+			setLoadError("");
 
-	const trips = [
-		{
-			id: 1,
-			origin: "SFO",
-			destination: "Tokyo",
-			date: "Feb 2026",
-			airline: "ANA",
-			cabin: "Business",
-			pointsUsed: 85000,
-			program: "Virgin Atlantic",
-		},
-		{
-			id: 2,
-			origin: "JFK",
-			destination: "London",
-			date: "Jan 2026",
-			airline: "British Airways",
-			cabin: "Economy",
-			pointsUsed: 30000,
-			program: "Chase UR",
-		},
-	];
+			const { data, error } = await supabase
+				.from("searches")
+				.select(
+					"id, origin, destination, departure_date, return_date, passengers, cabin, trip_type, created_at, verdicts(id,recommendation)",
+				)
+				.eq("user_id", user.id)
+				.order("created_at", { ascending: false });
 
-	const movePriority = (idx: number, dir: number) => {
-		const next = idx + dir;
-		if (next < 0 || next >= priorities.length) return;
+			if (error) {
+				setLoadError(error.message || "Failed to load trip history.");
+				setTrips([]);
+				setLoadingTrips(false);
+				return;
+			}
 
-		const arr = [...priorities];
-		[arr[idx], arr[next]] = [arr[next], arr[idx]];
-		setPriorities(arr);
-	};
+			const mapped: Trip[] =
+				(data as SearchRow[] | null)?.map((row) => ({
+					id: row.id,
+					verdictId: Array.isArray(row.verdicts)
+						? (row.verdicts[0]?.id ?? null)
+						: (row.verdicts?.id ?? null),
+					recommendation: Array.isArray(row.verdicts)
+						? (row.verdicts[0]?.recommendation ?? null)
+						: (row.verdicts?.recommendation ?? null),
+					origin: row.origin,
+					destination: row.destination,
+					date: formatMonthYear(row.departure_date),
+					returnDate: row.return_date,
+					tripType: row.trip_type === "oneway" ? "oneway" : "roundtrip",
+					cabin: cabinLabel(row.cabin),
+					passengers: row.passengers,
+					createdAt: row.created_at,
+				})) ?? [];
 
-	const handleSubmit = () => {
-		if (!selectedTrip) return;
+			setTrips(mapped);
+			setLoadingTrips(false);
+		};
+
+		void loadTrips();
+	}, [authLoading, user, supabase]);
+
+	const handleSubmit = async () => {
+		if (!selectedTrip || !user) return;
+		if (!selectedTrip.verdictId) {
+			setSubmitError("Could not find verdict for this search. Please run the search again.");
+			return;
+		}
+		if (rating === 0) return;
+
+		setSubmitting(true);
+		setSubmitError("");
+		const derivedBookingMethod: "cash" | "points" | null =
+			selectedTrip.recommendation === "pay_cash"
+				? "cash"
+				: selectedTrip.recommendation === "use_points"
+					? "points"
+					: null;
+		const payload = {
+			verdict_id: selectedTrip.verdictId,
+			user_id: user.id,
+			rating,
+			comment: comment.trim() ? comment.trim() : null,
+			did_book: didBook,
+			booking_method: didBook ? derivedBookingMethod : null,
+		};
+
+		const { error } = await supabase.from("feedback").insert(payload);
+		if (error) {
+			setSubmitError(error.message || "Failed to save feedback.");
+			setSubmitting(false);
+			return;
+		}
 
 		setFeedbackGiven((prev) => [...prev, selectedTrip.id]);
 		setSubmitted(true);
+		setSubmitting(false);
 	};
 
 	return (
@@ -152,10 +237,32 @@ export default function HistoryPage() {
 								Select a trip to review
 							</h2>
 
-							<div className="space-y-3">
-								{trips
-									.filter((t) => !feedbackGiven.includes(t.id))
-									.map((trip) => (
+							{authLoading || loadingTrips ? (
+								<p className="text-gray-400 text-sm">Loading your history...</p>
+							) : !user ? (
+								<div>
+									<p className="text-gray-400 text-sm mb-3">
+										Please log in to view your trip history.
+									</p>
+									<button
+										onClick={() => router.push("/login")}
+										className="bg-emerald-500 hover:bg-emerald-600 text-white py-2 px-4 rounded-lg text-sm"
+									>
+										Go to Login
+									</button>
+								</div>
+							) : loadError ? (
+								<p className="text-red-400 text-sm">{loadError}</p>
+							) : trips.filter((t) => !feedbackGiven.includes(t.id)).length === 0 ? (
+								<p className="text-gray-400 text-sm">
+									No search history found yet. Run a few searches from Home and
+									they will appear here.
+								</p>
+							) : (
+								<div className="space-y-3">
+									{trips
+										.filter((t) => !feedbackGiven.includes(t.id))
+										.map((trip) => (
 										<button
 											key={trip.id}
 											onClick={() => setSelectedTrip(trip)}
@@ -167,15 +274,23 @@ export default function HistoryPage() {
 												</p>
 
 												<p className="text-gray-400 text-sm">
-													{trip.date} • {trip.airline} {trip.cabin} •{" "}
-													{trip.pointsUsed.toLocaleString()} pts
+													{trip.date}
+													{trip.tripType === "roundtrip" && trip.returnDate
+														? ` (${formatDateNice(trip.returnDate)} return)`
+														: ""}
+													{" • "}
+													{trip.cabin}
+													{" • "}
+													{trip.passengers} traveler
+													{trip.passengers > 1 ? "s" : ""}
 												</p>
 											</div>
 
 											<ChevronRight className="w-5 h-5 text-gray-400" />
 										</button>
-									))}
-							</div>
+										))}
+								</div>
+							)}
 						</div>
 					) : (
 						<div className="bg-gray-900/90 backdrop-blur rounded-xl p-6 shadow-2xl">
@@ -213,13 +328,59 @@ export default function HistoryPage() {
 									</div>
 								</div>
 
+								<div>
+									<p className="text-gray-300 text-sm mb-2">
+										Did you book this recommendation?
+									</p>
+									<div className="flex gap-2">
+										<button
+											onClick={() => setDidBook(true)}
+											className={`px-3 py-2 rounded-lg text-sm ${
+												didBook === true
+													? "bg-emerald-500/30 text-emerald-300"
+													: "bg-gray-800 text-gray-300"
+											}`}
+										>
+											Yes
+										</button>
+										<button
+											onClick={() => {
+												setDidBook(false);
+											}}
+											className={`px-3 py-2 rounded-lg text-sm ${
+												didBook === false
+													? "bg-emerald-500/30 text-emerald-300"
+													: "bg-gray-800 text-gray-300"
+											}`}
+										>
+											No
+										</button>
+									</div>
+								</div>
+
+								<div>
+									<p className="text-gray-300 text-sm mb-2">
+										Comment (optional)
+									</p>
+									<textarea
+										value={comment}
+										onChange={(e) => setComment(e.target.value)}
+										placeholder="Tell us what worked or what could be better..."
+										className="w-full min-h-24 bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
+									/>
+								</div>
+
+								{submitError && (
+									<p className="text-red-400 text-sm">{submitError}</p>
+								)}
+
 								{/* Submit */}
 								<button
 									onClick={handleSubmit}
-									disabled={rating === 0}
+									disabled={rating === 0 || submitting}
 									className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-700 text-white py-3 rounded-lg"
 								>
-									Submit Feedback
+									{submitting ? "Saving..." : "Submit Feedback"}
 								</button>
 							</div>
 						</div>
