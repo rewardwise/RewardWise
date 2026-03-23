@@ -73,7 +73,7 @@ interface ZoeChatProps {
 // Stub helpers — replace with your real implementations
 // ---------------------------------------------------------------------------
 
-function parseTripFromText(text: string): FillData | null {
+function parseTripFallback(text: string): FillData | null {
 	// TODO: replace with your real NLP parser
 	const lower = text.toLowerCase();
 	const result: FillData = {};
@@ -137,6 +137,43 @@ function parseTripFromText(text: string): FillData | null {
 	return Object.keys(result).length > 0 ? result : null;
 }
 
+async function parseTrip(text: string): Promise<any> {
+	try {
+		const API_URL = process.env.NEXT_PUBLIC_API_URL;
+
+		const res = await fetch(`${API_URL}/api/zoe`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				message: text,
+				user_id: "demo-user",
+			}),
+		});
+
+		if (!res.ok) throw new Error("Zoe backend failed");
+
+		const data = await res.json();
+
+		console.log("ZOE INPUT:", text);
+		console.log("ZOE FULL RESPONSE:", data);
+
+		return data;
+	} catch (err) {
+		console.warn("Zoe failed → using fallback parser");
+
+		// fallback should STILL return same shape
+		const fallback = parseTripFallback(text);
+
+		if (!fallback) return null;
+
+		return {
+			trip: fallback,
+			verdict: null,
+			flights_found: 0,
+		};
+	}
+}
+
 function parseDates(date: string): { dep: string | null; ret: string | null } {
 	if (!date) return { dep: null, ret: null };
 
@@ -170,18 +207,18 @@ function parseDates(date: string): { dep: string | null; ret: string | null } {
 }
 const QUICK_SEARCHES: QuickSearch[] = [
 	{
-		label: "✈️ Business Class to Tokyo",
+		label: "✈️ SFO → Tokyo · Business (Best Value)",
 		data: {
 			origin: "SFO",
 			destination: "Tokyo",
 			cabin: "business",
 			travelers: "2",
 			dates: "2026-04-01",
-			programs: ["chase_ur", "united"],
+			programs: ["chase_ur", "amex_mr"],
 		},
 	},
 	{
-		label: "🌴 Bali for 2 · Economy",
+		label: "🌴 LAX → Bali · Economy (Save Points)",
 		data: {
 			origin: "LAX",
 			destination: "Bali",
@@ -192,7 +229,7 @@ const QUICK_SEARCHES: QuickSearch[] = [
 		},
 	},
 	{
-		label: "🗼 Paris · Business Class",
+		label: "🗼 NYC → Paris · Business (High CPP)",
 		data: {
 			origin: "JFK",
 			destination: "Paris",
@@ -203,7 +240,7 @@ const QUICK_SEARCHES: QuickSearch[] = [
 		},
 	},
 	{
-		label: "🇬🇧 London · 2 People",
+		label: "🇬🇧 NYC → London · 2 People (Compare)",
 		data: {
 			origin: "JFK",
 			destination: "London",
@@ -236,6 +273,7 @@ export default function ZoeChat({
 	const [nudgeVisible, setNudgeVisible] = useState(true);
 	const [expanded, setExpanded] = useState(false);
 	const inputRef = useRef<HTMLInputElement>(null);
+	const [context, setContext] = useState<FillData>({});
 	const endRef = useRef<HTMLDivElement>(null);
 	const recognitionRef = useRef<SpeechRecognition | null>(null);
 
@@ -346,69 +384,52 @@ export default function ZoeChat({
 
 	const ZOE_BANTER = {
 		rude: [
-			"Ouch! 😄 My circuits felt that one. But hey, I'm still the one who can save you thousands on flights, so... friends? ✈️",
-			"Wow, okay! I've been called worse by airline customer service bots. At least I actually find you good deals 😉",
-			"That's not very nice! But you know what IS nice? Business class to Tokyo for the price of economy. Just saying... 🇯🇵",
+			"I’m here to help you find the best deal. Let’s keep it productive — where would you like to go?",
+			"I’ll focus on getting you the best flight options. Tell me your route.",
 		],
 		nice: [
-			"Aww, stop it! 😊 You're making my algorithms blush. Now let's find you a deal worthy of that good energy! ✈️",
-			"Right back at you! 💚 Now let's channel this positive energy into some serious savings. Where are we flying?",
-			"You're too kind! I'd high-five you but... you know, digital hands. Where do you want to go? 🌍",
+			"Glad to help. Where are you planning to travel?",
+			"Happy to assist. Tell me your trip details and I’ll take it from there.",
 		],
 		greeting: [
-			"Hey there! 👋 Ready to turn those dusty points into an adventure? Tell me where you want to fly!",
-			"Hi! I'm Zoe — part travel agent, part points nerd, 100% here to save you money. Where are we going? ✈️",
-			"Hello! Fun fact: the average person leaves $500+ in points value on the table every year. Let's not be average. Where to? 🌍",
+			"Hi — I can help you find the best way to book flights using points or cash. Where are you flying?",
+			"Hello. Tell me your route and I’ll figure out the smartest booking option for you.",
 		],
 		identity: [
-			"I'm Zoe! Think of me as your personal points whisperer 🧙‍♀️ — I look at your wallet, find the smartest way to book, and tell you exactly what to do. No spreadsheets required.",
-			"I'm your AI travel assistant! I crunch the numbers across all your loyalty programs so you don't have to.",
+			"I’m Zoe, your travel assistant. I compare points vs cash and guide you to the best booking decision.",
+			"I analyze your route and tell you whether to use points or pay cash — based on real data.",
 		],
 		thanks: [
-			"You're welcome! That's what I'm here for 😊 Need anything else? I'm always down to find another deal.",
-			"Anytime! Saving people money is literally my favorite thing. Well, that and pretending I can eat airplane food 🍱",
+			"You're welcome. Let me know if you'd like to search another route.",
+			"Anytime. Ready when you are.",
 		],
 		confused: [
-			"Hmm, I'm not sure I caught that! I'm great with things like 'SFO to Tokyo in March' or 'find me a deal to Paris.' Want to try again? ✈️",
-			"My travel-brain didn't quite parse that one 🤔 Try telling me a destination and I'll work my magic!",
+			"I couldn’t extract the trip details. Try something like: “SFO to Tokyo in April, 2 people”.",
+			"Please provide origin and destination, for example: “NYC to London business class”.",
 		],
-		joke: [
-			"Why did the frequent flyer break up with their credit card? Too many transfer issues! 😂 ...Okay, I'll stick to finding deals.",
-			"What's the difference between an airline's award chart and a mystery novel? The mystery novel makes more sense. Anyway, I'm here to decode it! 🔍",
-		],
+		joke: ["I’ll skip the jokes — let’s find you a better deal instead."],
 		empathy: [
-			"Hey, sounds like you could use a getaway! 🌴 Nothing a beach and a well-optimized points booking can't fix.",
-			"I hear you. Travel planning can be stressful — that's literally why I exist. Just tell me where you want to go 💚",
+			"Got it. Let’s make this easier — just tell me where you want to go.",
 		],
 		searchGo: [
-			"On it! 🔍 Crunching numbers across every transfer partner... this is the part where I earn my keep!",
-			"Let's gooo! 🚀 Scanning routes, comparing points vs. cash, finding the sweet spot... hold tight!",
+			"Searching flights and comparing points vs cash...",
+			"Running the optimization across available options...",
 		],
 		searchGoUnauth: [
-			"Ooh, I found some juicy options! 🎉 But I need you to create a free account first so I can show you the full verdict.",
-			"Great news — there are savings hiding in your points! 💰 Create a free account to unlock your personalized verdict.",
+			"Create a free account to view your personalized verdict.",
+			"You’ll need to sign in to see the full analysis and booking recommendation.",
 		],
-		gotIt: [
-			"Love it! Let me set that up for you... 🛫",
-			"Great choice! Setting up your search now... ✈️",
-			"Ooh, nice destination! Let me crunch the numbers... 🔢",
-		],
+		gotIt: ["Got it. Here’s what I understood:", "Here’s your trip summary:"],
 		searchDone: [
-			"Boom! 💥 Results are in — check them out above. I'm pretty proud of this one.",
-			"Done! ✈️ Your verdict is ready above. Spoiler: you're probably saving a lot.",
+			"Results are ready above.",
+			"I’ve added the best option to your search.",
 		],
-		quickPick: [
-			"Solid choice! 🎯",
-			"Great taste! ✈️",
-			"Ooh, love that route! 🌏",
-			"Now we're talking! 🔥",
-		],
+		quickPick: ["Good choice.", "Setting this up for you."],
 		healthCheck: [
-			"Head to Health Check from your Profile tab — it's like a physical for your points portfolio 📊",
-			"Check out the Health Check under Profile — it'll show you exactly where your portfolio stands 💚",
+			"Go to Profile → Health Check to review your points portfolio.",
 		],
 		help: [
-			'I\'ve got you! Just tell me your trip in plain English. For example:\n\n• "SFO to Tokyo in March, business class"\n• "NYC to Bali for 2 people"\n• "Find me a deal to London"\n\nOr tap a quick search below 👇',
+			'Enter your trip naturally. Example:\n\n• "SFO to Tokyo in April, business class"\n• "NYC to London for 2 people"\n\nI’ll handle the rest.',
 		],
 	};
 
@@ -543,7 +564,11 @@ export default function ZoeChat({
 		setInput("");
 		setShowChips(false);
 		setTyping(true);
-		setTimeout(() => processMessage(text), 800);
+		setTimeout(() => {
+			processMessage(text)
+				.catch(console.error)
+				.finally(() => setTyping(false));
+		}, 800);
 	};
 
 	const send = () => {
@@ -553,11 +578,14 @@ export default function ZoeChat({
 		setInput("");
 		setShowChips(false);
 		setTyping(true);
-		setTimeout(() => processMessage(text), 800);
+		setTimeout(() => {
+			processMessage(text)
+				.catch(console.error)
+				.finally(() => setTyping(false));
+		}, 800);
 	};
 
-	const processMessage = (text: string) => {
-		const parsed = parseTripFromText(text);
+	const processMessage = async (text: string) => {
 		const intent = detectIntent(text);
 
 		// --- Conversational intents ---
@@ -657,17 +685,92 @@ export default function ZoeChat({
 				setTyping(false);
 				return;
 			}
+
+			// ⚠️ ensure we actually have something to search
+			if (!messages.length) {
+				setMessages((prev) => [
+					...prev,
+					{
+						role: "assistant",
+						content:
+							"Tell me your route first (e.g., SFO to Tokyo) and I’ll search for you ✈️",
+					},
+				]);
+				return;
+			}
+
 			setMessages((prev) => [
 				...prev,
 				{ role: "assistant", content: pick(ZOE_BANTER.searchGo) },
 			]);
-			setTyping(false);
+
 			setTimeout(() => onTriggerSearch(), 500);
 			return;
 		}
+		const response = await parseTrip(text);
+
+		if (response?.error) {
+			setMessages((prev) => [
+				...prev,
+				{ role: "assistant", content: response.error },
+			]);
+			return;
+		}
+		// EXTRACT DATA FROM BACKEND
+		const trip = response?.trip;
+		const verdict = response?.verdict;
+		const flights = response?.flights_found;
+
+		// Autofill search form immediately
+		if (trip && onFillSearch) {
+			onFillSearch({
+				origin: trip.origin,
+				destination: trip.destination,
+				date: trip.departure_date,
+				return_date: trip.return_date ?? undefined,
+				cabin: trip.cabin,
+				travelers: trip.passengers,
+			});
+		}
+
+		if (verdict && typeof verdict.verdict === "string" && flights > 0) {
+			setMessages((prev) => [
+				...prev,
+				{
+					role: "assistant",
+					content: `✈️ ${flights} options found
+
+💡 Smart pick:
+${verdict?.verdict}
+
+I’ve applied this to your search above.`,
+				},
+			]);
+
+			return; // 🔥 CRITICAL
+		}
 
 		// --- Trip parsing ---
-		const fillData: FillData = parsed || {};
+		const newData: FillData = trip
+			? {
+					origin: trip.origin,
+					destination: trip.destination,
+					date: trip.departure_date,
+					return_date: trip.return_date ?? undefined,
+					cabin: trip.cabin,
+					travelers: trip.passengers,
+				}
+			: parseTripFallback(text) || {};
+
+		const fillData: FillData = {
+			...context,
+			...newData,
+		};
+
+		// persist for next message
+		setContext(fillData);
+
+		const dateWasExplicit = !!fillData.date;
 
 		const dests: Record<string, { dest: string; code: string }> = {
 			tokyo: { dest: "Tokyo", code: "HND" },
@@ -691,7 +794,9 @@ export default function ZoeChat({
 		for (const [key, val] of Object.entries(dests)) {
 			if (lower.includes(key)) {
 				destInfo = val;
-				fillData.destination = val.code;
+				if (!fillData.destination) {
+					fillData.destination = val.code;
+				}
 				break;
 			}
 		}
@@ -709,11 +814,83 @@ export default function ZoeChat({
 			return;
 		}
 
-		if (!fillData.origin) fillData.origin = "SFO";
-		if (!fillData.cabin) fillData.cabin = "economy";
-		if (!fillData.travelers) fillData.travelers = 1;
-		const dateWasExplicit = !!fillData.date;
-		if (!fillData.date) fillData.date = "2026-03-15";
+		// 🧠 Step-by-step assistant logic
+		const questions: Record<string, string> = {
+			origin: "Where are you flying from?",
+			destination: "Where would you like to go?",
+			date: "When do you want to depart?",
+			return_date: "When is your return trip?",
+			travelers: "How many travelers?",
+			cabin: "Which cabin class?",
+		};
+
+		// detect round trip
+		const isRoundTrip =
+			text.toLowerCase().includes("round") ||
+			text.toLowerCase().includes("return");
+
+		// check missing fields
+		if (!fillData.origin) {
+			setMessages((prev) => [
+				...prev,
+				{ role: "assistant", content: questions.origin },
+			]);
+			return;
+		}
+
+		if (!fillData.destination) {
+			setMessages((prev) => [
+				...prev,
+				{ role: "assistant", content: questions.destination },
+			]);
+			return;
+		}
+
+		if (!fillData.date) {
+			setMessages((prev) => [
+				...prev,
+				{ role: "assistant", content: questions.date },
+			]);
+			return;
+		}
+
+		if (isRoundTrip && !fillData.return_date) {
+			const possibleReturn = parseTripFallback(text);
+
+			if (possibleReturn?.date) {
+				fillData.return_date = possibleReturn.date;
+				setContext({ ...fillData });
+			} else {
+				setMessages((prev) => [
+					...prev,
+					{ role: "assistant", content: questions.return_date },
+				]);
+				return;
+			}
+		}
+		if (!fillData.travelers) {
+			setMessages((prev) => [
+				...prev,
+				{ role: "assistant", content: questions.travelers },
+			]);
+			return;
+		}
+
+		if (!fillData.cabin) {
+			setMessages((prev) => [
+				...prev,
+				{ role: "assistant", content: questions.cabin },
+			]);
+			return;
+		}
+
+		const readyToSearch =
+			fillData.origin &&
+			fillData.destination &&
+			fillData.date &&
+			fillData.cabin &&
+			fillData.travelers &&
+			(!isRoundTrip || fillData.return_date);
 
 		const originCities: Record<string, string> = {
 			sfo: "San Francisco (SFO)",
@@ -735,9 +912,11 @@ export default function ZoeChat({
 		const destDisplay = destInfo ? destInfo.dest : fillData.destination;
 		const cabinDisplay =
 			fillData.cabin.charAt(0).toUpperCase() + fillData.cabin.slice(1);
-		const { ret: retDate } = parseDates(fillData.date ?? "");
+		const retDate = fillData.return_date
+			? fillData.return_date
+			: parseDates(fillData.date ?? "").ret;
 
-		const summaryText = `${pick(ZOE_BANTER.gotIt)}\n\n✈️ ${originDisplay} → ${destDisplay}\n📅 ${fillData.date}→ ${retDate ?? "flexible"}\n👥 ${fillData.travelers} traveler${fillData.travelers !== 1 ? "s" : ""} · ${cabinDisplay}${!dateWasExplicit ? "\n\n📆 I picked March — tap below to change:" : ""}`;
+		const summaryText = `${pick(ZOE_BANTER.gotIt)}\n\n✈️ ${originDisplay} → ${destDisplay}\n📅 ${fillData.date} → ${retDate ?? "flexible"}\n👥 ${fillData.travelers} traveler${fillData.travelers !== 1 ? "s" : ""} · ${cabinDisplay}${!dateWasExplicit ? "\n\n📆 I picked March — tap below to change:" : ""}`;
 
 		const doSearch = () => {
 			if (onFillSearch) onFillSearch(fillData);
