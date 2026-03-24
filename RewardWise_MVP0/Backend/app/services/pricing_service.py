@@ -9,7 +9,7 @@ SERPAPI_BASE_URL = "https://serpapi.com/search"
 
 CABIN_CLASS_MAP = {
     "economy": 1,
-    "premium": 2,
+    "premium_economy": 2,
     "business": 3,
     "first": 4,
 }
