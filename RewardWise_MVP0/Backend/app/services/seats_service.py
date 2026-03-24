@@ -8,7 +8,7 @@ SEATS_AERO_BASE_URL = "https://seats.aero/partnerapi"
 
 CABIN_MAP = {
     "economy": "Y",
-    "premium": "W",
+    "premium_economy": "W",
     "business": "J",
     "first": "F"
 }
