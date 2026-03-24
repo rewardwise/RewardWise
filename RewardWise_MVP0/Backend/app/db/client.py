@@ -14,16 +14,13 @@ def get_db_client() -> Client:
     if _client is not None:
         return _client
 
-    url = os.environ.get("SUPABASE_URL") or os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
-    key = (
-        os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
-        or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
-    )
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+    if not url:
+        raise RuntimeError("SUPABASE_URL is missing in backend env")
 
-    if not url or not key:
-        raise RuntimeError(
-            "Missing Supabase env: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (or ANON_KEY)"
-        )
+    if not key:
+        raise RuntimeError("SUPABASE_SERVICE_ROLE_KEY is missing in backend env")
 
     _client = create_client(url, key)
     return _client
