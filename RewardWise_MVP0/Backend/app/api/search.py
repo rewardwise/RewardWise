@@ -1,6 +1,6 @@
 import asyncio
 from typing import Optional
-
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from app.api.validators import SearchParams, limiter  # RW-047
 from app.cache import find_search_verdict_in_db, get_search_memory_cache
@@ -126,26 +126,30 @@ async def search(
     if not token:
         raise HTTPException(status_code=401, detail="Missing bearer token")
 
-    supabase = get_server_supabase()
-    try:
-        user_resp = supabase.auth.get_user(token)
-    except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Invalid auth token: {str(e)}")
+    import requests
+    import os
 
-    user = None
-    if isinstance(user_resp, dict):
-        user = user_resp.get("user") or (user_resp.get("data") or {}).get("user")
-    else:
-        user = getattr(user_resp, "user", None)
+    SUPABASE_URL = os.environ.get("SUPABASE_URL")
+    SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
 
-    user_id = None
-    if isinstance(user, dict):
-        user_id = user.get("id")
-    else:
-        user_id = getattr(user, "id", None) if user is not None else None
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "apikey": SERVICE_KEY,
+    }
 
-    if not user_id:
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{SUPABASE_URL}/auth/v1/user",
+            headers=headers,
+        )
+
+    if response.status_code != 200:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
+
+    user = response.json()
+    user_id = user.get("id")
+    supabase = get_server_supabase()
+
 
     # --- Fetch user's redeemable programs from their wallet ---
     user_programs = _get_user_programs(supabase, user_id)

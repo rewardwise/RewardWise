@@ -1,7 +1,7 @@
 /** @format */
 
 "use client";
-
+import AirportSearch from "@/components/AirportSearch";
 import { useState, useEffect, useRef } from "react";
 import {
 	MessageCircle,
@@ -42,12 +42,23 @@ interface MessageAction {
 	label: string;
 	handler: () => void;
 }
-
 export interface Message {
 	role: "user" | "assistant" | "steps";
 	content: string;
 	action?: MessageAction | null;
 	suggestions?: DestSuggestion[] | null;
+
+	dropdown?: {
+		type:
+			| "origin"
+			| "destination"
+			| "travelers"
+			| "tripType"
+			| "cabin"
+			| "date"
+			| "returnDate";
+		options: string[];
+	} | null;
 }
 interface FillData {
 	origin?: string;
@@ -56,6 +67,7 @@ interface FillData {
 	cabin?: string;
 	travelers?: number;
 	return_date?: string;
+	tripType?: "oneway" | "roundtrip";
 }
 
 interface ZoeChatProps {
@@ -84,6 +96,7 @@ function parseTripFromText(text: string): FillData | null {
 		"new york": "JFK",
 		nyc: "JFK",
 		jfk: "JFK",
+
 		"los angeles": "LAX",
 		lax: "LAX",
 		chicago: "ORD",
@@ -168,52 +181,6 @@ function parseDates(date: string): { dep: string | null; ret: string | null } {
 		return { dep: null, ret: null };
 	}
 }
-const QUICK_SEARCHES: QuickSearch[] = [
-	{
-		label: "✈️ Business Class to Tokyo",
-		data: {
-			origin: "SFO",
-			destination: "Tokyo",
-			cabin: "business",
-			travelers: "2",
-			dates: "2026-04-01",
-			programs: ["chase_ur", "united"],
-		},
-	},
-	{
-		label: "🌴 Bali for 2 · Economy",
-		data: {
-			origin: "LAX",
-			destination: "Bali",
-			cabin: "economy",
-			travelers: "2",
-			dates: "2026-06-15",
-			programs: ["amex_mr", "delta"],
-		},
-	},
-	{
-		label: "🗼 Paris · Business Class",
-		data: {
-			origin: "JFK",
-			destination: "Paris",
-			cabin: "business",
-			travelers: "1",
-			dates: "2026-05-10",
-			programs: ["chase_ur", "amex_mr"],
-		},
-	},
-	{
-		label: "🇬🇧 London · 2 People",
-		data: {
-			origin: "JFK",
-			destination: "London",
-			cabin: "business",
-			travelers: "2",
-			dates: "2026-03-28",
-			programs: ["amex_mr", "marriott"],
-		},
-	},
-];
 
 // ---------------------------------------------------------------------------
 // Component
@@ -238,6 +205,17 @@ export default function ZoeChat({
 	const inputRef = useRef<HTMLInputElement>(null);
 	const endRef = useRef<HTMLDivElement>(null);
 	const recognitionRef = useRef<SpeechRecognition | null>(null);
+	const [tripState, setTripState] = useState<FillData>({});
+	const [currentStep, setCurrentStep] = useState<
+		| "origin"
+		| "destination"
+		| "tripType"
+		| "date"
+		| "returnDate"
+		| "travelers"
+		| "cabin"
+		| null
+	>(null);
 
 	useEffect(() => {
 		if (isOpen && inputRef.current) inputRef.current.focus();
@@ -344,140 +322,9 @@ export default function ZoeChat({
 
 	const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 
-	const ZOE_BANTER = {
-		rude: [
-			"Ouch! 😄 My circuits felt that one. But hey, I'm still the one who can save you thousands on flights, so... friends? ✈️",
-			"Wow, okay! I've been called worse by airline customer service bots. At least I actually find you good deals 😉",
-			"That's not very nice! But you know what IS nice? Business class to Tokyo for the price of economy. Just saying... 🇯🇵",
-		],
-		nice: [
-			"Aww, stop it! 😊 You're making my algorithms blush. Now let's find you a deal worthy of that good energy! ✈️",
-			"Right back at you! 💚 Now let's channel this positive energy into some serious savings. Where are we flying?",
-			"You're too kind! I'd high-five you but... you know, digital hands. Where do you want to go? 🌍",
-		],
-		greeting: [
-			"Hey there! 👋 Ready to turn those dusty points into an adventure? Tell me where you want to fly!",
-			"Hi! I'm Zoe — part travel agent, part points nerd, 100% here to save you money. Where are we going? ✈️",
-			"Hello! Fun fact: the average person leaves $500+ in points value on the table every year. Let's not be average. Where to? 🌍",
-		],
-		identity: [
-			"I'm Zoe! Think of me as your personal points whisperer 🧙‍♀️ — I look at your wallet, find the smartest way to book, and tell you exactly what to do. No spreadsheets required.",
-			"I'm your AI travel assistant! I crunch the numbers across all your loyalty programs so you don't have to.",
-		],
-		thanks: [
-			"You're welcome! That's what I'm here for 😊 Need anything else? I'm always down to find another deal.",
-			"Anytime! Saving people money is literally my favorite thing. Well, that and pretending I can eat airplane food 🍱",
-		],
-		confused: [
-			"Hmm, I'm not sure I caught that! I'm great with things like 'SFO to Tokyo in March' or 'find me a deal to Paris.' Want to try again? ✈️",
-			"My travel-brain didn't quite parse that one 🤔 Try telling me a destination and I'll work my magic!",
-		],
-		joke: [
-			"Why did the frequent flyer break up with their credit card? Too many transfer issues! 😂 ...Okay, I'll stick to finding deals.",
-			"What's the difference between an airline's award chart and a mystery novel? The mystery novel makes more sense. Anyway, I'm here to decode it! 🔍",
-		],
-		empathy: [
-			"Hey, sounds like you could use a getaway! 🌴 Nothing a beach and a well-optimized points booking can't fix.",
-			"I hear you. Travel planning can be stressful — that's literally why I exist. Just tell me where you want to go 💚",
-		],
-		searchGo: [
-			"On it! 🔍 Crunching numbers across every transfer partner... this is the part where I earn my keep!",
-			"Let's gooo! 🚀 Scanning routes, comparing points vs. cash, finding the sweet spot... hold tight!",
-		],
-		searchGoUnauth: [
-			"Ooh, I found some juicy options! 🎉 But I need you to create a free account first so I can show you the full verdict.",
-			"Great news — there are savings hiding in your points! 💰 Create a free account to unlock your personalized verdict.",
-		],
-		gotIt: [
-			"Love it! Let me set that up for you... 🛫",
-			"Great choice! Setting up your search now... ✈️",
-			"Ooh, nice destination! Let me crunch the numbers... 🔢",
-		],
-		searchDone: [
-			"Boom! 💥 Results are in — check them out above. I'm pretty proud of this one.",
-			"Done! ✈️ Your verdict is ready above. Spoiler: you're probably saving a lot.",
-		],
-		quickPick: [
-			"Solid choice! 🎯",
-			"Great taste! ✈️",
-			"Ooh, love that route! 🌏",
-			"Now we're talking! 🔥",
-		],
-		healthCheck: [
-			"Head to Health Check from your Profile tab — it's like a physical for your points portfolio 📊",
-			"Check out the Health Check under Profile — it'll show you exactly where your portfolio stands 💚",
-		],
-		help: [
-			'I\'ve got you! Just tell me your trip in plain English. For example:\n\n• "SFO to Tokyo in March, business class"\n• "NYC to Bali for 2 people"\n• "Find me a deal to London"\n\nOr tap a quick search below 👇',
-		],
-	};
-
 	// -------------------------------------------------------------------------
 	// Intent detection
 	// -------------------------------------------------------------------------
-
-	const detectIntent = (text: string): string | null => {
-		const lower = text.toLowerCase().replace(/[^a-z0-9\s]/g, "");
-		if (
-			/\b(not cool|stupid|dumb|suck|hate you|worst|terrible|awful|shut up|useless|trash|bad bot|idiot|ugly|lame|boring)\b/.test(
-				lower,
-			)
-		)
-			return "rude";
-		if (/\b(f+u+c+k|wtf|stfu|bs|crap|damn)\b/.test(lower)) return "rude";
-		if (
-			/\b(cool|awesome|amazing|love you|great job|nice work|thank|thanks|thx|appreciate|you rock|best|brilliant|fantastic|wonderful|perfect)\b/.test(
-				lower,
-			)
-		) {
-			if (/\b(thank|thanks|thx|appreciate)\b/.test(lower)) return "thanks";
-			return "nice";
-		}
-		if (
-			/^(hi|hey|hello|yo|sup|whats up|howdy|hola|good morning|good evening|good afternoon|heya|hiya)\b/.test(
-				lower,
-			)
-		)
-			return "greeting";
-		if (
-			/\b(who are you|what are you|what do you do|what can you do|your name)\b/.test(
-				lower,
-			)
-		)
-			return "identity";
-		if (
-			/\b(joke|funny|make me laugh|tell me something funny|humor|lol|haha)\b/.test(
-				lower,
-			)
-		)
-			return "joke";
-		if (
-			/\b(sad|stressed|frustrated|angry|upset|depressed|tired|exhausted|overwhelmed|ugh)\b/.test(
-				lower,
-			)
-		)
-			return "empathy";
-		if (
-			/\b(search|find flight|go ahead|run it|lets go|search now|find my saving|do it|book it|yes search|yes please|run the search|find it)\b/.test(
-				lower,
-			)
-		)
-			return "search";
-		if (
-			/^(yes|ok|okay|sure|yep|yeah|yup|alright|lets do it|ok ok|yes that|yes please|do it|lets go|go for it|yea|ya)\b/.test(
-				lower,
-			)
-		)
-			return "search";
-		if (/\b(help|how does|how do|what can|how to)\b/.test(lower)) return "help";
-		if (
-			/\b(health|portfolio|check my points|points check|balance check)\b/.test(
-				lower,
-			)
-		)
-			return "healthCheck";
-		return null;
-	};
 
 	// -------------------------------------------------------------------------
 	// Quick search chips
@@ -527,13 +374,234 @@ export default function ZoeChat({
 				...prev,
 				{
 					role: "assistant",
-					content: `${pick(ZOE_BANTER.quickPick)} I've filled in the search form for ${item.data.origin} → ${item.data.destination} in ${item.data.cabin} class for ${item.data.travelers} travelers.\n\n✅ Programs: ${names}\n✅ Dates: ${item.data.dates}\n\nSay "go ahead" or "search" and I'll find the best deal!`,
+					content: `$ I've filled in the search form for ${item.data.origin} → ${item.data.destination} in ${item.data.cabin} class for ${item.data.travelers} travelers.\n\n✅ Programs: ${names}\n✅ Dates: ${item.data.dates}\n\nSay "go ahead" or "search" and I'll find the best deal!`,
 				},
 			]);
 			setTyping(false);
 		}, 1200);
 	};
 
+	const handleEdit = (index: number, type: string) => {
+		setCurrentStep(type as any);
+
+		const labelMap: Record<string, string> = {
+			origin: "From",
+			destination: "To",
+			tripType: "Trip",
+			date: "Departure",
+			returnDate: "Return",
+			travelers: "Travelers",
+			cabin: "Cabin",
+		};
+
+		setMessages((prev) =>
+			prev.map((m, idx) => {
+				// remove ALL other dropdowns
+				if (m.dropdown && idx !== index) {
+					return { ...m, dropdown: null };
+				}
+
+				// replace THIS message with editable version
+				if (idx === index) {
+					return {
+						...m,
+						role: "assistant",
+						content: `Update ${labelMap[type]}`,
+						dropdown: {
+							type: type as any,
+							options:
+								type === "tripType"
+									? ["One Way", "Round Trip"]
+									: type === "travelers"
+										? ["1", "2", "3", "4", "5"]
+										: type === "cabin"
+											? ["Economy", "Business", "First"]
+											: [],
+						},
+						action: null, // remove edit button
+					};
+				}
+
+				return m;
+			}),
+		);
+	};
+
+	const handleDropdownSelect = (type: string, value: string) => {
+		if (!value) return;
+		const labelMap: Record<string, string> = {
+			origin: "From",
+			destination: "To",
+			tripType: "Trip",
+			date: "Departure",
+			returnDate: "Return",
+			travelers: "Travelers",
+			cabin: "Cabin",
+		};
+
+		setMessages((prev) => [
+			...prev.filter((m) => !m.dropdown),
+			{
+				role: "user",
+				content: `${labelMap[type] || type}: ${value}`,
+				action: {
+					label: "Edit",
+					handler: () => handleEdit(prev.length, type), // 👈 KEY FIX
+				},
+			},
+		]);
+		let updated = { ...tripState };
+
+		switch (type) {
+			case "origin":
+				updated.origin = value;
+				setCurrentStep("destination");
+
+				setMessages((prev) => [
+					...prev,
+					{
+						role: "assistant",
+						content: "Where are you flying to?",
+						dropdown: {
+							type: "destination",
+							options: [],
+						},
+					},
+				]);
+				break;
+			case "destination":
+				updated.destination = value;
+
+				setCurrentStep("tripType");
+
+				setMessages((prev) => [
+					...prev,
+					{
+						role: "assistant",
+						content: "One-way or round trip?",
+						dropdown: {
+							type: "tripType",
+							options: ["One Way", "Round Trip"],
+						},
+					},
+				]);
+				break;
+
+			case "travelers":
+				updated.travelers = Number(value);
+
+				setCurrentStep("cabin");
+
+				setMessages((prev) => [
+					...prev,
+					{
+						role: "assistant",
+						content: "Economy, Business, or First?",
+						dropdown: {
+							type: "cabin",
+							options: ["Economy", "Business", "First"],
+						},
+					},
+				]);
+				break;
+
+			case "tripType":
+				updated.tripType = value === "Round Trip" ? "roundtrip" : "oneway";
+
+				if (updated.tripType === "roundtrip") {
+					updated.return_date = "";
+				} else {
+					updated.return_date = undefined;
+				}
+
+				setCurrentStep("date");
+
+				setMessages((prev) => [
+					...prev,
+					{
+						role: "assistant",
+						content: "Select departure date",
+						dropdown: {
+							type: "date",
+							options: [],
+						},
+					},
+				]);
+
+				break;
+
+			case "date":
+				updated.date = value;
+
+				if (updated.tripType === "roundtrip") {
+					setCurrentStep("returnDate");
+
+					setMessages((prev) => [
+						...prev,
+						{
+							role: "assistant",
+							content: "Select return date",
+							dropdown: {
+								type: "returnDate",
+								options: [],
+							},
+						},
+					]);
+				} else {
+					setCurrentStep("travelers");
+
+					setMessages((prev) => [
+						...prev,
+						{
+							role: "assistant",
+							content: "How many travelers?",
+							dropdown: {
+								type: "travelers",
+								options: ["1", "2", "3", "4", "5"],
+							},
+						},
+					]);
+				}
+				break;
+
+			case "returnDate":
+				updated.return_date = value;
+
+				setCurrentStep("travelers");
+
+				setMessages((prev) => [
+					...prev,
+					{
+						role: "assistant",
+						content: "How many travelers?",
+						dropdown: {
+							type: "travelers",
+							options: ["1", "2", "3", "4", "5"],
+						},
+					},
+				]);
+				break;
+
+			case "cabin":
+				updated.cabin = value.toLowerCase();
+
+				setMessages((prev) => [
+					...prev,
+					{
+						role: "assistant",
+						content: "Perfect. Running your search now...",
+					},
+				]);
+
+				if (onTriggerSearch) onTriggerSearch();
+				break;
+		}
+
+		setTripState(updated);
+
+		// 🔥 keep UI + chat in sync
+		if (onFillSearch) onFillSearch(updated);
+	};
 	// -------------------------------------------------------------------------
 	// Send / process
 	// -------------------------------------------------------------------------
@@ -557,114 +625,186 @@ export default function ZoeChat({
 	};
 
 	const processMessage = (text: string) => {
-		const parsed = parseTripFromText(text);
-		const intent = detectIntent(text);
+		// ---------------- SLOT FLOW ----------------
 
-		// --- Conversational intents ---
-		if (intent === "rude") {
-			setMessages((prev) => [
-				...prev,
-				{
-					role: "assistant",
-					content: pick(ZOE_BANTER.rude),
-					suggestions: DEST_SUGGESTIONS,
-				},
-			]);
-			setTyping(false);
-			return;
-		}
-		if (intent === "nice") {
-			setMessages((prev) => [
-				...prev,
-				{ role: "assistant", content: pick(ZOE_BANTER.nice) },
-			]);
-			setTyping(false);
-			return;
-		}
-		if (intent === "thanks") {
-			setMessages((prev) => [
-				...prev,
-				{ role: "assistant", content: pick(ZOE_BANTER.thanks) },
-			]);
-			setTyping(false);
-			return;
-		}
-		if (intent === "greeting") {
-			setMessages((prev) => [
-				...prev,
-				{
-					role: "assistant",
-					content: pick(ZOE_BANTER.greeting),
-					suggestions: DEST_SUGGESTIONS,
-				},
-			]);
-			setTyping(false);
-			return;
-		}
-		if (intent === "identity") {
-			setMessages((prev) => [
-				...prev,
-				{ role: "assistant", content: pick(ZOE_BANTER.identity) },
-			]);
-			setTyping(false);
-			return;
-		}
-		if (intent === "joke") {
-			setMessages((prev) => [
-				...prev,
-				{ role: "assistant", content: pick(ZOE_BANTER.joke) },
-			]);
-			setTyping(false);
-			return;
-		}
-		if (intent === "empathy") {
-			setMessages((prev) => [
-				...prev,
-				{
-					role: "assistant",
-					content: pick(ZOE_BANTER.empathy),
-					suggestions: DEST_SUGGESTIONS,
-				},
-			]);
-			setTyping(false);
-			return;
-		}
-		if (intent === "help") {
-			setMessages((prev) => [
-				...prev,
-				{ role: "assistant", content: pick(ZOE_BANTER.help) },
-			]);
-			setShowChips(true);
-			setTyping(false);
-			return;
-		}
-		if (intent === "healthCheck") {
-			setMessages((prev) => [
-				...prev,
-				{ role: "assistant", content: pick(ZOE_BANTER.healthCheck) },
-			]);
-			setTyping(false);
-			return;
-		}
+		// Start conversation
+		if (!currentStep && Object.keys(tripState).length === 0) {
+			const lower = text.toLowerCase().trim();
 
-		// --- Search trigger ---
-		if (intent === "search" && onTriggerSearch) {
-			if (!isAuthenticated) {
+			// ✅ HANDLE GREETING FIRST
+			if (["hi", "hello", "hey"].includes(lower)) {
+				setCurrentStep("origin");
+
 				setMessages((prev) => [
 					...prev,
-					{ role: "assistant", content: pick(ZOE_BANTER.searchGoUnauth) },
+					{
+						role: "assistant",
+						content: "Hi! Where are you flying from?",
+					},
+				]);
+
+				setTyping(false);
+				return;
+			}
+
+			// ✅ THEN handle origin normally
+			const parsed = parseTripFromText(text);
+
+			let originCode: string | undefined;
+
+			if (parsed?.origin) {
+				originCode = parsed.origin;
+			} else if (text.trim().length === 3) {
+				originCode = text.trim().toUpperCase();
+			} else {
+				setMessages((prev) => [
+					...prev,
+					{
+						role: "assistant",
+						content: "Please enter a valid airport (e.g., JFK or New York).",
+					},
 				]);
 				setTyping(false);
 				return;
 			}
+
+			const updated = { ...tripState, origin: originCode };
+			setTripState(updated);
+
+			setCurrentStep("destination");
+
 			setMessages((prev) => [
 				...prev,
-				{ role: "assistant", content: pick(ZOE_BANTER.searchGo) },
+				{ role: "assistant", content: "Where are you flying to?" },
 			]);
+
 			setTyping(false);
-			setTimeout(() => onTriggerSearch(), 500);
 			return;
 		}
+		if (currentStep) {
+			let updated = { ...tripState };
+
+			switch (currentStep) {
+				case "destination":
+					const parsed = parseTripFromText(text);
+
+					let destCode: string | undefined;
+
+					if (parsed?.origin) {
+						destCode = parsed.origin; // "London" → LHR
+					} else if (text.trim().length === 3) {
+						destCode = text.trim().toUpperCase(); // "LHR"
+					} else {
+						setMessages((prev) => [
+							...prev,
+							{
+								role: "assistant",
+								content: "Please enter a valid airport (e.g., LHR or London).",
+							},
+						]);
+						setTyping(false);
+						return;
+					}
+
+					updated.destination = destCode;
+
+					updated.destination = destCode;
+					setCurrentStep("tripType");
+					setMessages((prev) => [
+						...prev,
+						{ role: "assistant", content: "One-way or round trip?" },
+					]);
+					break;
+
+				case "tripType":
+					if (text.toLowerCase().includes("round")) {
+						updated.tripType = "roundtrip";
+						updated.return_date = "";
+					} else {
+						updated.tripType = "oneway";
+						updated.return_date = undefined;
+					}
+					setCurrentStep("date");
+					setMessages((prev) => [
+						...prev,
+						{
+							role: "assistant",
+							content: "What’s your departure date? (YYYY-MM-DD)",
+						},
+					]);
+					break;
+
+				case "date":
+					updated.date = text;
+
+					if (updated.tripType === "roundtrip") {
+						setCurrentStep("returnDate");
+						setMessages((prev) => [
+							...prev,
+							{ role: "assistant", content: "What’s your return date?" },
+						]);
+					} else {
+						setCurrentStep("travelers");
+						setMessages((prev) => [
+							...prev,
+							{ role: "assistant", content: "How many travelers?" },
+						]);
+					}
+					break;
+
+				case "returnDate":
+					updated.return_date = text;
+					setCurrentStep("travelers");
+					setMessages((prev) => [
+						...prev,
+						{ role: "assistant", content: "How many travelers?" },
+					]);
+					break;
+
+				case "travelers":
+					const num = Number(text);
+					if (isNaN(num)) {
+						setMessages((prev) => [
+							...prev,
+							{ role: "assistant", content: "Please enter a valid number." },
+						]);
+						setTyping(false);
+						return;
+					}
+					updated.travelers = num;
+					setCurrentStep("cabin");
+					setMessages((prev) => [
+						...prev,
+						{ role: "assistant", content: "Economy, Business, or First?" },
+					]);
+					break;
+
+				case "cabin":
+					updated.cabin = text.toLowerCase();
+					setCurrentStep(null);
+
+					if (onFillSearch) onFillSearch(updated);
+
+					setMessages((prev) => [
+						...prev,
+						{
+							role: "assistant",
+							content: "Perfect. Running your search now...",
+						},
+					]);
+
+					if (onTriggerSearch) setTimeout(() => onTriggerSearch(), 500);
+					break;
+			}
+
+			setTripState(updated);
+			setTyping(false);
+			return;
+		}
+
+		// ---------------- EXISTING LOGIC CONTINUES ----------------
+
+		const parsed = parseTripFromText(text);
 
 		// --- Trip parsing ---
 		const fillData: FillData = parsed || {};
@@ -696,19 +836,6 @@ export default function ZoeChat({
 			}
 		}
 
-		if (!fillData.destination) {
-			setMessages((prev) => [
-				...prev,
-				{
-					role: "assistant",
-					content: pick(ZOE_BANTER.confused),
-					suggestions: DEST_SUGGESTIONS,
-				},
-			]);
-			setTyping(false);
-			return;
-		}
-
 		if (!fillData.origin) fillData.origin = "SFO";
 		if (!fillData.cabin) fillData.cabin = "economy";
 		if (!fillData.travelers) fillData.travelers = 1;
@@ -736,62 +863,29 @@ export default function ZoeChat({
 		const cabinDisplay =
 			fillData.cabin.charAt(0).toUpperCase() + fillData.cabin.slice(1);
 		const { ret: retDate } = parseDates(fillData.date ?? "");
-
-		const summaryText = `${pick(ZOE_BANTER.gotIt)}\n\n✈️ ${originDisplay} → ${destDisplay}\n📅 ${fillData.date}→ ${retDate ?? "flexible"}\n👥 ${fillData.travelers} traveler${fillData.travelers !== 1 ? "s" : ""} · ${cabinDisplay}${!dateWasExplicit ? "\n\n📆 I picked March — tap below to change:" : ""}`;
-
-		const doSearch = () => {
-			if (onFillSearch) onFillSearch(fillData);
-			if (!isAuthenticated) {
-				setMessages((prev) => [
-					...prev,
-					{ role: "assistant", content: pick(ZOE_BANTER.searchGoUnauth) },
-				]);
-			} else {
-				setMessages((prev) => [
-					...prev,
-					{ role: "assistant", content: pick(ZOE_BANTER.searchGo) },
-				]);
-				if (onTriggerSearch) setTimeout(() => onTriggerSearch(), 500);
-			}
-		};
-
-		const monthChips: DestSuggestion[] | null = !dateWasExplicit
-			? [
-					{
-						emoji: "🌸",
-						label: "March",
-						query: `${fillData.origin} to ${destDisplay} in March ${fillData.cabin} ${fillData.travelers} people`,
-					},
-					{
-						emoji: "🌷",
-						label: "April",
-						query: `${fillData.origin} to ${destDisplay} in April ${fillData.cabin} ${fillData.travelers} people`,
-					},
-					{
-						emoji: "☀️",
-						label: "May",
-						query: `${fillData.origin} to ${destDisplay} in May ${fillData.cabin} ${fillData.travelers} people`,
-					},
-					{
-						emoji: "🏖️",
-						label: "June",
-						query: `${fillData.origin} to ${destDisplay} in June ${fillData.cabin} ${fillData.travelers} people`,
-					},
-				]
-			: null;
-
-		setMessages((prev) => [
-			...prev,
-			{
-				role: "assistant",
-				content: summaryText,
-				action: { label: "Let's do it!", handler: doSearch },
-				suggestions: monthChips,
-			},
-		]);
-		setTyping(false);
 	};
 
+	useEffect(() => {
+		if (isOpen && messages.length === 0) {
+			setMessages([
+				{
+					role: "assistant",
+					content:
+						"Hey! I'm Zoe, your RewardWise travel assistant.\n\nTell me where you want to fly and I'll find the best deal ✈️",
+				},
+				{
+					role: "assistant",
+					content: "Where are you flying from?",
+					dropdown: {
+						type: "origin",
+						options: ["JFK", "SFO", "LAX", "ORD", "SEA", "BOS"],
+					},
+				},
+			]);
+
+			setCurrentStep("origin");
+		}
+	}, [isOpen]);
 	// -------------------------------------------------------------------------
 	// Closed state (FAB)
 	// -------------------------------------------------------------------------
@@ -901,7 +995,74 @@ export default function ZoeChat({
 									) : null,
 								)}
 							</div>
+							{msg.dropdown?.type === "origin" && (
+								<div className="mt-2 w-full max-w-[260px]">
+									<AirportSearch
+										label="From"
+										value={tripState.origin || ""}
+										onChange={(code) => handleDropdownSelect("origin", code)}
+										placeholder="Search origin airport..."
+									/>
+								</div>
+							)}
+							{msg.dropdown?.type === "destination" && (
+								<div className="mt-2 w-full max-w-[260px]">
+									<AirportSearch
+										label="To"
+										value={tripState.destination || ""}
+										onChange={(code) =>
+											handleDropdownSelect("destination", code)
+										}
+										placeholder="Search destination..."
+									/>
+								</div>
+							)}
+							{/* DATE (departure) */}
+							{msg.dropdown?.type === "date" && (
+								<div className="mt-2">
+									<input
+										type="date"
+										className="bg-gray-800 text-white px-3 py-2 rounded-lg border border-gray-700"
+										onChange={(e) =>
+											handleDropdownSelect("date", e.target.value)
+										}
+									/>
+								</div>
+							)}
 
+							{msg.dropdown?.type === "returnDate" && (
+								<div className="mt-2">
+									<input
+										type="date"
+										className="bg-gray-800 text-white px-3 py-2 rounded-lg border border-gray-700"
+										onChange={(e) =>
+											handleDropdownSelect("returnDate", e.target.value)
+										}
+									/>
+								</div>
+							)}
+							{/* OTHER DROPDOWNS */}
+							{msg.dropdown &&
+								msg.dropdown.type !== "origin" &&
+								msg.dropdown.type !== "destination" &&
+								msg.dropdown.type !== "date" &&
+								msg.dropdown.type !== "returnDate" && (
+									<div className="mt-2">
+										<select
+											className="bg-gray-800 text-white px-3 py-2 rounded-lg border border-gray-700"
+											onChange={(e) =>
+												handleDropdownSelect(msg.dropdown!.type, e.target.value)
+											}
+										>
+											<option value="">Select</option>
+											{msg.dropdown.options.map((opt, idx) => (
+												<option key={idx} value={opt}>
+													{opt}
+												</option>
+											))}
+										</select>
+									</div>
+								)}
 							{msg.action && (
 								<button
 									onClick={() => {
@@ -917,7 +1078,6 @@ export default function ZoeChat({
 									<Zap className="w-4 h-4" /> {msg.action.label}
 								</button>
 							)}
-
 							{msg.suggestions && (
 								<div
 									className={`mt-2 flex flex-wrap gap-2 ${expanded ? "max-w-[70%]" : "max-w-[85%]"}`}
@@ -939,20 +1099,7 @@ export default function ZoeChat({
 					{showChips && !typing && (
 						<div
 							className={`space-y-2 ${expanded ? "grid grid-cols-2 gap-2 space-y-0" : ""}`}
-						>
-							{QUICK_SEARCHES.map((item, i) => (
-								<button
-									key={i}
-									onClick={() => handleQuickSearch(item)}
-									className="w-full text-left bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 rounded-xl px-4 py-3 text-sm text-white transition-all hover:scale-[1.02]"
-								>
-									<span className="font-medium">{item.label}</span>
-									<span className="text-gray-400 text-xs block mt-0.5">
-										{item.data.travelers} travelers • {item.data.dates}
-									</span>
-								</button>
-							))}
-						</div>
+						></div>
 					)}
 
 					{typing && (

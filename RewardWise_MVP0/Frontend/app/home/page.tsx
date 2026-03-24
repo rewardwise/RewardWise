@@ -213,13 +213,16 @@ export default function HomePage() {
 		if (data.destination) setDestination(data.destination);
 		if (data.cabin) setCabin(data.cabin);
 
-		if (data.travelers) setTravelers(data.travelers); // already number
+		if (data.travelers) setTravelers(data.travelers);
 
-		if (data.date) setDepartDate(data.date); // ✅ FIX
+		if (data.date) setDepartDate(data.date);
 
-		if (data.return_date) {
-			setReturnDate(data.return_date);
-			setTripType("roundtrip"); // optional but important
+		if (data.tripType) {
+			setTripType(data.tripType);
+		}
+
+		if ("return_date" in data) {
+			setReturnDate(data.return_date || "");
 		}
 	};
 
@@ -272,15 +275,15 @@ export default function HomePage() {
 			}
 			const API_URL = process.env.NEXT_PUBLIC_API_URL;
 			if (!session?.access_token) {
-        throw new Error("You must be logged in to run searches.");
-      }
+				throw new Error("You must be logged in to run searches.");
+			}
 
-      const res = await fetch(`${API_URL}/api/search?${params.toString()}`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
-      });
+			const res = await fetch(`${API_URL}/api/search?${params.toString()}`, {
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${session.access_token}`,
+				},
+			});
 			if (!res.ok) {
 				const errData = await res.json().catch(() => null);
 				const detail = errData?.detail;
