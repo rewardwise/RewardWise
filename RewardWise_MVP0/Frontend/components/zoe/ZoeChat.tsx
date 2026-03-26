@@ -3,6 +3,8 @@
 "use client";
 import AirportSearch from "@/components/AirportSearch";
 import { useState, useEffect, useRef } from "react";
+import { useWallet } from "@/context/WalletContext";
+import ReactMarkdown from "react-markdown";
 import {
 	MessageCircle,
 	Sparkles,
@@ -79,109 +81,21 @@ interface ZoeChatProps {
 	messages: Message[];
 	setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
 	isAuthenticated?: boolean;
+	cards?: any[];
 }
 
 // ---------------------------------------------------------------------------
 // Stub helpers — replace with your real implementations
 // ---------------------------------------------------------------------------
 
-function parseTripFromText(text: string): FillData | null {
-	// TODO: replace with your real NLP parser
-	const lower = text.toLowerCase();
-	const result: FillData = {};
+function mapUIToDropdown(ui: any) {
+	if (!ui || !ui.input_type) return null;
 
-	const originMap: Record<string, string> = {
-		"san francisco": "SFO",
-		sfo: "SFO",
-		"new york": "JFK",
-		nyc: "JFK",
-		jfk: "JFK",
-
-		"los angeles": "LAX",
-		lax: "LAX",
-		chicago: "ORD",
-		ord: "ORD",
-		seattle: "SEA",
-		sea: "SEA",
-		boston: "BOS",
-		bos: "BOS",
+	return {
+		type: ui.input_type,
+		options: ui.options || [],
 	};
-	for (const [key, code] of Object.entries(originMap)) {
-		if (lower.includes(key)) {
-			result.origin = code;
-			break;
-		}
-	}
-
-	if (lower.includes("business")) result.cabin = "business";
-	else if (lower.includes("first")) result.cabin = "first";
-	else if (lower.includes("economy")) result.cabin = "economy";
-
-	const twoMatch = lower.match(
-		/\b(2|two)\s*(people|travelers?|pax|passengers?)/,
-	);
-	if (twoMatch) result.travelers = 2;
-	const threeMatch = lower.match(
-		/\b(3|three)\s*(people|travelers?|pax|passengers?)/,
-	);
-	if (threeMatch) result.travelers = 3;
-
-	const months: Record<string, string> = {
-		january: "2026-01-15",
-		february: "2026-02-15",
-		march: "2026-03-15",
-		april: "2026-04-15",
-		may: "2026-05-15",
-		june: "2026-06-15",
-		july: "2026-07-15",
-		august: "2026-08-15",
-		september: "2026-09-15",
-		october: "2026-10-15",
-		november: "2026-11-15",
-		december: "2026-12-15",
-	};
-	for (const [month, date] of Object.entries(months)) {
-		if (lower.includes(month)) {
-			result.date = date;
-			break;
-		}
-	}
-
-	return Object.keys(result).length > 0 ? result : null;
 }
-
-function parseDates(date: string): { dep: string | null; ret: string | null } {
-	if (!date) return { dep: null, ret: null };
-
-	try {
-		// Case 1: range format → "2026-04-01 - 2026-04-10"
-		if (date.includes(" - ")) {
-			const [dep, ret] = date.split(" - ").map((d) => d.trim());
-			return {
-				dep: dep || null,
-				ret: ret || null,
-			};
-		}
-
-		// Case 2: single date → auto return = +7 days
-		const depDate = new Date(date);
-
-		if (isNaN(depDate.getTime())) {
-			return { dep: null, ret: null };
-		}
-
-		const retDate = new Date(depDate);
-		retDate.setDate(retDate.getDate() + 7);
-
-		return {
-			dep: depDate.toLocaleDateString("en-CA"),
-			ret: retDate.toLocaleDateString("en-CA"),
-		};
-	} catch {
-		return { dep: null, ret: null };
-	}
-}
-
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -204,19 +118,29 @@ export default function ZoeChat({
 	const [expanded, setExpanded] = useState(false);
 	const inputRef = useRef<HTMLInputElement>(null);
 	const endRef = useRef<HTMLDivElement>(null);
+	const { cards } = useWallet();
 	const recognitionRef = useRef<SpeechRecognition | null>(null);
-	const [tripState, setTripState] = useState<FillData>({});
-	const [currentStep, setCurrentStep] = useState<
+	type SlotType =
 		| "origin"
 		| "destination"
-		| "tripType"
-		| "date"
-		| "returnDate"
 		| "travelers"
+		| "tripType"
 		| "cabin"
-		| null
-	>(null);
+		| "date"
+		| "returnDate";
 
+	const [selected, setSelected] = useState<Partial<Record<SlotType, string>>>(
+		{},
+	);
+	const LABEL_MAP: Record<SlotType, string> = {
+		origin: "From",
+		destination: "To",
+		tripType: "Trip",
+		date: "Departure",
+		returnDate: "Return",
+		travelers: "Travelers",
+		cabin: "Cabin",
+	};
 	useEffect(() => {
 		if (isOpen && inputRef.current) inputRef.current.focus();
 	}, [isOpen]);
@@ -317,33 +241,8 @@ export default function ZoeChat({
 	};
 
 	// -------------------------------------------------------------------------
-	// Banter / personality engine
-	// -------------------------------------------------------------------------
-
-	const pick = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
-
-	// -------------------------------------------------------------------------
-	// Intent detection
-	// -------------------------------------------------------------------------
-
-	// -------------------------------------------------------------------------
 	// Quick search chips
 	// -------------------------------------------------------------------------
-
-	const DEST_SUGGESTIONS: DestSuggestion[] = [
-		{ emoji: "🇯🇵", label: "Tokyo", query: "SFO to Tokyo business class" },
-		{
-			emoji: "🇬🇧",
-			label: "London",
-			query: "JFK to London business class 2 people",
-		},
-		{ emoji: "🇮🇩", label: "Bali", query: "LAX to Bali business class" },
-		{
-			emoji: "🇫🇷",
-			label: "Paris",
-			query: "NYC to Paris business class 2 people",
-		},
-	];
 
 	const handleQuickSearch = (item: QuickSearch) => {
 		setShowChips(false);
@@ -382,18 +281,6 @@ export default function ZoeChat({
 	};
 
 	const handleEdit = (index: number, type: string) => {
-		setCurrentStep(type as any);
-
-		const labelMap: Record<string, string> = {
-			origin: "From",
-			destination: "To",
-			tripType: "Trip",
-			date: "Departure",
-			returnDate: "Return",
-			travelers: "Travelers",
-			cabin: "Cabin",
-		};
-
 		setMessages((prev) =>
 			prev.map((m, idx) => {
 				// remove ALL other dropdowns
@@ -406,7 +293,7 @@ export default function ZoeChat({
 					return {
 						...m,
 						role: "assistant",
-						content: `Update ${labelMap[type]}`,
+						content: `Update ${LABEL_MAP[type as keyof typeof LABEL_MAP] || type}`,
 						dropdown: {
 							type: type as any,
 							options:
@@ -427,463 +314,227 @@ export default function ZoeChat({
 		);
 	};
 
-	const handleDropdownSelect = (type: string, value: string) => {
+	const handleDropdownSelect = async (type: string, value: string) => {
+		if (typing) return;
 		if (!value) return;
-		const labelMap: Record<string, string> = {
-			origin: "From",
-			destination: "To",
-			tripType: "Trip",
-			date: "Departure",
-			returnDate: "Return",
-			travelers: "Travelers",
-			cabin: "Cabin",
-		};
 
+		// 1. Show user input in chat
 		setMessages((prev) => [
-			...prev.filter((m) => !m.dropdown),
+			...prev.map((m) =>
+				m.dropdown ? { ...m, dropdown: null, action: null } : m,
+			),
 			{
 				role: "user",
-				content: `${labelMap[type] || type}: ${value}`,
-				action: {
-					label: "Edit",
-					handler: () => handleEdit(prev.length, type), // 👈 KEY FIX
-				},
+				content: `${LABEL_MAP[type as keyof typeof LABEL_MAP] || type}: ${value}`,
 			},
 		]);
-		let updated = { ...tripState };
 
-		switch (type) {
-			case "origin":
-				updated.origin = value;
-				setCurrentStep("destination");
+		setTyping(true);
 
-				setMessages((prev) => [
-					...prev,
-					{
-						role: "assistant",
-						content: "Where are you flying to?",
-						dropdown: {
-							type: "destination",
-							options: [],
-						},
-					},
-				]);
-				break;
-			case "destination":
-				updated.destination = value;
+		// 2. Send to backend (THIS is the key change)
+		const text = value;
+		const res = await fetch("/api/zoe", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				message: text,
+				slot: type,
 
-				setCurrentStep("tripType");
-
-				setMessages((prev) => [
-					...prev,
-					{
-						role: "assistant",
-						content: "One-way or round trip?",
-						dropdown: {
-							type: "tripType",
-							options: ["One Way", "Round Trip"],
-						},
-					},
-				]);
-				break;
-
-			case "travelers":
-				updated.travelers = Number(value);
-
-				setCurrentStep("cabin");
-
-				setMessages((prev) => [
-					...prev,
-					{
-						role: "assistant",
-						content: "Economy, Business, or First?",
-						dropdown: {
-							type: "cabin",
-							options: ["Economy", "Business", "First"],
-						},
-					},
-				]);
-				break;
-
-			case "tripType":
-				updated.tripType = value === "Round Trip" ? "roundtrip" : "oneway";
-
-				if (updated.tripType === "roundtrip") {
-					updated.return_date = "";
-				} else {
-					updated.return_date = undefined;
-				}
-
-				setCurrentStep("date");
-
-				setMessages((prev) => [
-					...prev,
-					{
-						role: "assistant",
-						content: "Select departure date",
-						dropdown: {
-							type: "date",
-							options: [],
-						},
-					},
-				]);
-
-				break;
-
-			case "date":
-				updated.date = value;
-
-				if (updated.tripType === "roundtrip") {
-					setCurrentStep("returnDate");
-
-					setMessages((prev) => [
-						...prev,
-						{
-							role: "assistant",
-							content: "Select return date",
-							dropdown: {
-								type: "returnDate",
-								options: [],
-							},
-						},
-					]);
-				} else {
-					setCurrentStep("travelers");
-
-					setMessages((prev) => [
-						...prev,
-						{
-							role: "assistant",
-							content: "How many travelers?",
-							dropdown: {
-								type: "travelers",
-								options: ["1", "2", "3", "4", "5"],
-							},
-						},
-					]);
-				}
-				break;
-
-			case "returnDate":
-				updated.return_date = value;
-
-				setCurrentStep("travelers");
-
-				setMessages((prev) => [
-					...prev,
-					{
-						role: "assistant",
-						content: "How many travelers?",
-						dropdown: {
-							type: "travelers",
-							options: ["1", "2", "3", "4", "5"],
-						},
-					},
-				]);
-				break;
-
-			case "cabin":
-				updated.cabin = value.toLowerCase();
-
-				setMessages((prev) => [
-					...prev,
-					{
-						role: "assistant",
-						content: "Perfect. Running your search now...",
-					},
-				]);
-
-				if (onTriggerSearch) onTriggerSearch();
-				break;
+				slots: selected,
+				wallet: (cards || []).map((c: any) => ({
+					program: c.program_name,
+					points: c.points_balance,
+				})),
+			}),
+		});
+		if (!res.ok) {
+			setMessages((prev) => [
+				...prev,
+				{
+					role: "assistant",
+					content: "Server error. Please try again.",
+				},
+			]);
+			setTyping(false);
+			return;
 		}
 
-		setTripState(updated);
+		let data;
 
-		// 🔥 keep UI + chat in sync
-		if (onFillSearch) onFillSearch(updated);
+		try {
+			data = await res.json();
+		} catch {
+			setMessages((prev) => [
+				...prev,
+				{
+					role: "assistant",
+					content: "Something went wrong. Please try again.",
+				},
+			]);
+			setTyping(false);
+			return;
+		}
+		if (data.params) {
+			const params = data.params;
+
+			// update state once
+			setSelected((prev) => ({
+				...prev,
+				...params,
+			}));
+
+			// handle tripType UI behavior
+			if (params.tripType === "oneway") {
+				onFillSearch?.({
+					...params,
+					return_date: undefined, // remove return
+				});
+			}
+
+			if (params.tripType === "roundtrip") {
+				onFillSearch?.(params); // show return field
+			}
+		}
+
+		//  ALWAYS sync UI
+		if (data.params && onFillSearch) {
+			onFillSearch(data.params);
+		}
+
+		//  Only trigger search when ready
+		if (data.type === "search_result") {
+			if (onTriggerSearch) {
+				onTriggerSearch();
+			}
+		}
+		// 3. Render backend response
+		setMessages((prev) => [
+			...prev,
+			{
+				role: "assistant",
+				content: data.message || "Something went wrong",
+				dropdown: mapUIToDropdown(data.dropdown),
+			},
+		]);
+
+		setTyping(false);
 	};
 	// -------------------------------------------------------------------------
 	// Send / process
 	// -------------------------------------------------------------------------
+	const sendText = async (text: string) => {
+		const formattedWallet = (cards || []).map((c: any) => ({
+			program: c.program_name,
+			points: c.points_balance,
+		}));
 
-	const sendText = (text: string) => {
+		console.log("wallet being sent to API:", formattedWallet);
+		if (typing) return;
+
 		setMessages((prev) => [...prev, { role: "user", content: text }]);
 		setInput("");
 		setShowChips(false);
 		setTyping(true);
-		setTimeout(() => processMessage(text), 800);
+
+		let res;
+
+		try {
+			res = await fetch("/api/zoe", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					message: text,
+					slot: null,
+					slots: selected,
+					wallet: (cards || []).map((c: any) => ({
+						program: c.program_name,
+						points: c.points_balance,
+					})),
+				}),
+			});
+		} catch {
+			setMessages((prev) => [
+				...prev,
+				{ role: "assistant", content: "Network error. Check connection." },
+			]);
+			setTyping(false);
+			return;
+		}
+
+		if (!res.ok) {
+			setMessages((prev) => [
+				...prev,
+				{ role: "assistant", content: "Server error. Please try again." },
+			]);
+			setTyping(false);
+			return;
+		}
+
+		let data;
+
+		try {
+			data = await res.json();
+		} catch {
+			setMessages((prev) => [
+				...prev,
+				{ role: "assistant", content: "Invalid server response." },
+			]);
+			setTyping(false);
+			return;
+		}
+		if (data.params) {
+			const params = data.params;
+
+			// update state once
+			setSelected((prev) => ({
+				...prev,
+				...params,
+			}));
+
+			// handle tripType UI behavior
+			if (params.tripType === "oneway") {
+				onFillSearch?.({
+					...params,
+					return_date: undefined, // remove return
+				});
+			}
+
+			if (params.tripType === "roundtrip") {
+				onFillSearch?.(params); // show return field
+			}
+		}
+
+		// ALWAYS sync UI
+		if (data.params && onFillSearch) {
+			onFillSearch(data.params);
+		}
+
+		// Only trigger search when ready
+		if (data.type === "search_result") {
+			if (onTriggerSearch) onTriggerSearch();
+		}
+		setMessages((prev) => [
+			...prev,
+			{
+				role: "assistant",
+				content: data.message || "Something went wrong",
+				dropdown: mapUIToDropdown(data.dropdown),
+			},
+		]);
+
+		setTyping(false);
 	};
 
 	const send = () => {
+		if (typing) return;
 		if (!input.trim()) return;
-		const text = input.trim();
-		setMessages((prev) => [...prev, { role: "user", content: text }]);
-		setInput("");
-		setShowChips(false);
-		setTyping(true);
-		setTimeout(() => processMessage(text), 800);
-	};
 
-	const processMessage = (text: string) => {
-		// ---------------- SLOT FLOW ----------------
-
-		// Start conversation
-		if (!currentStep && Object.keys(tripState).length === 0) {
-			const lower = text.toLowerCase().trim();
-
-			// ✅ HANDLE GREETING FIRST
-			if (["hi", "hello", "hey"].includes(lower)) {
-				setCurrentStep("origin");
-
-				setMessages((prev) => [
-					...prev,
-					{
-						role: "assistant",
-						content: "Hi! Where are you flying from?",
-					},
-				]);
-
-				setTyping(false);
-				return;
-			}
-
-			// ✅ THEN handle origin normally
-			const parsed = parseTripFromText(text);
-
-			let originCode: string | undefined;
-
-			if (parsed?.origin) {
-				originCode = parsed.origin;
-			} else if (text.trim().length === 3) {
-				originCode = text.trim().toUpperCase();
-			} else {
-				setMessages((prev) => [
-					...prev,
-					{
-						role: "assistant",
-						content: "Please enter a valid airport (e.g., JFK or New York).",
-					},
-				]);
-				setTyping(false);
-				return;
-			}
-
-			const updated = { ...tripState, origin: originCode };
-			setTripState(updated);
-
-			setCurrentStep("destination");
-
-			setMessages((prev) => [
-				...prev,
-				{ role: "assistant", content: "Where are you flying to?" },
-			]);
-
-			setTyping(false);
-			return;
-		}
-		if (currentStep) {
-			let updated = { ...tripState };
-
-			switch (currentStep) {
-				case "destination":
-					const parsed = parseTripFromText(text);
-
-					let destCode: string | undefined;
-
-					if (parsed?.origin) {
-						destCode = parsed.origin; // "London" → LHR
-					} else if (text.trim().length === 3) {
-						destCode = text.trim().toUpperCase(); // "LHR"
-					} else {
-						setMessages((prev) => [
-							...prev,
-							{
-								role: "assistant",
-								content: "Please enter a valid airport (e.g., LHR or London).",
-							},
-						]);
-						setTyping(false);
-						return;
-					}
-
-					updated.destination = destCode;
-
-					updated.destination = destCode;
-					setCurrentStep("tripType");
-					setMessages((prev) => [
-						...prev,
-						{ role: "assistant", content: "One-way or round trip?" },
-					]);
-					break;
-
-				case "tripType":
-					if (text.toLowerCase().includes("round")) {
-						updated.tripType = "roundtrip";
-						updated.return_date = "";
-					} else {
-						updated.tripType = "oneway";
-						updated.return_date = undefined;
-					}
-					setCurrentStep("date");
-					setMessages((prev) => [
-						...prev,
-						{
-							role: "assistant",
-							content: "What’s your departure date? (YYYY-MM-DD)",
-						},
-					]);
-					break;
-
-				case "date":
-					updated.date = text;
-
-					if (updated.tripType === "roundtrip") {
-						setCurrentStep("returnDate");
-						setMessages((prev) => [
-							...prev,
-							{ role: "assistant", content: "What’s your return date?" },
-						]);
-					} else {
-						setCurrentStep("travelers");
-						setMessages((prev) => [
-							...prev,
-							{ role: "assistant", content: "How many travelers?" },
-						]);
-					}
-					break;
-
-				case "returnDate":
-					updated.return_date = text;
-					setCurrentStep("travelers");
-					setMessages((prev) => [
-						...prev,
-						{ role: "assistant", content: "How many travelers?" },
-					]);
-					break;
-
-				case "travelers":
-					const num = Number(text);
-					if (isNaN(num)) {
-						setMessages((prev) => [
-							...prev,
-							{ role: "assistant", content: "Please enter a valid number." },
-						]);
-						setTyping(false);
-						return;
-					}
-					updated.travelers = num;
-					setCurrentStep("cabin");
-					setMessages((prev) => [
-						...prev,
-						{ role: "assistant", content: "Economy, Business, or First?" },
-					]);
-					break;
-
-				case "cabin":
-					updated.cabin = text.toLowerCase();
-					setCurrentStep(null);
-
-					if (onFillSearch) onFillSearch(updated);
-
-					setMessages((prev) => [
-						...prev,
-						{
-							role: "assistant",
-							content: "Perfect. Running your search now...",
-						},
-					]);
-
-					if (onTriggerSearch) setTimeout(() => onTriggerSearch(), 500);
-					break;
-			}
-
-			setTripState(updated);
-			setTyping(false);
-			return;
-		}
-
-		// ---------------- EXISTING LOGIC CONTINUES ----------------
-
-		const parsed = parseTripFromText(text);
-
-		// --- Trip parsing ---
-		const fillData: FillData = parsed || {};
-
-		const dests: Record<string, { dest: string; code: string }> = {
-			tokyo: { dest: "Tokyo", code: "HND" },
-			bali: { dest: "Bali", code: "DPS" },
-			london: { dest: "London", code: "LHR" },
-			paris: { dest: "Paris", code: "CDG" },
-			maldives: { dest: "Maldives", code: "MLE" },
-			hawaii: { dest: "Hawaii", code: "HNL" },
-			cancun: { dest: "Cancun", code: "CUN" },
-			rome: { dest: "Rome", code: "FCO" },
-			dubai: { dest: "Dubai", code: "DXB" },
-			sydney: { dest: "Sydney", code: "SYD" },
-			singapore: { dest: "Singapore", code: "SIN" },
-			seoul: { dest: "Seoul", code: "ICN" },
-			bangkok: { dest: "Bangkok", code: "BKK" },
-			amsterdam: { dest: "Amsterdam", code: "AMS" },
-		};
-
-		const lower = text.toLowerCase();
-		let destInfo: { dest: string; code: string } | null = null;
-		for (const [key, val] of Object.entries(dests)) {
-			if (lower.includes(key)) {
-				destInfo = val;
-				fillData.destination = val.code;
-				break;
-			}
-		}
-
-		if (!fillData.origin) fillData.origin = "SFO";
-		if (!fillData.cabin) fillData.cabin = "economy";
-		if (!fillData.travelers) fillData.travelers = 1;
-		const dateWasExplicit = !!fillData.date;
-		if (!fillData.date) fillData.date = "2026-03-15";
-
-		const originCities: Record<string, string> = {
-			sfo: "San Francisco (SFO)",
-			jfk: "New York (JFK)",
-			nyc: "New York (JFK)",
-			lax: "Los Angeles (LAX)",
-			ord: "Chicago (ORD)",
-			dfw: "Dallas (DFW)",
-			atl: "Atlanta (ATL)",
-			sea: "Seattle (SEA)",
-			bos: "Boston (BOS)",
-			iad: "Washington (IAD)",
-			yyz: "Toronto (YYZ)",
-			yvr: "Vancouver (YVR)",
-		};
-
-		const originDisplay =
-			originCities[fillData.origin.toLowerCase()] ?? fillData.origin;
-		const destDisplay = destInfo ? destInfo.dest : fillData.destination;
-		const cabinDisplay =
-			fillData.cabin.charAt(0).toUpperCase() + fillData.cabin.slice(1);
-		const { ret: retDate } = parseDates(fillData.date ?? "");
+		sendText(input.trim());
 	};
 
 	useEffect(() => {
 		if (isOpen && messages.length === 0) {
-			setMessages([
-				{
-					role: "assistant",
-					content:
-						"Hey! I'm Zoe, your RewardWise travel assistant.\n\nTell me where you want to fly and I'll find the best deal ✈️",
-				},
-				{
-					role: "assistant",
-					content: "Where are you flying from?",
-					dropdown: {
-						type: "origin",
-						options: ["JFK", "SFO", "LAX", "ORD", "SEA", "BOS"],
-					},
-				},
-			]);
-
-			setCurrentStep("origin");
+			sendText("start");
 		}
 	}, [isOpen]);
 	// -------------------------------------------------------------------------
@@ -987,82 +638,26 @@ export default function ZoeChat({
 											: "bg-gray-800 text-gray-200"
 								} ${expanded ? "text-base" : ""}`}
 							>
-								{msg.content.split("\n").map((line, j) =>
-									line !== undefined && line !== "undefined" ? (
-										<p key={j} className={j > 0 ? "mt-1" : ""}>
-											{line}
-										</p>
-									) : null,
-								)}
+								<ReactMarkdown
+									components={{
+										p: ({ ...props }) => (
+											<p className="mb-2 leading-relaxed" {...props} />
+										),
+										li: ({ ...props }) => (
+											<li className="ml-4 list-disc" {...props} />
+										),
+										strong: ({ ...props }) => (
+											<strong className="font-semibold text-white" {...props} />
+										),
+										h3: ({ ...props }) => (
+											<h3 className="font-semibold mt-2 mb-1" {...props} />
+										),
+									}}
+								>
+									{msg.content || ""}
+								</ReactMarkdown>
 							</div>
-							{msg.dropdown?.type === "origin" && (
-								<div className="mt-2 w-full max-w-[260px]">
-									<AirportSearch
-										label="From"
-										value={tripState.origin || ""}
-										onChange={(code) => handleDropdownSelect("origin", code)}
-										placeholder="Search origin airport..."
-									/>
-								</div>
-							)}
-							{msg.dropdown?.type === "destination" && (
-								<div className="mt-2 w-full max-w-[260px]">
-									<AirportSearch
-										label="To"
-										value={tripState.destination || ""}
-										onChange={(code) =>
-											handleDropdownSelect("destination", code)
-										}
-										placeholder="Search destination..."
-									/>
-								</div>
-							)}
-							{/* DATE (departure) */}
-							{msg.dropdown?.type === "date" && (
-								<div className="mt-2">
-									<input
-										type="date"
-										className="bg-gray-800 text-white px-3 py-2 rounded-lg border border-gray-700"
-										onChange={(e) =>
-											handleDropdownSelect("date", e.target.value)
-										}
-									/>
-								</div>
-							)}
 
-							{msg.dropdown?.type === "returnDate" && (
-								<div className="mt-2">
-									<input
-										type="date"
-										className="bg-gray-800 text-white px-3 py-2 rounded-lg border border-gray-700"
-										onChange={(e) =>
-											handleDropdownSelect("returnDate", e.target.value)
-										}
-									/>
-								</div>
-							)}
-							{/* OTHER DROPDOWNS */}
-							{msg.dropdown &&
-								msg.dropdown.type !== "origin" &&
-								msg.dropdown.type !== "destination" &&
-								msg.dropdown.type !== "date" &&
-								msg.dropdown.type !== "returnDate" && (
-									<div className="mt-2">
-										<select
-											className="bg-gray-800 text-white px-3 py-2 rounded-lg border border-gray-700"
-											onChange={(e) =>
-												handleDropdownSelect(msg.dropdown!.type, e.target.value)
-											}
-										>
-											<option value="">Select</option>
-											{msg.dropdown.options.map((opt, idx) => (
-												<option key={idx} value={opt}>
-													{opt}
-												</option>
-											))}
-										</select>
-									</div>
-								)}
 							{msg.action && (
 								<button
 									onClick={() => {
