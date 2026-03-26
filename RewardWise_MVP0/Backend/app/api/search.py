@@ -348,3 +348,15 @@ async def search(
         "verdict": verdict_details,
         "user_programs": user_programs,
     }
+
+async def run_search(params):
+    class DummyRequest:
+        headers = {
+            "authorization": "Bearer test-token"
+        }
+        url = type("obj", (), {"query": ""})
+
+    return await search(
+        request=DummyRequest(),
+        params=params
+    )

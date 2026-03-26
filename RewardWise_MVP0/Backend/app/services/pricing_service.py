@@ -104,7 +104,7 @@ async def get_cash_price(
     if not api_key:
         return {"cash_price": None, "currency": "USD", "source": "google_flights", "flights": []}
 
-    is_roundtrip = bool(return_date)
+    is_roundtrip = return_date is not None
 
     params = {
         "engine":        "google_flights",
