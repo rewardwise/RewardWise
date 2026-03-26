@@ -191,12 +191,11 @@ export default function ZoeChat({
 			const recognition = new SpeechRecognitionAPI();
 
 			// Config
-			recognition.continuous = false;
+			recognition.continuous = true;
 			recognition.interimResults = true;
 			recognition.lang = "en-US";
 			recognition.maxAlternatives = 1;
 
-			// Result handler
 			recognition.onresult = (event) => {
 				const transcript = Array.from(event.results)
 					.map((r) => r[0].transcript)
@@ -205,15 +204,25 @@ export default function ZoeChat({
 				setInput(transcript);
 
 				if (event.results[0].isFinal) {
-					setListening(false);
+					setTimeout(() => {
+						sendText(transcript);
+					}, 100); // small delay prevents mic crash
 				}
 			};
 
+			recognition.onend = () => {
+				if (listening) {
+					recognition.start(); // keeps mic alive
+				}
+			};
 			// Error handler
 			recognition.onerror = (e) => {
-				setListening(false);
+				console.warn("Speech error:", e.error);
 
+				// ONLY stop on real fatal errors
 				if (e.error === "not-allowed") {
+					setListening(false);
+
 					setMessages((prev) => [
 						...prev,
 						{
@@ -227,7 +236,10 @@ export default function ZoeChat({
 
 			// End handler
 			recognition.onend = () => {
-				setListening(false);
+				// 🔥 keep mic alive unless user manually stopped it
+				if (listening) {
+					recognition.start();
+				}
 			};
 
 			recognitionRef.current = recognition;
