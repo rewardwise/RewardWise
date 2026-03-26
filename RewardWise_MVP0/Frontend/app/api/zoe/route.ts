@@ -6,7 +6,9 @@ export async function POST(req: Request) {
 	try {
 		const body = await req.json();
 
-		const res = await fetch("http://127.0.0.1:8000/api/zoe", {
+		const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
+
+		const res = await fetch(`${backendUrl}/api/zoe`, {
 			method: "POST",
 			headers: {
 				"Content-Type": "application/json",
