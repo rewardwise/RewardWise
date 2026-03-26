@@ -1,7 +1,7 @@
 /** @format */
 
 "use client";
-import AirportSearch from "@/components/AirportSearch";
+
 import { useState, useEffect, useRef } from "react";
 import { useWallet } from "@/context/WalletContext";
 import ReactMarkdown from "react-markdown";
@@ -17,6 +17,19 @@ import {
 	MicOff,
 	Send,
 } from "lucide-react";
+
+import { createClient } from "@/utils/supabase/client";
+
+const supabase = createClient();
+
+async function getAuthHeaders(): Promise<Record<string, string>> {
+	const { data } = await supabase.auth.getSession();
+	const token = data?.session?.access_token;
+	return {
+		"Content-Type": "application/json",
+		...(token ? { Authorization: `Bearer ${token}` } : {}),
+	};
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -333,9 +346,10 @@ export default function ZoeChat({
 
 		// 2. Send to backend (THIS is the key change)
 		const text = value;
+		const headers = await getAuthHeaders();
 		const res = await fetch("/api/zoe", {
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
+			headers,
 			body: JSON.stringify({
 				message: text,
 				slot: type,
@@ -439,9 +453,10 @@ export default function ZoeChat({
 		let res;
 
 		try {
+			const headers = await getAuthHeaders();
 			res = await fetch("/api/zoe", {
 				method: "POST",
-				headers: { "Content-Type": "application/json" },
+				headers,
 				body: JSON.stringify({
 					message: text,
 					slot: null,

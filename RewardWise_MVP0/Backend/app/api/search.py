@@ -11,7 +11,7 @@ from app.services.seats_service import search_award_availability
 from app.services.verdict_service import generate_verdict  # RW-VerdictGenerator
 from app.utils.math_utils import calculate_cpp
 from app.validators.airport_codes import is_valid_airport_code  # RW-047
-
+import os
 router = APIRouter()
 
 # Maps seats.aero source strings → card program names that transfer there.
@@ -126,8 +126,8 @@ async def search(
     if not token:
         raise HTTPException(status_code=401, detail="Missing bearer token")
 
-    import requests
-    import os
+
+    
 
     SUPABASE_URL = os.environ.get("SUPABASE_URL")
     SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
@@ -349,14 +349,10 @@ async def search(
         "user_programs": user_programs,
     }
 
-async def run_search(params):
-    class DummyRequest:
-        headers = {
-            "authorization": "Bearer test-token"
-        }
-        url = type("obj", (), {"query": ""})
+async def run_search(request: Request, params):
+    """
+    Internal helper called by zoe_service.
+    Now accepts the real request object so auth flows through correctly.
+    """
+    return await search(request=request, params=params)
 
-    return await search(
-        request=DummyRequest(),
-        params=params
-    )

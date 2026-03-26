@@ -3,6 +3,7 @@ from app.api.search import run_search
 from app.api.validators import SearchParams
 from app.services.llm import generate_text
 import re
+import json
 from app.rag.flights_retriever import retrieve
 from app.services.verdict_service import generate_verdict
 from datetime import datetime
@@ -281,14 +282,23 @@ async def handle_zoe(payload: Dict[str, Any]) -> Dict[str, Any]:
     User:
     {text}
     """
-    try:
-        import json
-        raw = await generate_text(extract_prompt)
 
+
+    raw = await generate_text(extract_prompt)
+
+    try:
         start = raw.find("{")
         end = raw.rfind("}") + 1
-        data = json.loads(raw[start:end])
-    except:
+
+        if start == -1 or end == -1:
+            raise ValueError("No JSON found")
+
+        json_str = raw[start:end]
+        data = json.loads(json_str)
+
+    except Exception as e:
+        print("❌ JSON PARSE ERROR:", str(e))
+        print("RAW LLM OUTPUT:", raw)
         data = {}
 
 
@@ -385,7 +395,7 @@ async def handle_zoe(payload: Dict[str, Any]) -> Dict[str, Any]:
 
             return {
                 "type": "search_result",
-                "message": explanation,
+                "message": explanation or "Here’s what I found for you",
                 "data": verdict,
                 "params": state
             }
