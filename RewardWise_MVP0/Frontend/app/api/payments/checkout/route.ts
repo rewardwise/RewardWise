@@ -1,6 +1,6 @@
 /** @format */
 
-import { getStripeClientOrNull } from "@/lib/payments/stripe-loader";
+import { getStripeClientOrNull } from "@/utils/stripe/loader";
 import { createRouteHandlerClient } from "@/utils/supabase/route-handler";
 import { NextResponse } from "next/server";
 

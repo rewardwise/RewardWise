@@ -1,6 +1,6 @@
 /** @format */
 
-import { getStripeClientOrNull } from "@/lib/payments/stripe-loader";
+import { getStripeClientOrNull } from "@/utils/stripe/loader";
 import { createClient } from "@supabase/supabase-js";
 import { headers } from "next/headers";
 import { NextResponse } from "next/server";
