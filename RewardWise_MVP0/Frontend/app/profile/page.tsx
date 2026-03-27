@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthProvider";
 import TopNav from "@/components/TopNav";
 import { createClient } from "@/utils/supabase/client";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 const supabase = createClient();
 import {
@@ -23,6 +24,81 @@ import TropicalBackground from "@/components/TropicalBackground";
 export default function ProfilePage() {
 	const router = useRouter();
 	const { user, signOut, subscription } = useAuth();
+	const hasLoadedSettings = useRef(false);
+	const settingsStorageKey = useMemo(
+		() => `rw:profile-notification-settings:${user?.id ?? "guest"}`,
+		[user?.id],
+	);
+
+	const defaultNotificationSettings = {
+		watchlistEmailAlerts: true,
+		weeklyPortfolioSummary: true,
+		dealAlerts: true,
+		pointsExpiryWarnings: true,
+	};
+
+	const [notificationSettings, setNotificationSettings] = useState(
+		defaultNotificationSettings,
+	);
+
+	useEffect(() => {
+		let cancelled = false;
+		(async () => {
+			try {
+				// 1) local cache for instant paint
+				const raw = localStorage.getItem(settingsStorageKey);
+				if (raw) {
+					const parsed = JSON.parse(raw) as Partial<
+						typeof defaultNotificationSettings
+					>;
+					if (!cancelled) {
+						setNotificationSettings((prev) => ({ ...prev, ...parsed }));
+					}
+				}
+
+				// 2) cross-device source of truth from Supabase auth metadata
+				if (user?.id) {
+					const { data, error } = await supabase.auth.getUser();
+					if (error) throw error;
+					const remote = (data.user?.user_metadata?.notification_settings ??
+						null) as Partial<typeof defaultNotificationSettings> | null;
+					if (remote && !cancelled) {
+						setNotificationSettings((prev) => ({ ...prev, ...remote }));
+					}
+				}
+			} catch (error) {
+				console.warn("Could not load notification settings", error);
+			} finally {
+				if (!cancelled) hasLoadedSettings.current = true;
+			}
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, [settingsStorageKey, user?.id]);
+
+	useEffect(() => {
+		if (!hasLoadedSettings.current) return;
+		try {
+			localStorage.setItem(
+				settingsStorageKey,
+				JSON.stringify(notificationSettings),
+			);
+		} catch (error) {
+			console.warn("Could not save notification settings", error);
+		}
+		if (!user?.id) return;
+		(async () => {
+			const { error } = await supabase.auth.updateUser({
+				data: {
+					notification_settings: notificationSettings,
+				},
+			});
+			if (error) {
+				console.warn("Could not sync notification settings", error);
+			}
+		})();
+	}, [notificationSettings, settingsStorageKey, user?.id]);
 
 	const tools = [
 		{
@@ -129,22 +205,68 @@ export default function ProfilePage() {
 						<h2 className="text-lg font-semibold text-white mb-4">Settings</h2>
 
 						<div className="space-y-3">
-							{[
-								"Email alerts for watchlist",
-								"Weekly portfolio summary",
-								"Deal alerts",
-								"Points expiry warnings",
-							].map((item, i) => (
-								<div key={i} className="flex items-center justify-between">
-									<span className="text-gray-300 text-sm">{item}</span>
-
-									<input
-										type="checkbox"
-										defaultChecked
-										className="w-5 h-5 rounded bg-gray-700 border-gray-600 text-emerald-500"
-									/>
-								</div>
-							))}
+							<div className="flex items-center justify-between">
+								<span className="text-gray-300 text-sm">
+									Email alerts for watchlist
+								</span>
+								<input
+									type="checkbox"
+									checked={notificationSettings.watchlistEmailAlerts}
+									onChange={(e) =>
+										setNotificationSettings((prev) => ({
+											...prev,
+											watchlistEmailAlerts: e.target.checked,
+										}))
+									}
+									className="w-5 h-5 rounded bg-gray-700 border-gray-600 text-emerald-500"
+								/>
+							</div>
+							<div className="flex items-center justify-between">
+								<span className="text-gray-300 text-sm">
+									Weekly portfolio summary
+								</span>
+								<input
+									type="checkbox"
+									checked={notificationSettings.weeklyPortfolioSummary}
+									onChange={(e) =>
+										setNotificationSettings((prev) => ({
+											...prev,
+											weeklyPortfolioSummary: e.target.checked,
+										}))
+									}
+									className="w-5 h-5 rounded bg-gray-700 border-gray-600 text-emerald-500"
+								/>
+							</div>
+							<div className="flex items-center justify-between">
+								<span className="text-gray-300 text-sm">Deal alerts</span>
+								<input
+									type="checkbox"
+									checked={notificationSettings.dealAlerts}
+									onChange={(e) =>
+										setNotificationSettings((prev) => ({
+											...prev,
+											dealAlerts: e.target.checked,
+										}))
+									}
+									className="w-5 h-5 rounded bg-gray-700 border-gray-600 text-emerald-500"
+								/>
+							</div>
+							<div className="flex items-center justify-between">
+								<span className="text-gray-300 text-sm">
+									Points expiry warnings
+								</span>
+								<input
+									type="checkbox"
+									checked={notificationSettings.pointsExpiryWarnings}
+									onChange={(e) =>
+										setNotificationSettings((prev) => ({
+											...prev,
+											pointsExpiryWarnings: e.target.checked,
+										}))
+									}
+									className="w-5 h-5 rounded bg-gray-700 border-gray-600 text-emerald-500"
+								/>
+							</div>
 						</div>
 					</div>
 
