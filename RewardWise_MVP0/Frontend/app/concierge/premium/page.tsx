@@ -462,7 +462,13 @@ function ConciergePremiumInner() {
 							</div>
 							<button
 								type="button"
-								onClick={() => router.push("/home")}
+								onClick={() =>
+									router.push(
+										confirmed?.id
+											? `/concierge/history?highlight=${encodeURIComponent(confirmed.id)}`
+											: "/concierge/history",
+									)
+								}
 								className="bg-purple-500 hover:bg-purple-600 text-white font-semibold py-3 px-8 rounded-lg w-full mb-2"
 							>
 								View my status

@@ -5,7 +5,16 @@
 import TropicalBackground from "@/components/TropicalBackground";
 import { useAuth } from "@/context/AuthProvider";
 import { createClient } from "@/utils/supabase/client";
-import { CheckCircle, Coffee, Star, Check, Crown, Loader2, MapPin } from "lucide-react";
+import {
+	CheckCircle,
+	Coffee,
+	Star,
+	Check,
+	Crown,
+	Loader2,
+	MapPin,
+	ClipboardList,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -35,7 +44,7 @@ function formatDate(d: string | null | undefined) {
 	});
 }
 
-/** Matches DB check constraint: paid / in_progress / delivered = active concierge after payment */
+
 function rowHasActiveConcierge(r: TravelRequestRow): boolean {
 	const st = r.status;
 	if (st === "cancelled" || st === "failed") return false;
@@ -187,11 +196,9 @@ export default function ConciergePage() {
 					)}
 				</div>
 
-				{/* Removed “Your concierge trips” list from the `/concierge` landing page. */}
 
 				<div className="w-full max-w-3xl">
 					<div className="grid md:grid-cols-2 gap-6">
-						{/* PREMIUM */}
 						<div
 							className={`bg-gray-900/70 backdrop-blur-xl rounded-xl overflow-hidden shadow-2xl relative transition-[box-shadow,border-color] ${
 								hasPaidPremium
@@ -258,7 +265,7 @@ export default function ConciergePage() {
 							</div>
 						</div>
 
-						{/* STANDARD */}
+						
 						<div
 							className={`relative bg-gray-900/70 backdrop-blur-xl rounded-xl overflow-hidden shadow-2xl transition-[box-shadow,border-color] ${
 								hasPaidStandard
@@ -322,6 +329,17 @@ export default function ConciergePage() {
 								</p>
 							</div>
 						</div>
+					</div>
+
+					<div className="mt-8 flex justify-center px-2">
+						<button
+							type="button"
+							onClick={() => router.push("/concierge/history")}
+							className="inline-flex items-center justify-center gap-2 w-full max-w-sm border border-emerald-500/50 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-100 font-semibold py-3 px-6 rounded-lg transition-colors"
+						>
+							<ClipboardList className="w-5 h-5 text-emerald-300" />
+							View status
+						</button>
 					</div>
 				</div>
 
