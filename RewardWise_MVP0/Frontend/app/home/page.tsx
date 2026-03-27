@@ -213,13 +213,16 @@ export default function HomePage() {
 		if (data.destination) setDestination(data.destination);
 		if (data.cabin) setCabin(data.cabin);
 
-		if (data.travelers) setTravelers(data.travelers); // already number
+		if (data.travelers) setTravelers(data.travelers);
 
-		if (data.date) setDepartDate(data.date); // ✅ FIX
+		if (data.date) setDepartDate(data.date);
 
-		if (data.return_date) {
-			setReturnDate(data.return_date);
-			setTripType("roundtrip"); // optional but important
+		if (data.tripType) {
+			setTripType(data.tripType);
+		}
+
+		if ("return_date" in data) {
+			setReturnDate(data.return_date || "");
 		}
 	};
 
@@ -272,15 +275,15 @@ export default function HomePage() {
 			}
 			const API_URL = process.env.NEXT_PUBLIC_API_URL;
 			if (!session?.access_token) {
-        throw new Error("You must be logged in to run searches.");
-      }
+				throw new Error("You must be logged in to run searches.");
+			}
 
-      const res = await fetch(`${API_URL}/api/search?${params.toString()}`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
-      });
+			const res = await fetch(`${API_URL}/api/search?${params.toString()}`, {
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${session.access_token}`,
+				},
+			});
 			if (!res.ok) {
 				const errData = await res.json().catch(() => null);
 				const detail = errData?.detail;
@@ -409,7 +412,7 @@ export default function HomePage() {
 								className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
 							>
 								<option value="economy">Economy</option>
-								<option value="premium">Premium</option>
+								{/* <option value="premium_economy">Premium Economy</option> */}
 								<option value="business">Business</option>
 								<option value="first">First</option>
 							</select>
@@ -461,6 +464,7 @@ export default function HomePage() {
 									awardOptions={results.award_options}
 									returnAwardOptions={results.return_award_options}
 									flights={results.flights}
+									userPrograms={userPrograms}
 								/>
 							) : !hasWallet ? (
 								<div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">

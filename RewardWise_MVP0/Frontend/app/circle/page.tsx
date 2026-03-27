@@ -42,7 +42,7 @@ export default function WatchlistPage() {
 	const router = useRouter();
 	const { watchlist, removeFromWatchlist, notifications } = useAlerts();
 
-	// Find the most recent notification per watchlist item
+	//find the most recent notification per watchlist item
 	const latestNotifFor = (wId: string) =>
 		notifications.find((n) => n.watchlistId === wId);
 
@@ -113,15 +113,15 @@ export default function WatchlistPage() {
 
 														<p className="text-gray-400 text-sm">
 															{formatDateNice(item.departDate)}
-															{item.isRoundtrip && item.returnDate
+															{item.tripType === "roundtrip" && item.returnDate
 																? ` – ${formatDateNice(item.returnDate)}`
 																: ""}
 															{" · "}
 															{cabinLabel(item.cabin)}
 															{" · "}
-															{item.travelers} traveler{item.travelers > 1 ? "s" : ""}
+															{item.passengers} traveler{item.passengers > 1 ? "s" : ""}
 															{" · Added "}
-															{timeAgo(item.addedAt)}
+															{timeAgo(item.createdAt)}
 														</p>
 													</div>
 												</div>

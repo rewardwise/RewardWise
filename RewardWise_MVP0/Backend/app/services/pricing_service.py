@@ -9,7 +9,7 @@ SERPAPI_BASE_URL = "https://serpapi.com/search"
 
 CABIN_CLASS_MAP = {
     "economy": 1,
-    "premium": 2,
+    "premium_economy": 2,
     "business": 3,
     "first": 4,
 }
@@ -104,7 +104,7 @@ async def get_cash_price(
     if not api_key:
         return {"cash_price": None, "currency": "USD", "source": "google_flights", "flights": []}
 
-    is_roundtrip = bool(return_date)
+    is_roundtrip = return_date is not None
 
     params = {
         "engine":        "google_flights",
