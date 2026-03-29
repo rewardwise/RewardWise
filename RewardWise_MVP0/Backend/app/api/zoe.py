@@ -10,8 +10,8 @@ async def zoe_endpoint(request: Request):
         # 1. Read request body safely
         payload = await request.json()
 
-        # 2. Call Zoe brain
-        result = await handle_zoe(payload)
+        # 2. Call Zoe brain — pass request so auth flows through to run_search
+        result = await handle_zoe(payload, request=request)
 
         # 3. Always return valid structure
         return result

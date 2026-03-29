@@ -57,12 +57,12 @@ interface MessageAction {
 	label: string;
 	handler: () => void;
 }
+
 export interface Message {
 	role: "user" | "assistant" | "steps";
 	content: string;
 	action?: MessageAction | null;
 	suggestions?: DestSuggestion[] | null;
-
 	dropdown?: {
 		type:
 			| "origin"
@@ -75,6 +75,7 @@ export interface Message {
 		options: string[];
 	} | null;
 }
+
 interface FillData {
 	origin?: string;
 	destination?: string;
@@ -97,18 +98,14 @@ interface ZoeChatProps {
 	cards?: any[];
 }
 
-// ---------------------------------------------------------------------------
-// Stub helpers — replace with your real implementations
-// ---------------------------------------------------------------------------
-
 function mapUIToDropdown(ui: any) {
 	if (!ui || !ui.input_type) return null;
-
 	return {
 		type: ui.input_type,
 		options: ui.options || [],
 	};
 }
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -133,27 +130,21 @@ export default function ZoeChat({
 	const endRef = useRef<HTMLDivElement>(null);
 	const { cards } = useWallet();
 	const recognitionRef = useRef<SpeechRecognition | null>(null);
-	type SlotType =
-		| "origin"
-		| "destination"
-		| "travelers"
-		| "tripType"
-		| "cabin"
-		| "date"
-		| "returnDate";
 
-	const [selected, setSelected] = useState<Partial<Record<SlotType, string>>>(
-		{},
-	);
-	const LABEL_MAP: Record<SlotType, string> = {
+	// Use a plain object so snake_case keys from backend (return_date) are preserved
+	const [selected, setSelected] = useState<Record<string, any>>({});
+
+	const LABEL_MAP: Record<string, string> = {
 		origin: "From",
 		destination: "To",
 		tripType: "Trip",
 		date: "Departure",
 		returnDate: "Return",
+		return_date: "Return",
 		travelers: "Travelers",
 		cabin: "Cabin",
 	};
+
 	useEffect(() => {
 		if (isOpen && inputRef.current) inputRef.current.focus();
 	}, [isOpen]);
@@ -182,15 +173,13 @@ export default function ZoeChat({
 					{
 						role: "assistant",
 						content:
-							"Speech recognition isn't available in this browser. Try Chrome on Android or desktop. On iOS, please type your request instead.",
+							"Speech recognition isn't available in this browser. Try Chrome on desktop. On iOS, please type instead.",
 					},
 				]);
 				return;
 			}
 
 			const recognition = new SpeechRecognitionAPI();
-
-			// Config
 			recognition.continuous = true;
 			recognition.interimResults = true;
 			recognition.lang = "en-US";
@@ -200,46 +189,29 @@ export default function ZoeChat({
 				const transcript = Array.from(event.results)
 					.map((r) => r[0].transcript)
 					.join("");
-
 				setInput(transcript);
-
 				if (event.results[0].isFinal) {
-					setTimeout(() => {
-						sendText(transcript);
-					}, 100); // small delay prevents mic crash
+					setTimeout(() => sendText(transcript), 100);
 				}
 			};
 
-			recognition.onend = () => {
-				if (listening) {
-					recognition.start(); // keeps mic alive
-				}
-			};
-			// Error handler
 			recognition.onerror = (e) => {
 				console.warn("Speech error:", e.error);
-
-				// ONLY stop on real fatal errors
 				if (e.error === "not-allowed") {
 					setListening(false);
-
 					setMessages((prev) => [
 						...prev,
 						{
 							role: "assistant",
 							content:
-								"Microphone access was denied. Please allow microphone access in your browser settings and try again.",
+								"Microphone access was denied. Allow it in browser settings and try again.",
 						},
 					]);
 				}
 			};
 
-			// End handler
 			recognition.onend = () => {
-				// 🔥 keep mic alive unless user manually stopped it
-				if (listening) {
-					recognition.start();
-				}
+				if (listening) recognition.start();
 			};
 
 			recognitionRef.current = recognition;
@@ -247,14 +219,13 @@ export default function ZoeChat({
 			setListening(true);
 		} catch (err) {
 			console.error("Speech recognition error:", err);
-
 			setListening(false);
 			setMessages((prev) => [
 				...prev,
 				{
 					role: "assistant",
 					content:
-						"Speech recognition isn't supported on this device. Please type your request instead.",
+						"Speech recognition isn't supported on this device. Please type instead.",
 				},
 			]);
 		}
@@ -266,127 +237,75 @@ export default function ZoeChat({
 	};
 
 	// -------------------------------------------------------------------------
-	// Quick search chips
+	// Shared: apply backend response to state + UI
 	// -------------------------------------------------------------------------
-
-	const handleQuickSearch = (item: QuickSearch) => {
-		setShowChips(false);
-		setMessages((prev) => [...prev, { role: "user", content: item.label }]);
-		if (onFillSearch) {
-			onFillSearch({
-				origin: item.data.origin,
-				destination: item.data.destination,
-				cabin: item.data.cabin,
-				travelers: Number(item.data.travelers), // ✅ string → number
-				date: item.data.dates, // ✅ dates → date
-			});
+	const applyBackendResponse = (data: any) => {
+		if (data.params) {
+			// Merge, never lose existing slots
+			setSelected((prev) => ({ ...prev, ...data.params }));
+			// Always sync the search form
+			onFillSearch?.(data.params);
 		}
-		setTyping(true);
-		setTimeout(() => {
-			const programNames: Record<string, string> = {
-				chase_ur: "Chase UR",
-				amex_mr: "Amex MR",
-				united: "United",
-				delta: "Delta",
-				marriott: "Marriott",
-				hilton: "Hilton",
-			};
-			const names = item.data.programs
-				.map((id) => programNames[id] || id)
-				.join(" & ");
-			setMessages((prev) => [
-				...prev,
-				{
-					role: "assistant",
-					content: `$ I've filled in the search form for ${item.data.origin} → ${item.data.destination} in ${item.data.cabin} class for ${item.data.travelers} travelers.\n\n✅ Programs: ${names}\n✅ Dates: ${item.data.dates}\n\nSay "go ahead" or "search" and I'll find the best deal!`,
-				},
-			]);
-			setTyping(false);
-		}, 1200);
+
+		// Fire search when backend says all fields are ready
+		if (data.type === "search_result") {
+			onTriggerSearch?.();
+		}
+
+		// Add Zoe's reply to chat
+		setMessages((prev) => [
+			...prev,
+			{
+				role: "assistant",
+				content: data.message || "Something went wrong",
+				dropdown: mapUIToDropdown(data.dropdown),
+			},
+		]);
 	};
 
-	const handleEdit = (index: number, type: string) => {
-		setMessages((prev) =>
-			prev.map((m, idx) => {
-				// remove ALL other dropdowns
-				if (m.dropdown && idx !== index) {
-					return { ...m, dropdown: null };
-				}
-
-				// replace THIS message with editable version
-				if (idx === index) {
-					return {
-						...m,
-						role: "assistant",
-						content: `Update ${LABEL_MAP[type as keyof typeof LABEL_MAP] || type}`,
-						dropdown: {
-							type: type as any,
-							options:
-								type === "tripType"
-									? ["One Way", "Round Trip"]
-									: type === "travelers"
-										? ["1", "2", "3", "4", "5"]
-										: type === "cabin"
-											? ["Economy", "Business", "First"]
-											: [],
-						},
-						action: null, // remove edit button
-					};
-				}
-
-				return m;
-			}),
-		);
-	};
-
+	// -------------------------------------------------------------------------
+	// Dropdown selection
+	// -------------------------------------------------------------------------
 	const handleDropdownSelect = async (type: string, value: string) => {
-		if (typing) return;
-		if (!value) return;
+		if (typing || !value) return;
 
-		// 1. Show user input in chat
 		setMessages((prev) => [
 			...prev.map((m) =>
 				m.dropdown ? { ...m, dropdown: null, action: null } : m,
 			),
 			{
 				role: "user",
-				content: `${LABEL_MAP[type as keyof typeof LABEL_MAP] || type}: ${value}`,
+				content: `${LABEL_MAP[type] || type}: ${value}`,
 			},
 		]);
-
 		setTyping(true);
 
-		// 2. Send to backend (THIS is the key change)
-		const text = value;
 		const headers = await getAuthHeaders();
 		const res = await fetch("/api/zoe", {
 			method: "POST",
 			headers,
 			body: JSON.stringify({
-				message: text,
+				message: value,
 				slot: type,
-
 				slots: selected,
+				history: messages, // ← conversation history
 				wallet: (cards || []).map((c: any) => ({
 					program: c.program_name,
 					points: c.points_balance,
 				})),
 			}),
 		});
+
 		if (!res.ok) {
 			setMessages((prev) => [
 				...prev,
-				{
-					role: "assistant",
-					content: "Server error. Please try again.",
-				},
+				{ role: "assistant", content: "Server error. Please try again." },
 			]);
 			setTyping(false);
 			return;
 		}
 
 		let data;
-
 		try {
 			data = await res.json();
 		} catch {
@@ -400,61 +319,15 @@ export default function ZoeChat({
 			setTyping(false);
 			return;
 		}
-		if (data.params) {
-			const params = data.params;
 
-			// update state once
-			setSelected((prev) => ({
-				...prev,
-				...params,
-			}));
-
-			// handle tripType UI behavior
-			if (params.tripType === "oneway") {
-				onFillSearch?.({
-					...params,
-					return_date: undefined, // remove return
-				});
-			}
-
-			if (params.tripType === "roundtrip") {
-				onFillSearch?.(params); // show return field
-			}
-		}
-
-		//  ALWAYS sync UI
-		if (data.params && onFillSearch) {
-			onFillSearch(data.params);
-		}
-
-		//  Only trigger search when ready
-		if (data.type === "search_result") {
-			if (onTriggerSearch) {
-				onTriggerSearch();
-			}
-		}
-		// 3. Render backend response
-		setMessages((prev) => [
-			...prev,
-			{
-				role: "assistant",
-				content: data.message || "Something went wrong",
-				dropdown: mapUIToDropdown(data.dropdown),
-			},
-		]);
-
+		applyBackendResponse(data);
 		setTyping(false);
 	};
+
 	// -------------------------------------------------------------------------
-	// Send / process
+	// Send text message
 	// -------------------------------------------------------------------------
 	const sendText = async (text: string) => {
-		const formattedWallet = (cards || []).map((c: any) => ({
-			program: c.program_name,
-			points: c.points_balance,
-		}));
-
-		console.log("wallet being sent to API:", formattedWallet);
 		if (typing) return;
 
 		setMessages((prev) => [...prev, { role: "user", content: text }]);
@@ -463,7 +336,6 @@ export default function ZoeChat({
 		setTyping(true);
 
 		let res;
-
 		try {
 			const headers = await getAuthHeaders();
 			res = await fetch("/api/zoe", {
@@ -473,6 +345,7 @@ export default function ZoeChat({
 					message: text,
 					slot: null,
 					slots: selected,
+					history: messages, // ← conversation history
 					wallet: (cards || []).map((c: any) => ({
 						program: c.program_name,
 						points: c.points_balance,
@@ -498,7 +371,6 @@ export default function ZoeChat({
 		}
 
 		let data;
-
 		try {
 			data = await res.json();
 		} catch {
@@ -509,53 +381,13 @@ export default function ZoeChat({
 			setTyping(false);
 			return;
 		}
-		if (data.params) {
-			const params = data.params;
 
-			// update state once
-			setSelected((prev) => ({
-				...prev,
-				...params,
-			}));
-
-			// handle tripType UI behavior
-			if (params.tripType === "oneway") {
-				onFillSearch?.({
-					...params,
-					return_date: undefined, // remove return
-				});
-			}
-
-			if (params.tripType === "roundtrip") {
-				onFillSearch?.(params); // show return field
-			}
-		}
-
-		// ALWAYS sync UI
-		if (data.params && onFillSearch) {
-			onFillSearch(data.params);
-		}
-
-		// Only trigger search when ready
-		if (data.type === "search_result") {
-			if (onTriggerSearch) onTriggerSearch();
-		}
-		setMessages((prev) => [
-			...prev,
-			{
-				role: "assistant",
-				content: data.message || "Something went wrong",
-				dropdown: mapUIToDropdown(data.dropdown),
-			},
-		]);
-
+		applyBackendResponse(data);
 		setTyping(false);
 	};
 
 	const send = () => {
-		if (typing) return;
-		if (!input.trim()) return;
-
+		if (typing || !input.trim()) return;
 		sendText(input.trim());
 	};
 
@@ -564,10 +396,10 @@ export default function ZoeChat({
 			sendText("start");
 		}
 	}, [isOpen]);
+
 	// -------------------------------------------------------------------------
 	// Closed state (FAB)
 	// -------------------------------------------------------------------------
-
 	if (!isOpen) {
 		return (
 			<div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
@@ -604,7 +436,6 @@ export default function ZoeChat({
 	// -------------------------------------------------------------------------
 	// Open state
 	// -------------------------------------------------------------------------
-
 	return (
 		<div
 			className={`fixed z-50 flex flex-col bg-gray-900/95 backdrop-blur shadow-2xl border border-gray-700 transition-all duration-300 ${
@@ -700,9 +531,12 @@ export default function ZoeChat({
 									<Zap className="w-4 h-4" /> {msg.action.label}
 								</button>
 							)}
+
 							{msg.suggestions && (
 								<div
-									className={`mt-2 flex flex-wrap gap-2 ${expanded ? "max-w-[70%]" : "max-w-[85%]"}`}
+									className={`mt-2 flex flex-wrap gap-2 ${
+										expanded ? "max-w-[70%]" : "max-w-[85%]"
+									}`}
 								>
 									{msg.suggestions.map((s, si) => (
 										<button
@@ -715,14 +549,25 @@ export default function ZoeChat({
 									))}
 								</div>
 							)}
+
+							{/* Dropdown options rendered inline */}
+							{msg.dropdown && (
+								<div className="mt-2 flex flex-wrap gap-2">
+									{msg.dropdown.options.map((opt) => (
+										<button
+											key={opt}
+											onClick={() =>
+												handleDropdownSelect(msg.dropdown!.type, opt)
+											}
+											className="bg-gray-700 hover:bg-emerald-500/20 border border-gray-600 hover:border-emerald-500/50 text-gray-200 hover:text-white px-3 py-1.5 rounded-lg text-sm transition-all"
+										>
+											{opt}
+										</button>
+									))}
+								</div>
+							)}
 						</div>
 					))}
-
-					{showChips && !typing && (
-						<div
-							className={`space-y-2 ${expanded ? "grid grid-cols-2 gap-2 space-y-0" : ""}`}
-						></div>
-					)}
 
 					{typing && (
 						<div className="flex justify-start">
