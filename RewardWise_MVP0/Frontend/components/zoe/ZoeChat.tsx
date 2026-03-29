@@ -131,7 +131,7 @@ export default function ZoeChat({
 	const { cards } = useWallet();
 	const recognitionRef = useRef<SpeechRecognition | null>(null);
 
-	// Use a plain object so snake_case keys from backend (return_date) are preserved
+	// Plain object preserves snake_case keys from backend (e.g. return_date)
 	const [selected, setSelected] = useState<Record<string, any>>({});
 
 	const LABEL_MAP: Record<string, string> = {
@@ -241,18 +241,13 @@ export default function ZoeChat({
 	// -------------------------------------------------------------------------
 	const applyBackendResponse = (data: any) => {
 		if (data.params) {
-			// Merge, never lose existing slots
+			// Merge — never lose existing slots
 			setSelected((prev) => ({ ...prev, ...data.params }));
-			// Always sync the search form
+			// Sync the search form
 			onFillSearch?.(data.params);
 		}
 
-		// Fire search when backend says all fields are ready
-		if (data.type === "search_result") {
-			onTriggerSearch?.();
-		}
-
-		// Add Zoe's reply to chat
+		// Show Zoe's reply in chat first
 		setMessages((prev) => [
 			...prev,
 			{
@@ -261,6 +256,14 @@ export default function ZoeChat({
 				dropdown: mapUIToDropdown(data.dropdown),
 			},
 		]);
+
+		// Delay search trigger by one tick so React can flush the onFillSearch
+		// state update before the form validation runs.
+		// Without this delay, onTriggerSearch fires before return_date is in the
+		// form state and "Please select a return date" fires incorrectly.
+		if (data.type === "search_result") {
+			setTimeout(() => onTriggerSearch?.(), 50);
+		}
 	};
 
 	// -------------------------------------------------------------------------
@@ -288,7 +291,7 @@ export default function ZoeChat({
 				message: value,
 				slot: type,
 				slots: selected,
-				history: messages, // ← conversation history
+				history: messages,
 				wallet: (cards || []).map((c: any) => ({
 					program: c.program_name,
 					points: c.points_balance,
@@ -345,7 +348,7 @@ export default function ZoeChat({
 					message: text,
 					slot: null,
 					slots: selected,
-					history: messages, // ← conversation history
+					history: messages,
 					wallet: (cards || []).map((c: any) => ({
 						program: c.program_name,
 						points: c.points_balance,
