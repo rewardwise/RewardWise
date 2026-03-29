@@ -80,7 +80,7 @@ function ConciergeStandardInner() {
 	const [loadConfirm, setLoadConfirm] = useState(false);
 	const [canceling, setCanceling] = useState(false);
 
-	/* Load receipt from URL after payment (or deep link) */
+	//Load receipt from URL after payment 
 	useEffect(() => {
 		if (!user || !requestParam) {
 			if (!requestParam) {
@@ -409,7 +409,13 @@ function ConciergeStandardInner() {
 
 							<button
 								type="button"
-								onClick={() => router.push("/home")}
+								onClick={() =>
+									router.push(
+										confirmed?.id
+											? `/concierge/history?highlight=${encodeURIComponent(confirmed.id)}`
+											: "/concierge/history",
+									)
+								}
 								className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-8 rounded-lg w-full mb-2"
 							>
 								View my status
