@@ -33,7 +33,7 @@ def _get_booking_link(program: str, trip_ids: list) -> dict:
 
 
 def _fmt(name: str) -> str:
-    return name.replace("_", " ").title()
+    return name.replace("_", " ").title() 
 
 
 def _ftype(direct: bool) -> str:

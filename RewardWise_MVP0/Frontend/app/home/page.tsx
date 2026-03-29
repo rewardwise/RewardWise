@@ -1,7 +1,7 @@
 /** @format */
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import TropicalBackground from "@/components/TropicalBackground";
 import { useAuth } from "@/context/AuthProvider";
@@ -206,29 +206,9 @@ export default function HomePage() {
 	const { userPrograms, hasWallet } = useWallet();
 	const { searchFill } = useSearchFill();
 	useABTest();
+
 	const [isChatOpen, setIsChatOpen] = useState(false);
 	const [chatMessages, setChatMessages] = useState<Message[]>([]);
-	const handleFillSearch = (data: any) => {
-		if (data.origin) setOrigin(data.origin);
-		if (data.destination) setDestination(data.destination);
-		if (data.cabin) setCabin(data.cabin);
-
-		if (data.travelers) setTravelers(data.travelers);
-
-		if (data.date) setDepartDate(data.date);
-
-		if (data.tripType) {
-			setTripType(data.tripType);
-		}
-
-		if ("return_date" in data) {
-			setReturnDate(data.return_date || "");
-		}
-	};
-
-	const handleTriggerSearch = () => {
-		runSearch();
-	};
 
 	const [origin, setOrigin] = useState("");
 	const [destination, setDestination] = useState("");
@@ -241,6 +221,31 @@ export default function HomePage() {
 	const [searchError, setSearchError] = useState("");
 	const [results, setResults] = useState<SearchResult | null>(null);
 
+	// ── Zoe trigger refs ──────────────────────────────────────────────────────
+	// runSearchRef always points to the latest runSearch so handleTriggerSearch
+	// (a stable useCallback) never has a stale closure over state.
+	const runSearchRef = useRef<() => Promise<void>>(async () => {});
+	// When Zoe triggers search it has already validated all fields on the backend,
+	// so we skip frontend validation to avoid the stale-closure false-positive.
+	const zoeTriggerRef = useRef(false);
+
+	const handleFillSearch = (data: any) => {
+		if (data.origin) setOrigin(data.origin);
+		if (data.destination) setDestination(data.destination);
+		if (data.cabin) setCabin(data.cabin);
+		if (data.travelers) setTravelers(data.travelers);
+		if (data.date) setDepartDate(data.date);
+		if (data.tripType) setTripType(data.tripType);
+		if ("return_date" in data) setReturnDate(data.return_date || "");
+	};
+
+	// Stable reference — ZoeChat holds this without re-renders causing issues.
+	// Always delegates to runSearchRef.current which is kept fresh below.
+	const handleTriggerSearch = useCallback(() => {
+		zoeTriggerRef.current = true;
+		runSearchRef.current();
+	}, []);
+
 	useEffect(() => {
 		if (!searchFill) return;
 		if (searchFill.origin) setOrigin(searchFill.origin);
@@ -250,18 +255,30 @@ export default function HomePage() {
 	}, [searchFill]);
 
 	const runSearch = async () => {
-		if (!origin || !destination || !departDate) {
-			setSearchError("Please fill in origin, destination, and departure date.");
-			return;
+		const isZoeTrigger = zoeTriggerRef.current;
+		zoeTriggerRef.current = false; // reset immediately
+
+		// Skip validation for Zoe-triggered searches — backend already confirmed
+		// all fields are present. Skipping avoids the stale-closure false-positive
+		// where returnDate looks empty even though it was just set.
+		if (!isZoeTrigger) {
+			if (!origin || !destination || !departDate) {
+				setSearchError(
+					"Please fill in origin, destination, and departure date.",
+				);
+				return;
+			}
+			if (tripType === "roundtrip" && !returnDate) {
+				setSearchError("Please select a return date for round trips.");
+				return;
+			}
 		}
-		if (tripType === "roundtrip" && !returnDate) {
-			setSearchError("Please select a return date for round trips.");
-			return;
-		}
+
 		setSearchError("");
 		setResults(null);
 		setSearching(true);
 		setSearchCount(searchCount + 1);
+
 		try {
 			const params = new URLSearchParams({
 				origin,
@@ -273,6 +290,7 @@ export default function HomePage() {
 			if (tripType === "roundtrip" && returnDate) {
 				params.append("return_date", returnDate);
 			}
+
 			const API_URL = process.env.NEXT_PUBLIC_API_URL;
 			if (!session?.access_token) {
 				throw new Error("You must be logged in to run searches.");
@@ -284,6 +302,7 @@ export default function HomePage() {
 					Authorization: `Bearer ${session.access_token}`,
 				},
 			});
+
 			if (!res.ok) {
 				const errData = await res.json().catch(() => null);
 				const detail = errData?.detail;
@@ -293,6 +312,7 @@ export default function HomePage() {
 					: (detail ?? `Server error: ${res.status}`);
 				throw new Error(message);
 			}
+
 			setResults(await res.json());
 		} catch (err: any) {
 			setSearchError(err.message || "Something went wrong. Try again.");
@@ -300,6 +320,9 @@ export default function HomePage() {
 			setSearching(false);
 		}
 	};
+
+	// Keep runSearchRef pointing at the latest runSearch on every render
+	runSearchRef.current = runSearch;
 
 	const numTravelers = results?.travelers ?? travelers;
 
@@ -340,7 +363,7 @@ export default function HomePage() {
 						))}
 					</div>
 
-					{/* SEARCH ROW 1 — Airport autocomplete inputs */}
+					{/* SEARCH ROW 1 */}
 					<div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
 						<AirportSearch
 							label="FROM"
@@ -412,7 +435,6 @@ export default function HomePage() {
 								className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
 							>
 								<option value="economy">Economy</option>
-								{/* <option value="premium_economy">Premium Economy</option> */}
 								<option value="business">Business</option>
 								<option value="first">First</option>
 							</select>
@@ -442,7 +464,7 @@ export default function HomePage() {
 						</p>
 					)}
 
-					{/* ── RESULTS ───────────────────────────────────────────────── */}
+					{/* RESULTS */}
 					{(searching || results) && (
 						<div className="mt-2 space-y-4">
 							{searching ? (
