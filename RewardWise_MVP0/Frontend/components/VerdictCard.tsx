@@ -132,13 +132,21 @@ function buildGoogleFlightsUrl(origin: string, destination: string, departDate: 
 }
 
 function formatDate(d: string) {
-  return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const [year, month, day] = d.split("-").map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 function fmtTime(t?: string) {
   if (!t) return "";
-  const d = new Date(t.includes("T") ? t : t.replace(" ", "T"));
-  return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+  const str = t.includes("T") ? t : t.replace(" ", "T");
+  // Append Z only if no timezone info present — treat naive datetimes as local, not UTC
+  const normalized = str.endsWith("Z") || str.includes("+") ? str : str + "Z";
+  // Actually we want to display AS-IS (airline local time), so strip timezone and parse as local
+  const bare = str.replace("Z", "").split("+")[0];
+  const [datePart, timePart] = bare.split("T");
+  const [year, month, day] = datePart.split("-").map(Number);
+  const [hour, minute] = (timePart ?? "00:00").split(":").map(Number);
+  return new Date(year, month - 1, day, hour, minute).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
 }
 
 function fmtDuration(mins?: number) {
