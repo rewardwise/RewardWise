@@ -218,8 +218,7 @@ def format_history_for_prompt(history: List[Dict]) -> str:
         return ""
     lines = []
     for msg in history[-10:]:
-        prefix = "User" if msg.get("role") == "user" else "Zoe"
-        lines.append(f"{prefix}: {msg.get('content', '')}")
+        lines.append(msg.get("content", ""))
     return "\n".join(lines)
 
 
