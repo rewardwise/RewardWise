@@ -2,7 +2,7 @@
 
 A travel rewards platform that automatically maximizes your wallet benefits across credit cards, airlines, and hotels.
 
-**[Try it live](https://reward-wise.vercel.app/)**
+**[Join the Waitlist!](https://mtw-waitlist.vercel.app/)**
 
 ---
 
