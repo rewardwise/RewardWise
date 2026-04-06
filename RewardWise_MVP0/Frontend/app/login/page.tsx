@@ -2,7 +2,7 @@
 
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthProvider";
 import {
@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { FcGoogle } from "react-icons/fc";
 
-export default function LoginPage() {
+function LoginPageInner() {
 	const router = useRouter();
 	const searchParams = useSearchParams();
 	const { signInWithEmail, signInWithGoogle, user, loading: authLoading } =
@@ -296,5 +296,30 @@ export default function LoginPage() {
 				</div>
 			</div>
 		</div>
+	);
+}
+
+
+export default function LoginPage() {
+	return (
+		<Suspense
+			fallback={
+				<div className="relative min-h-screen overflow-hidden bg-[#080E1C] text-white">
+					<div
+						className="absolute inset-0 bg-cover bg-center"
+						style={{ backgroundImage: "url('/beach-hero.png')" }}
+					/>
+					<div className="absolute inset-0 bg-[rgba(8,14,28,0.55)]" />
+					<div className="relative z-10 flex min-h-screen items-center justify-center px-6">
+						<div className="flex items-center gap-3 rounded-full border border-white/12 bg-[rgba(8,14,28,0.74)] px-5 py-3 text-sm text-white/80 backdrop-blur-xl">
+							<Loader2 className="h-4 w-4 animate-spin" />
+							Loading...
+						</div>
+					</div>
+				</div>
+			}
+		>
+			<LoginPageInner />
+		</Suspense>
 	);
 }
