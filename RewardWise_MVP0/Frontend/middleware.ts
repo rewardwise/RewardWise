@@ -13,9 +13,10 @@ const publicRoutes = [
 ];
 
 function isPublicRoute(pathname: string) {
-	return publicRoutes.some(
-		(route) => pathname === route || pathname.startsWith(`${route}/`),
-	);
+	return publicRoutes.some((route) => {
+		if (route === "/") return pathname === "/";
+		return pathname === route || pathname.startsWith(`${route}/`);
+	});
 }
 
 function copyCookies(from: NextResponse, to: NextResponse) {
@@ -81,6 +82,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
 	matcher: [
-		"/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+		"/((?!api|_next/static|_next/image|favicon.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
 	],
 };
