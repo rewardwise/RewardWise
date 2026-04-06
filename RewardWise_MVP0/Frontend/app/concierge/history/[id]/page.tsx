@@ -142,13 +142,13 @@ export default function ConciergeRequestDetailPage() {
 						</div>
 					) : !user ? (
 						<div className="bg-gray-900/90 backdrop-blur rounded-xl p-6 text-center">
-							<p className="text-gray-400 mb-4">Sign in to view this request.</p>
+							<p className="text-gray-400 mb-4">You need an active team session to view this request.</p>
 							<button
 								type="button"
-								onClick={() => router.push("/login")}
+								onClick={() => router.push("/")}
 								className="bg-emerald-500 hover:bg-emerald-600 text-white py-2 px-6 rounded-lg text-sm"
 							>
-								Go to login
+								Back to Home
 							</button>
 						</div>
 					) : error || !row ? (

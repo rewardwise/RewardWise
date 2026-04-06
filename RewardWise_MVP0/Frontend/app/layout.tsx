@@ -7,9 +7,9 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { AuthProvider } from "@/context/AuthProvider";
 import { SearchFillProvider } from "@/context/SearchFillContext";
 import { ABTestProvider } from "@/context/ABTestContext";
-import TopNav from "@/components/TopNav";
-import "./globals.css";
 import NavbarWrapper from "@/components/NavbarWrapper";
+import "./globals.css";
+
 const geistSans = Geist({
 	variable: "--font-geist-sans",
 	subsets: ["latin"],
@@ -22,7 +22,8 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
 	title: "MyTravelWallet",
-	description: "One verdict, not 47 options",
+	description:
+		"Travel smarter. Spend wiser. Join the MyTravelWallet early access waitlist.",
 };
 
 export default function RootLayout({
@@ -39,15 +40,12 @@ export default function RootLayout({
 				<AuthProvider>
 					<WalletProvider>
 						<AlertProvider>
-						<ABTestProvider>
-							<SearchFillProvider>
-								{/* GLOBAL NAVBAR */}
-
-								<NavbarWrapper />
-								{/* PAGE CONTENT */}
-								{children}
-							</SearchFillProvider>
-						</ABTestProvider>
+							<ABTestProvider>
+								<SearchFillProvider>
+									<NavbarWrapper />
+									{children}
+								</SearchFillProvider>
+							</ABTestProvider>
 						</AlertProvider>
 					</WalletProvider>
 				</AuthProvider>

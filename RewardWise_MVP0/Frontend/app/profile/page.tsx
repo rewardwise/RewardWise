@@ -274,7 +274,7 @@ export default function ProfilePage() {
 					<button
 						onClick={async () => {
 							await signOut();
-							router.replace("/login");
+							router.replace("/");
 						}}
 						className="w-full bg-red-500/20 hover:bg-red-500/30 text-red-400 font-medium py-3 rounded-xl border border-red-500/30 flex items-center justify-center gap-2"
 					>
