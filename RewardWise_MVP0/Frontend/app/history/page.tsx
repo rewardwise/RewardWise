@@ -242,13 +242,13 @@ export default function HistoryPage() {
 							) : !user ? (
 								<div>
 									<p className="text-gray-400 text-sm mb-3">
-										Please log in to view your trip history.
+										You need an active team session to view your trip history.
 									</p>
 									<button
-										onClick={() => router.push("/login")}
+										onClick={() => router.push("/")}
 										className="bg-emerald-500 hover:bg-emerald-600 text-white py-2 px-4 rounded-lg text-sm"
 									>
-										Go to Login
+										Back to Home
 									</button>
 								</div>
 							) : loadError ? (

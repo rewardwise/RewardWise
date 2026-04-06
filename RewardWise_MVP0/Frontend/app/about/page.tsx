@@ -17,7 +17,7 @@ export default function AboutPage() {
 			<TropicalBackground />
 
 			<div className="relative z-10">
-				{user ? (
+				{/* {user ? (
 					<TopNav />
 				) : (
 					<header className="flex justify-between items-center px-6 py-4">
@@ -40,14 +40,14 @@ export default function AboutPage() {
 							</button>
 
 							<button
-								onClick={() => router.push("/login")}
+								onClick={() => router.push("/")}
 								className="text-emerald-400 hover:text-emerald-300 font-medium text-sm"
 							>
-								Log In
+								Back Home
 							</button>
 						</div>
 					</header>
-				)}
+				)} */}
 				<main className="max-w-3xl mx-auto px-6 py-10">
 					{/* Hero */}
 					<div className="text-center mb-10">
@@ -237,14 +237,14 @@ export default function AboutPage() {
 					) : (
 						<>
 							<button
-								onClick={() => router.push("/signup")}
+								onClick={() => router.push("/")}
 								className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold px-10 py-4 rounded-xl text-lg flex items-center gap-3 mx-auto transition-all"
 							>
-								Get Started — It's Free <ArrowRight className="w-5 h-5" />
+								Return to Home <ArrowRight className="w-5 h-5" />
 							</button>
 
 							<p className="text-gray-400 text-sm mt-4">
-								No credit card required. Set up in 30 seconds.
+								Public access now begins from the main landing page.
 							</p>
 						</>
 					)}

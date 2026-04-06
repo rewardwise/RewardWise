@@ -2,22 +2,27 @@
 
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { isAllowedTeamEmail } from "@/utils/auth/allowlist";
 
-const publicRoutes = ["/", "/about", "/login", "/signup"];
-
-const protectedRoutes = [
-	"/home",
-	"/dashboard",
-	"/search",
-	"/settings",
-	"/trips",
-	"/watchlist",
-	"/concierge",
-	"/profile",
-	"/history",
-	"/circle",
-	"/wallet-setup",
+const publicRoutes = [
+	"/",
+	"/login",
+	"/auth/callback",
+	"/forgot-password",
+	"/reset-password",
 ];
+
+function isPublicRoute(pathname: string) {
+	return publicRoutes.some(
+		(route) => pathname === route || pathname.startsWith(`${route}/`),
+	);
+}
+
+function copyCookies(from: NextResponse, to: NextResponse) {
+	for (const cookie of from.cookies.getAll()) {
+		to.cookies.set(cookie);
+	}
+}
 
 export async function middleware(request: NextRequest) {
 	let supabaseResponse = NextResponse.next({ request });
@@ -35,8 +40,6 @@ export async function middleware(request: NextRequest) {
 						request.cookies.set(name, value),
 					);
 
-					supabaseResponse = NextResponse.next({ request });
-
 					cookiesToSet.forEach(({ name, value, options }) =>
 						supabaseResponse.cookies.set(name, value, options),
 					);
@@ -50,18 +53,26 @@ export async function middleware(request: NextRequest) {
 	} = await supabase.auth.getUser();
 
 	const pathname = request.nextUrl.pathname;
+	const isPublic = isPublicRoute(pathname);
+	const isAllowed = isAllowedTeamEmail(user?.email);
 
-	const isPublic = publicRoutes.some(
-		(route) => pathname === route || pathname.startsWith(route + "/"),
-	);
+	if (user && !isAllowed) {
+		await supabase.auth.signOut();
 
-	const isProtected = protectedRoutes.some((route) =>
-		pathname.startsWith(route),
-	);
-
-	if (isProtected && !user) {
 		const url = request.nextUrl.clone();
-		url.pathname = "/login";
+		url.pathname = "/";
+		url.search = "";
+		url.searchParams.set("access", "denied");
+
+		const redirectResponse = NextResponse.redirect(url);
+		copyCookies(supabaseResponse, redirectResponse);
+		return redirectResponse;
+	}
+
+	if (!user && !isPublic) {
+		const url = request.nextUrl.clone();
+		url.pathname = "/";
+		url.search = "";
 		return NextResponse.redirect(url);
 	}
 
