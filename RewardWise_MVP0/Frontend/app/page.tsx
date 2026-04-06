@@ -206,7 +206,7 @@ function LandingPageInner() {
 								</div>
 							</div>
 
-							<div className="mt-10 max-w-xl rounded-2xl border border-white/12 bg-[rgba(8,14,28,0.74)] p-5 shadow-2xl shadow-black/25 backdrop-blur-2xl">
+							{/* <div className="mt-10 max-w-xl rounded-2xl border border-white/12 bg-[rgba(8,14,28,0.74)] p-5 shadow-2xl shadow-black/25 backdrop-blur-2xl">
 								<div className="mb-3 text-[10px] font-bold uppercase tracking-[0.16em] text-white/28">
 									Example verdict
 								</div>
@@ -261,7 +261,7 @@ function LandingPageInner() {
 										</div>
 									</div>
 								</div>
-							</div>
+							</div> */}
 
 							<div className="mt-8 grid max-w-2xl gap-3 sm:grid-cols-3">
 								<div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-xl">
