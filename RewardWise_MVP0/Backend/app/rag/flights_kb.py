@@ -755,7 +755,7 @@ _BOOKING_STRATEGIES: list[dict] = [
             "Last-minute premium cabin: airlines sometimes open award space 3–7 days before departure "
             "to fill unsold seats — set alerts for this. "
             "Best search tools: "
-            "Google Flights: use for cash price benchmarking, not award search. "
+            "FlightAPI cash fares: use for live cash price benchmarking, not award search. "
             "United.com: searches own and some partner inventory; good for Star Alliance. "
             "ANA website: shows ANA-operated flights with award pricing in miles (check multiple programs). "
             "Aeroplan.com: excellent for Star Alliance partner searching. "

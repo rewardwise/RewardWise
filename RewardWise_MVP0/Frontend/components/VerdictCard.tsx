@@ -72,6 +72,8 @@ interface CashFlight {
   arrival_time?: string;
   legs?: CashLeg[];
   return_flight?: CashReturnFlight | null;
+  booking_url?: string | null;
+  provider?: string | null;
 }
 
 interface TripSegment {
@@ -358,7 +360,7 @@ function CashLegRow({ flight, isReturn, label }: { flight: CashFlight | CashRetu
           )}
           <div className="flex items-center gap-1.5 mt-2 flex-wrap">
             <span className="inline-flex items-center text-[10px] rounded-full px-2 py-0.5" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "#64748b" }}>
-              Google Flights
+              {flight.provider === "flightapi" ? "FlightAPI live fare" : "Live cash fare"}
             </span>
             {firstLeg?.legroom && (
               <span className="inline-flex items-center text-[10px] rounded-full px-2 py-0.5" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "#64748b" }}>
@@ -521,6 +523,7 @@ export default function VerdictCard({
   const savings = cashPrice != null && cashPrice > 0 ? Math.max(0, cashPrice - totalTaxes) : null;
 
   const bestCashFlight = flights[0] ?? null;
+  const cashBookingUrl = bestCashFlight?.booking_url ?? googleFlightsUrl;
   const confidenceColor = { high: "#34d399", medium: "#fbbf24", low: "#6b7280" }[confidence] ?? "#6b7280";
 
   return (
@@ -702,13 +705,13 @@ export default function VerdictCard({
                 </a>
               ) : (
                 <a
-                  href={googleFlightsUrl}
+                  href={cashBookingUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center justify-center gap-2 w-full text-sm font-bold py-3.5 rounded-xl transition-all hover:brightness-110"
                   style={{ background: "linear-gradient(90deg, #10b981, #059669)", color: "#fff" }}
                 >
-                  <Search className="w-4 h-4" /> Search Google Flights
+                  <Search className="w-4 h-4" /> Search Live Cash Fares
                 </a>
               )}
               <p className="text-[10px] text-center mt-2" style={{ color: "#334155" }}>⚠ Verify availability before transferring points</p>
@@ -737,13 +740,13 @@ export default function VerdictCard({
                 <p className="text-2xl font-extrabold" style={{ color: "#fbbf24" }}>${cashPrice ?? "—"}</p>
               </div>
               <a
-                href={googleFlightsUrl}
+                href={cashBookingUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center justify-center gap-2 w-full text-sm font-bold py-3.5 rounded-xl transition-all hover:brightness-110"
                 style={{ background: "linear-gradient(90deg, #10b981, #059669)", color: "#fff" }}
               >
-                Find Cash Fares <Search className="w-4 h-4" />
+                Open Live Cash Fare <Search className="w-4 h-4" />
               </a>
               <button
                 onClick={handleSetAlert}

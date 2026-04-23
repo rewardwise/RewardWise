@@ -63,7 +63,7 @@ def _build_verdict(
                 "winner": None,
                 "pay_cash": True,
                 "confidence": "high",
-                "booking_note": "Book directly through Google Flights or the airline's site.",
+                "booking_note": "Book directly through the airline or your preferred cash booking site.",
             }
 
     if not candidates:
@@ -72,7 +72,7 @@ def _build_verdict(
             "winner": None,
             "pay_cash": True,
             "confidence": "high",
-            "booking_note": "Check Google Flights for the best cash price.",
+            "booking_note": "Check live cash fares with the airline or your preferred booking site.",
         }
 
     top      = candidates[0]
@@ -112,7 +112,7 @@ def _build_verdict(
             "winner": None,
             "pay_cash": True,
             "confidence": "high",
-            "booking_note": "Book directly through Google Flights or the airline's site.",
+            "booking_note": "Book directly through the airline or your preferred cash booking site.",
         }
 
     tax_ratio = taxes / cash_price if cash_price else 0
@@ -204,7 +204,7 @@ def _build_verdict(
         ]
         pay_cash     = True
         confidence   = "medium" if cpp > 1.0 else "high"
-        booking_note = "Book directly through Google Flights or the airline's site for the cash fare."
+        booking_note = "Book directly through the airline or your preferred cash booking site for the cash fare."
 
     verdict_text = random.choice(templates)
     winner = None if pay_cash else {

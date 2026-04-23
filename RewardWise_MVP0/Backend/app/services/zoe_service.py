@@ -456,7 +456,7 @@ Return ONLY valid JSON."""
                 verdict_label = "**Verdict: Pay Cash 💵**"
                 cost_line     = f"**Cash:** {cash_str}"
                 savings_line  = "**You'd Save:** Points for a bigger trip ✈️"
-                book_line     = "You can book directly through Google Flights or the airline's site. Safe travels!"
+                book_line     = "You can book directly through the airline or your preferred cash booking site. Safe travels!"
             else:
                 verdict_label = "**Verdict: Use Points ✨**"
                 total_pts     = w_points * travelers          # winner.points is per-person
