@@ -2,22 +2,26 @@
 
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useWallet } from "@/context/WalletContext";
 import ReactMarkdown from "react-markdown";
 import {
-	MessageCircle,
-	Sparkles,
-	Minimize2,
-	Maximize2,
-	X,
-	Zap,
 	Loader2,
+	Maximize2,
+	MessageCircle,
 	Mic,
 	MicOff,
+	Minimize2,
 	Send,
+	Sparkles,
+	ThumbsDown,
+	ThumbsUp,
+	Volume2,
+	CheckCircle2,
+	VolumeX,
+	X,
+	ArrowRight,
 } from "lucide-react";
-
 import { createClient } from "@/utils/supabase/client";
 
 const supabase = createClient();
@@ -31,49 +35,33 @@ async function getAuthHeaders(): Promise<Record<string, string>> {
 	};
 }
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-interface QuickSearch {
-	label: string;
-	data: {
-		origin: string;
-		destination: string;
-		cabin: string;
-		travelers: string;
-		dates: string;
-		programs: string[];
-	};
-}
-
 interface DestSuggestion {
 	emoji: string;
 	label: string;
 	query: string;
 }
 
-interface MessageAction {
-	label: string;
-	handler: () => void;
+interface VerdictPayload {
+	verdict?: string;
+	verdict_label?: string;
+	headline?: string;
+	explanation?: string;
+	confidence?: "high" | "medium" | "low";
+	confidence_reason?: string;
+	next_step?: {
+		type: string;
+		label: string;
+		prompt: string;
+	} | null;
 }
 
 export interface Message {
 	role: "user" | "assistant" | "steps";
 	content: string;
-	action?: MessageAction | null;
 	suggestions?: DestSuggestion[] | null;
-	dropdown?: {
-		type:
-			| "origin"
-			| "destination"
-			| "travelers"
-			| "tripType"
-			| "cabin"
-			| "date"
-			| "returnDate";
-		options: string[];
-	} | null;
+	verdict?: VerdictPayload | null;
+	verdictId?: string | null;
+	searchId?: string | null;
 }
 
 interface FillData {
@@ -98,530 +86,524 @@ interface ZoeChatProps {
 	cards?: any[];
 }
 
-function mapUIToDropdown(ui: any) {
-	if (!ui || !ui.input_type) return null;
-	return {
-		type: ui.input_type,
-		options: ui.options || [],
-	};
+function titleCaseConfidence(value?: string) {
+	if (!value) return "Medium";
+	return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
+function cleanVerdictText(value?: string | null) {
+	return (value || "")
+		.replace(/\bVerdict:\s*[^\n]+/gi, "")
+		.replace(/\bConfidence:\s*[^\n]+/gi, "")
+		.replace(/\bNumbers:\s*[^\n]+/gi, "")
+		.replace(/\bNext step:\s*[^\n]+/gi, "")
+		.replace(/\s+/g, " ")
+		.trim();
+}
+
+function getVerdictLabel(verdict?: VerdictPayload | null) {
+	if (!verdict) return "Verdict";
+	const raw = `${verdict.verdict_label || ""} ${verdict.verdict || ""}`.toLowerCase();
+	if (raw.includes("pay cash")) return "Pay Cash";
+	if (raw.includes("use points")) return "Use Points";
+	if (raw.includes("wait")) return "Wait";
+	return (verdict.verdict_label || verdict.verdict || "Verdict").trim();
+}
+
+function getVerdictExplanation(verdict?: VerdictPayload | null, fallback?: string) {
+	const candidate = cleanVerdictText(verdict?.explanation || verdict?.headline || fallback || "");
+	const label = getVerdictLabel(verdict).toLowerCase();
+	if (!candidate) return "";
+	const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	return candidate
+		.replace(new RegExp(`^${escapedLabel}[.:-\\s]+`, "i"), "")
+		.replace(/^pay cash[.:-\s]+/i, "")
+		.replace(/^use points[.:-\s]+/i, "")
+		.replace(/^wait[.:-\s]+/i, "")
+		.replace(/flyingblue/gi, "Flying Blue")
+		.replace(/virginatlantic/gi, "Virgin Atlantic")
+		.trim();
+}
+
+function buildSpeechText(message: Message) {
+	if (!message.verdict) return message.content;
+	const parts = [
+		getVerdictLabel(message.verdict),
+		getVerdictExplanation(message.verdict, message.content),
+		message.verdict.confidence ? `${titleCaseConfidence(message.verdict.confidence)} confidence.` : "",
+		message.verdict.confidence_reason || "",
+		message.verdict.next_step?.label ? `Next step: ${message.verdict.next_step.label}.` : "",
+	].filter(Boolean);
+	return parts.join(" ");
+}
+
+function dedupeSuggestions(suggestions?: DestSuggestion[] | null, primaryLabel?: string | null) {
+	const seen = new Set<string>();
+	const blocked = (primaryLabel || "").trim().toLowerCase();
+	return (suggestions || []).filter((suggestion) => {
+		const key = suggestion.label.trim().toLowerCase();
+		if (!key || key === blocked || seen.has(key)) return false;
+		seen.add(key);
+		return true;
+	}).slice(0, 2);
+}
 
 export default function ZoeChat({
 	isOpen,
 	setIsOpen,
 	onFillSearch,
 	onTriggerSearch,
-	currentPage,
 	messages,
 	setMessages,
-	isAuthenticated = false,
 }: ZoeChatProps) {
-	const [showChips, setShowChips] = useState(true);
+	const { cards } = useWallet();
 	const [input, setInput] = useState("");
 	const [typing, setTyping] = useState(false);
 	const [listening, setListening] = useState(false);
-	const [nudgeVisible, setNudgeVisible] = useState(true);
 	const [expanded, setExpanded] = useState(false);
-	const inputRef = useRef<HTMLInputElement>(null);
-	const endRef = useRef<HTMLDivElement>(null);
-	const { cards } = useWallet();
-	const recognitionRef = useRef<SpeechRecognition | null>(null);
-
-	// Plain object preserves snake_case keys from backend (e.g. return_date)
+	const [showNudge, setShowNudge] = useState(true);
+	const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
+	const [feedbackState, setFeedbackState] = useState<Record<number, { rating?: 1 | 5; open?: boolean; comment?: string; saved?: boolean; saving?: boolean; error?: string }>>({});
 	const [selected, setSelected] = useState<Record<string, any>>({});
 
-	const LABEL_MAP: Record<string, string> = {
-		origin: "From",
-		destination: "To",
-		tripType: "Trip",
-		date: "Departure",
-		returnDate: "Return",
-		return_date: "Return",
-		travelers: "Travelers",
-		cabin: "Cabin",
-	};
+	const inputRef = useRef<HTMLInputElement>(null);
+	const endRef = useRef<HTMLDivElement>(null);
+	const recognitionRef = useRef<SpeechRecognition | null>(null);
+	const pressingRef = useRef(false);
 
 	useEffect(() => {
-		if (isOpen && inputRef.current) inputRef.current.focus();
+		if (isOpen) {
+			setShowNudge(false);
+			inputRef.current?.focus();
+		}
 	}, [isOpen]);
 
 	useEffect(() => {
 		endRef.current?.scrollIntoView({ behavior: "smooth" });
-	}, [messages]);
+	}, [messages, typing]);
 
 	useEffect(() => {
-		if (isOpen) setNudgeVisible(false);
-		const timer = setTimeout(() => setNudgeVisible(false), 12000);
+		const timer = setTimeout(() => setShowNudge(false), 12000);
 		return () => clearTimeout(timer);
-	}, [isOpen]);
+	}, []);
 
-	// -------------------------------------------------------------------------
-	// Speech recognition
-	// -------------------------------------------------------------------------
+	useEffect(() => {
+		return () => {
+			if (typeof window !== "undefined" && "speechSynthesis" in window) {
+				window.speechSynthesis.cancel();
+			}
+		};
+	}, []);
+
+	const speakingAvailable = useMemo(() => typeof window !== "undefined" && "speechSynthesis" in window, []);
+
 	const startListening = () => {
+		if (typing || listening) return;
 		try {
-			const SpeechRecognitionAPI =
-				window.SpeechRecognition || window.webkitSpeechRecognition;
-
+			const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
 			if (!SpeechRecognitionAPI) {
-				setMessages((prev) => [
-					...prev,
-					{
-						role: "assistant",
-						content:
-							"Speech recognition isn't available in this browser. Try Chrome on desktop. On iOS, please type instead.",
-					},
-				]);
+				setMessages((prev) => [...prev, { role: "assistant", content: "Speech recognition is not available in this browser. Please type instead." }]);
 				return;
 			}
-
+			pressingRef.current = true;
 			const recognition = new SpeechRecognitionAPI();
 			recognition.continuous = true;
 			recognition.interimResults = true;
 			recognition.lang = "en-US";
-			recognition.maxAlternatives = 1;
-
 			recognition.onresult = (event) => {
 				const transcript = Array.from(event.results)
-					.map((r) => r[0].transcript)
-					.join("");
+					.map((result) => result[0].transcript)
+					.join("")
+					.trim();
 				setInput(transcript);
-				if (event.results[0].isFinal) {
-					setTimeout(() => sendText(transcript), 100);
+			};
+			recognition.onerror = (event) => {
+				setListening(false);
+				pressingRef.current = false;
+				if (event.error === "not-allowed") {
+					setMessages((prev) => [...prev, { role: "assistant", content: "Microphone access was denied. Allow it in your browser settings and try again." }]);
 				}
 			};
-
-			recognition.onerror = (e) => {
-				console.warn("Speech error:", e.error);
-				if (e.error === "not-allowed") {
-					setListening(false);
-					setMessages((prev) => [
-						...prev,
-						{
-							role: "assistant",
-							content:
-								"Microphone access was denied. Allow it in browser settings and try again.",
-						},
-					]);
-				}
-			};
-
 			recognition.onend = () => {
-				if (listening) recognition.start();
+				setListening(false);
+				if (pressingRef.current) {
+					try {
+						recognition.start();
+						setListening(true);
+					} catch {
+						setListening(false);
+					}
+				}
 			};
-
 			recognitionRef.current = recognition;
 			recognition.start();
 			setListening(true);
-		} catch (err) {
-			console.error("Speech recognition error:", err);
+		} catch {
 			setListening(false);
-			setMessages((prev) => [
-				...prev,
-				{
-					role: "assistant",
-					content:
-						"Speech recognition isn't supported on this device. Please type instead.",
-				},
-			]);
+			pressingRef.current = false;
+			setMessages((prev) => [...prev, { role: "assistant", content: "Speech recognition is not supported on this device. Please type instead." }]);
 		}
 	};
 
 	const stopListening = () => {
+		pressingRef.current = false;
 		recognitionRef.current?.stop();
 		setListening(false);
 	};
 
-	// -------------------------------------------------------------------------
-	// Shared: apply backend response to state + UI
-	// -------------------------------------------------------------------------
+	const speakMessage = (index: number, message: Message) => {
+		if (!speakingAvailable) return;
+		if (speakingIndex === index) {
+			window.speechSynthesis.cancel();
+			setSpeakingIndex(null);
+			return;
+		}
+		window.speechSynthesis.cancel();
+		const utterance = new SpeechSynthesisUtterance(buildSpeechText(message).replace(/[*_#>`]/g, " "));
+		utterance.onend = () => setSpeakingIndex(null);
+		utterance.onerror = () => setSpeakingIndex(null);
+		setSpeakingIndex(index);
+		window.speechSynthesis.speak(utterance);
+	};
+
 	const applyBackendResponse = (data: any) => {
 		if (data.params) {
-			// Merge — never lose existing slots
 			setSelected((prev) => ({ ...prev, ...data.params }));
-			// Sync the search form
 			onFillSearch?.(data.params);
 		}
 
-		// Show Zoe's reply in chat first
 		setMessages((prev) => [
 			...prev,
 			{
 				role: "assistant",
-				content: data.message || "Something went wrong",
-				dropdown: mapUIToDropdown(data.dropdown),
+				content: data.message || "Something went wrong.",
+				suggestions: data.suggestions || null,
+				verdict: data.data || null,
+				searchId: data.search_id || data.search_data?.search_id || null,
+				verdictId: data.verdict_id || data.search_data?.verdict_id || null,
 			},
 		]);
 
-		// Delay search trigger by one tick so React can flush the onFillSearch
-		// state update before the form validation runs.
-		// Without this delay, onTriggerSearch fires before return_date is in the
-		// form state and "Please select a return date" fires incorrectly.
 		if (data.type === "search_result") {
-			setTimeout(() => onTriggerSearch?.(), 50);
+			setTimeout(() => onTriggerSearch?.(), 60);
 		}
 	};
 
-	// -------------------------------------------------------------------------
-	// Dropdown selection
-	// -------------------------------------------------------------------------
-	const handleDropdownSelect = async (type: string, value: string) => {
-		if (typing || !value) return;
-
-		setMessages((prev) => [
-			...prev.map((m) =>
-				m.dropdown ? { ...m, dropdown: null, action: null } : m,
-			),
-			{
-				role: "user",
-				content: `${LABEL_MAP[type] || type}: ${value}`,
-			},
-		]);
-		setTyping(true);
-
-		const headers = await getAuthHeaders();
-		const res = await fetch("/api/zoe", {
-			method: "POST",
-			headers,
-			body: JSON.stringify({
-				message: value,
-				slot: type,
-				slots: selected,
-				history: messages,
-				wallet: (cards || []).map((c: any) => ({
-					program: c.program_name,
-					points: c.points_balance,
-				})),
-			}),
-		});
-
-		if (!res.ok) {
-			setMessages((prev) => [
-				...prev,
-				{ role: "assistant", content: "Server error. Please try again." },
-			]);
-			setTyping(false);
-			return;
-		}
-
-		let data;
-		try {
-			data = await res.json();
-		} catch {
-			setMessages((prev) => [
-				...prev,
-				{
-					role: "assistant",
-					content: "Something went wrong. Please try again.",
-				},
-			]);
-			setTyping(false);
-			return;
-		}
-
-		applyBackendResponse(data);
-		setTyping(false);
-	};
-
-	// -------------------------------------------------------------------------
-	// Send text message
-	// -------------------------------------------------------------------------
 	const sendText = async (text: string) => {
-		if (typing) return;
-
-		setMessages((prev) => [...prev, { role: "user", content: text }]);
+		if (typing || !text.trim()) return;
+		setMessages((prev) => [...prev, { role: "user", content: text.trim() }]);
 		setInput("");
-		setShowChips(false);
 		setTyping(true);
-
-		let res;
 		try {
 			const headers = await getAuthHeaders();
-			res = await fetch("/api/zoe", {
+			const res = await fetch("/api/zoe", {
 				method: "POST",
 				headers,
 				body: JSON.stringify({
-					message: text,
-					slot: null,
+					message: text.trim(),
 					slots: selected,
 					history: messages,
-					wallet: (cards || []).map((c: any) => ({
-						program: c.program_name,
-						points: c.points_balance,
+					wallet: (cards || []).map((card: any) => ({
+						program: card.program_name,
+						points: card.points_balance,
 					})),
 				}),
 			});
+			const data = await res.json();
+			applyBackendResponse(data);
 		} catch {
-			setMessages((prev) => [
-				...prev,
-				{ role: "assistant", content: "Network error. Check connection." },
-			]);
+			setMessages((prev) => [...prev, { role: "assistant", content: "Network error. Please try again." }]);
+		} finally {
 			setTyping(false);
-			return;
 		}
-
-		if (!res.ok) {
-			setMessages((prev) => [
-				...prev,
-				{ role: "assistant", content: "Server error. Please try again." },
-			]);
-			setTyping(false);
-			return;
-		}
-
-		let data;
-		try {
-			data = await res.json();
-		} catch {
-			setMessages((prev) => [
-				...prev,
-				{ role: "assistant", content: "Invalid server response." },
-			]);
-			setTyping(false);
-			return;
-		}
-
-		applyBackendResponse(data);
-		setTyping(false);
 	};
 
-	const send = () => {
-		if (typing || !input.trim()) return;
-		sendText(input.trim());
+	const submitFeedback = async (index: number) => {
+		const state = feedbackState[index];
+		const message = messages[index];
+		if (!state?.rating || !message?.verdictId || state.saving) return;
+		setFeedbackState((prev) => ({
+			...prev,
+			[index]: { ...prev[index], saving: true, error: "" },
+		}));
+		const { data: userData } = await supabase.auth.getUser();
+		const userId = userData.user?.id;
+		if (!userId) {
+			setFeedbackState((prev) => ({
+				...prev,
+				[index]: { ...prev[index], saving: false, error: "Please log in again before submitting feedback." },
+			}));
+			return;
+		}
+		const payload = {
+			verdict_id: message.verdictId,
+			user_id: userId,
+			rating: state.rating,
+			comment: state.comment?.trim() || null,
+			did_book: false,
+			booking_method: null,
+		};
+		const { error } = await supabase.from("feedback").insert(payload);
+		if (error) {
+			setFeedbackState((prev) => ({
+				...prev,
+				[index]: { ...prev[index], saving: false, error: error.message || "Failed to save feedback." },
+			}));
+			return;
+		}
+		setFeedbackState((prev) => ({
+			...prev,
+			[index]: { ...prev[index], saving: false, saved: true, open: false },
+		}));
 	};
 
 	useEffect(() => {
 		if (isOpen && messages.length === 0) {
-			sendText("start");
+			void sendText("start");
 		}
 	}, [isOpen]);
 
-	// -------------------------------------------------------------------------
-	// Closed state (FAB)
-	// -------------------------------------------------------------------------
 	if (!isOpen) {
 		return (
 			<div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
-				{nudgeVisible && (
-					<div className="bg-gray-900/95 border border-blue-500/40 rounded-xl px-4 py-3 shadow-xl max-w-[240px] animate-fade-in">
-						<p className="text-white text-sm font-medium">
-							👋 Hey! I&apos;m Zoe
+				{showNudge && (
+					<div className="relative max-w-[252px] rounded-2xl border border-emerald-400/15 bg-slate-900/95 px-4 py-3 shadow-2xl">
+						<p className="text-white text-sm font-semibold">Meet Zoe</p>
+						<p className="mt-1 text-xs leading-5 text-slate-400">
+							A compact travel co-pilot for clear points-vs-cash calls, follow-up moves, and quick voice help.
 						</p>
-						<p className="text-gray-400 text-xs mt-1">
-							Your points are probably worth more than you think. Let me prove
-							it! ✈️
-						</p>
-						<div className="absolute -bottom-2 right-8 w-4 h-4 bg-gray-900/95 border-r border-b border-blue-500/40 transform rotate-45" />
 					</div>
 				)}
 				<button
 					onClick={() => setIsOpen(true)}
-					className="relative bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 rounded-full flex items-center gap-4 px-10 py-5 shadow-2xl shadow-blue-500/40 hover:shadow-blue-500/60 transition-all duration-300 hover:scale-105 group"
+					className="rounded-full bg-gradient-to-r from-blue-500 to-emerald-500 px-8 py-4 text-white shadow-2xl transition-all hover:scale-[1.02] flex items-center gap-3"
 				>
-					<div
-						className="absolute inset-0 rounded-full bg-blue-400/20 animate-ping"
-						style={{ animationDuration: "2s" }}
-					/>
-					<MessageCircle className="w-9 h-9 text-white" />
-					<span className="text-white font-bold text-xl tracking-wide">
-						Ask Zoe ✨
-					</span>
-					<span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 rounded-full border-2 border-slate-900 animate-pulse" />
+					<MessageCircle className="w-7 h-7" />
+					<span className="font-bold text-lg">Ask Zoe ✨</span>
 				</button>
 			</div>
 		);
 	}
 
-	// -------------------------------------------------------------------------
-	// Open state
-	// -------------------------------------------------------------------------
 	return (
 		<div
-			className={`fixed z-50 flex flex-col bg-gray-900/95 backdrop-blur shadow-2xl border border-gray-700 transition-all duration-300 ${
+			className={`fixed z-50 flex flex-col border border-white/10 bg-slate-950/95 backdrop-blur shadow-2xl transition-all duration-300 ${
 				expanded
-					? "top-1/2 left-1/2 w-[1100px] h-[700px] -translate-x-1/2 -translate-y-1/2 rounded-2xl"
-					: "bottom-6 right-6 w-[360px] h-[500px] sm:w-[380px] sm:h-[500px] rounded-2xl"
+					? "top-1/2 left-1/2 h-[720px] w-[1100px] -translate-x-1/2 -translate-y-1/2 rounded-3xl"
+					: "bottom-6 right-6 h-[560px] w-[390px] rounded-3xl"
 			}`}
 		>
-			{/* Header */}
-			<div className="flex items-center justify-between p-4 border-b border-gray-700">
+			<div className="flex items-center justify-between border-b border-white/10 px-4 py-4">
 				<div className="flex items-center gap-3">
-					<div className="w-10 h-10 bg-emerald-500/20 rounded-full flex items-center justify-center">
-						<Sparkles className="w-5 h-5 text-emerald-400" />
+					<div className="flex h-10 w-10 items-center justify-center rounded-full border border-emerald-400/20 bg-emerald-500/15">
+						<Sparkles className="h-5 w-5 text-emerald-300" />
 					</div>
 					<div>
-						<p className="text-white font-medium">Zoe</p>
-						<p className="text-emerald-400 text-xs">AI Travel Assistant</p>
+						<p className="font-semibold text-white">Zoe</p>
+						<p className="text-xs text-emerald-300">Real numbers. Clear calls.</p>
 					</div>
 				</div>
 				<div className="flex items-center gap-2">
-					<button
-						onClick={() => setExpanded(!expanded)}
-						className="text-gray-400 hover:text-white transition-colors"
-						title={expanded ? "Minimize" : "Expand"}
-					>
-						{expanded ? (
-							<Minimize2 className="w-5 h-5" />
-						) : (
-							<Maximize2 className="w-5 h-5" />
-						)}
+					<button onClick={() => setExpanded((prev) => !prev)} className="text-slate-400 hover:text-white">
+						{expanded ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}
 					</button>
 					<button
 						onClick={() => {
 							setIsOpen(false);
 							setExpanded(false);
 						}}
-						className="text-gray-400 hover:text-white"
+						className="text-slate-400 hover:text-white"
 					>
-						<X className="w-5 h-5" />
+						<X className="h-5 w-5" />
 					</button>
 				</div>
 			</div>
 
-			{/* Messages */}
-			<div className="flex-1 overflow-y-auto p-4">
-				<div className={`${expanded ? "max-w-2xl mx-auto" : ""} space-y-3`}>
-					{messages.map((msg, i) => (
-						<div
-							key={i}
-							className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}
-						>
-							<div
-								className={`${expanded ? "max-w-[70%]" : "max-w-[85%]"} rounded-2xl px-4 py-2.5 ${
-									msg.role === "user"
-										? "bg-emerald-500 text-white"
-										: msg.role === "steps"
-											? "bg-transparent text-emerald-400 text-sm space-y-1"
-											: "bg-gray-800 text-gray-200"
-								} ${expanded ? "text-base" : ""}`}
-							>
-								<ReactMarkdown
-									components={{
-										p: ({ ...props }) => (
-											<p className="mb-2 leading-relaxed" {...props} />
-										),
-										li: ({ ...props }) => (
-											<li className="ml-4 list-disc" {...props} />
-										),
-										strong: ({ ...props }) => (
-											<strong className="font-semibold text-white" {...props} />
-										),
-										h3: ({ ...props }) => (
-											<h3 className="font-semibold mt-2 mb-1" {...props} />
-										),
-									}}
-								>
-									{msg.content || ""}
-								</ReactMarkdown>
+			<div className="flex-1 overflow-y-auto px-4 py-4">
+				<div className={`${expanded ? "mx-auto max-w-3xl" : ""} space-y-4`}>
+					{messages.map((msg, index) => {
+						const feedback = feedbackState[index] || {};
+						const hasVerdict = msg.role === "assistant" && !!msg.verdict;
+						const verdictLabel = getVerdictLabel(msg.verdict);
+						const explanation = getVerdictExplanation(msg.verdict, msg.content);
+						const secondarySuggestions = dedupeSuggestions(msg.suggestions, msg.verdict?.next_step?.label || null);
+
+						return (
+							<div key={index} className={`flex flex-col ${msg.role === "user" ? "items-end" : "items-start"}`}>
+								{msg.role === "user" ? (
+									<div className={`${expanded ? "max-w-[78%]" : "max-w-[88%]"} rounded-2xl bg-emerald-500 px-4 py-3 text-white`}>
+										<p className="leading-7">{msg.content}</p>
+									</div>
+								) : hasVerdict ? (
+									<div className={`${expanded ? "max-w-[76%]" : "max-w-[90%]"} w-full rounded-[22px] border border-white/10 bg-gradient-to-b from-slate-900/95 to-slate-950 p-4 shadow-[0_16px_40px_rgba(0,0,0,0.28)]`}>
+										<div className="flex items-start justify-between gap-3">
+											<div className="min-w-0">
+												<p className="text-[11px] uppercase tracking-[0.16em] text-emerald-300">The call</p>
+												<h3 className="mt-1 text-[18px] leading-tight font-extrabold tracking-tight text-white">{verdictLabel}</h3>
+											</div>
+											{msg.verdict?.confidence && (
+												<span className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${
+													msg.verdict.confidence === "high"
+														? "border-emerald-400/25 bg-emerald-500/10 text-emerald-200"
+														: msg.verdict.confidence === "medium"
+														? "border-amber-400/25 bg-amber-500/10 text-amber-200"
+														: "border-slate-400/20 bg-slate-400/10 text-slate-200"
+												}`}>
+													{titleCaseConfidence(msg.verdict.confidence)}
+												</span>
+											)}
+										</div>
+
+										<p className="mt-2.5 text-[14px] leading-6 text-slate-100">{explanation}</p>
+
+										{msg.verdict?.confidence_reason && (
+											<div className="mt-3 flex items-start gap-2 rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2.5">
+												<CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-300" />
+												<p className="text-[12px] leading-5 text-slate-300">{msg.verdict.confidence_reason}</p>
+											</div>
+										)}
+
+										{msg.verdict?.next_step?.label && (
+											<button
+												onClick={() => void sendText(msg.verdict?.next_step?.prompt || msg.verdict?.next_step?.label || "")}
+												className="mt-3 flex w-full items-center justify-between rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-3.5 py-2.5 text-left transition hover:bg-emerald-500/15"
+											>
+												<div className="min-w-0">
+													<p className="text-[11px] uppercase tracking-[0.14em] text-emerald-300">Next step</p>
+													<p className="mt-1 text-sm font-semibold text-white">{msg.verdict.next_step.label}</p>
+												</div>
+												<ArrowRight className="h-3.5 w-3.5 shrink-0 text-emerald-200" />
+											</button>
+										)}
+
+										<div className="mt-3 flex flex-wrap items-center gap-2">
+											<button onClick={() => speakMessage(index, msg)} className="rounded-xl border border-white/10 bg-white/[0.03] px-2.5 py-2 text-xs text-slate-200 transition hover:bg-white/[0.06] flex items-center gap-1.5">
+												{speakingIndex === index ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />} {speakingIndex === index ? "Stop" : "Listen"}
+											</button>
+											{msg.verdictId && !feedback.saved && (
+												<>
+													<button onClick={() => setFeedbackState((prev) => ({ ...prev, [index]: { ...prev[index], rating: 5, open: true, comment: prev[index]?.comment || "" } }))} className={`rounded-xl border px-2.5 py-2 text-xs flex items-center gap-1.5 ${feedback.rating === 5 ? "border-emerald-400 bg-emerald-500/10 text-emerald-300" : "border-white/10 bg-white/[0.03] text-slate-300"}`}>
+														<ThumbsUp className="h-4 w-4" /> Helpful
+													</button>
+													<button onClick={() => setFeedbackState((prev) => ({ ...prev, [index]: { ...prev[index], rating: 1, open: true, comment: prev[index]?.comment || "" } }))} className={`rounded-xl border px-2.5 py-2 text-xs flex items-center gap-1.5 ${feedback.rating === 1 ? "border-rose-400 bg-rose-500/10 text-rose-300" : "border-white/10 bg-white/[0.03] text-slate-300"}`}>
+														<ThumbsDown className="h-4 w-4" /> Needs work
+													</button>
+												</>
+											)}
+										</div>
+
+										{msg.verdictId && feedback.open && !feedback.saved && (
+											<div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+												<p className="mb-2 text-sm font-medium text-white">Optional comment</p>
+												<textarea
+													value={feedback.comment || ""}
+													onChange={(e) => setFeedbackState((prev) => ({ ...prev, [index]: { ...prev[index], comment: e.target.value } }))}
+													placeholder="Tell Zoe what should be better next time."
+													className="min-h-[90px] w-full rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2 text-sm text-white placeholder:text-slate-500"
+												/>
+												<div className="mt-3 flex gap-2">
+													<button onClick={() => void submitFeedback(index)} disabled={feedback.saving} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-600 disabled:bg-slate-700">
+														{feedback.saving ? "Saving…" : "Submit"}
+													</button>
+													<button onClick={() => setFeedbackState((prev) => ({ ...prev, [index]: { ...prev[index], open: false } }))} className="rounded-xl border border-white/10 px-4 py-2 text-sm text-slate-300">
+														Cancel
+													</button>
+												</div>
+												{feedback.error && <p className="mt-2 text-xs text-rose-300">{feedback.error}</p>}
+											</div>
+										)}
+
+										{feedback.saved && <p className="mt-3 text-sm text-emerald-300">Thanks — your feedback was saved.</p>}
+
+										{secondarySuggestions.length > 0 && (
+											<div className="mt-3 flex flex-wrap gap-2">
+												{secondarySuggestions.map((suggestion, suggestionIndex) => (
+													<button key={`${index}-${suggestionIndex}`} onClick={() => void sendText(suggestion.query)} className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 transition hover:bg-white/[0.06]">
+														{suggestion.emoji} {suggestion.label}
+													</button>
+												))}
+											</div>
+										)}
+									</div>
+								) : (
+									<div className={`${expanded ? "max-w-[78%]" : "max-w-[88%]"} w-full`}>
+										<div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-slate-200">
+											<ReactMarkdown
+												components={{
+													p: ({ ...props }) => <p className="mb-2 last:mb-0 leading-7" {...props} />,
+													strong: ({ ...props }) => <strong className="font-semibold text-white" {...props} />,
+												}}
+											>
+												{msg.content}
+											</ReactMarkdown>
+										</div>
+										<div className="mt-2 flex flex-wrap gap-2">
+											<button onClick={() => speakMessage(index, msg)} className="rounded-xl border border-white/10 bg-white/[0.03] px-2.5 py-2 text-xs text-slate-200 transition hover:bg-white/[0.06] flex items-center gap-1.5">
+												{speakingIndex === index ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />} {speakingIndex === index ? "Stop" : "Listen"}
+											</button>
+										</div>
+										{msg.suggestions && msg.suggestions.length > 0 && (
+											<div className="mt-3 flex flex-wrap gap-2">
+												{dedupeSuggestions(msg.suggestions, null).map((suggestion, suggestionIndex) => (
+													<button key={`${index}-${suggestionIndex}`} onClick={() => void sendText(suggestion.query)} className="rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-200 hover:bg-emerald-500/20">
+														{suggestion.emoji} {suggestion.label}
+													</button>
+												))}
+											</div>
+										)}
+									</div>
+								)}
 							</div>
-
-							{msg.action && (
-								<button
-									onClick={() => {
-										msg.action!.handler();
-										setMessages((prev) =>
-											prev.map((m, idx) =>
-												idx === i ? { ...m, action: null } : m,
-											),
-										);
-									}}
-									className="mt-2 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2.5 px-6 rounded-xl flex items-center gap-2 text-sm transition-all hover:scale-105 shadow-lg shadow-emerald-500/20"
-								>
-									<Zap className="w-4 h-4" /> {msg.action.label}
-								</button>
-							)}
-
-							{msg.suggestions && (
-								<div
-									className={`mt-2 flex flex-wrap gap-2 ${
-										expanded ? "max-w-[70%]" : "max-w-[85%]"
-									}`}
-								>
-									{msg.suggestions.map((s, si) => (
-										<button
-											key={si}
-											onClick={() => sendText(s.query)}
-											className="bg-blue-500/15 hover:bg-blue-500/25 border border-blue-500/30 text-blue-300 hover:text-white px-3 py-1.5 rounded-lg text-sm transition-all hover:scale-105"
-										>
-											{s.emoji} {s.label}
-										</button>
-									))}
-								</div>
-							)}
-
-							{/* Dropdown options rendered inline */}
-							{msg.dropdown && (
-								<div className="mt-2 flex flex-wrap gap-2">
-									{msg.dropdown.options.map((opt) => (
-										<button
-											key={opt}
-											onClick={() =>
-												handleDropdownSelect(msg.dropdown!.type, opt)
-											}
-											className="bg-gray-700 hover:bg-emerald-500/20 border border-gray-600 hover:border-emerald-500/50 text-gray-200 hover:text-white px-3 py-1.5 rounded-lg text-sm transition-all"
-										>
-											{opt}
-										</button>
-									))}
-								</div>
-							)}
-						</div>
-					))}
+						);
+					})}
 
 					{typing && (
 						<div className="flex justify-start">
-							<div className="bg-gray-800 rounded-2xl px-4 py-2">
-								<Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+							<div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
+								<Loader2 className="h-4 w-4 animate-spin text-slate-400" />
 							</div>
 						</div>
 					)}
-
 					<div ref={endRef} />
 				</div>
 			</div>
 
-			{/* Input bar */}
-			<div className="p-4 border-t border-gray-700">
-				<div className={`flex gap-2 ${expanded ? "max-w-2xl mx-auto" : ""}`}>
+			<div className="border-t border-white/10 p-4">
+				<div className={`flex gap-2 ${expanded ? "mx-auto max-w-3xl" : ""}`}>
 					<button
-						onClick={listening ? stopListening : startListening}
-						className={`p-2 rounded-xl transition-colors flex-shrink-0 ${
+						onMouseDown={startListening}
+						onMouseUp={stopListening}
+						onMouseLeave={() => listening && stopListening()}
+						onTouchStart={startListening}
+						onTouchEnd={stopListening}
+						className={`flex-shrink-0 rounded-2xl border px-3 ${
 							listening
-								? "bg-red-500 text-white animate-pulse"
-								: "bg-gray-800 text-gray-400 hover:text-white hover:bg-gray-700"
+								? "border-rose-400 bg-rose-500/20 text-rose-200"
+								: "border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.06]"
 						}`}
-						aria-label={listening ? "Stop recording" : "Voice input"}
+						aria-label={listening ? "Release to stop recording" : "Hold to speak"}
 					>
-						{listening ? (
-							<MicOff className="w-5 h-5" />
-						) : (
-							<Mic className="w-5 h-5" />
-						)}
+						{listening ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
 					</button>
 					<input
 						ref={inputRef}
 						value={input}
 						onChange={(e) => setInput(e.target.value)}
 						onKeyDown={(e) => {
-							if (e.key === "Enter") send();
+							if (e.key === "Enter") {
+								void sendText(input);
+							}
 						}}
-						placeholder={
-							listening ? "Listening..." : "Tell me where you want to fly..."
-						}
-						className="flex-1 bg-gray-800 border border-gray-700 rounded-xl py-2 px-4 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+						placeholder={listening ? "Listening… release to keep the transcript" : "Tell Zoe the trip you want evaluated…"}
+						className="flex-1 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
 					/>
-					<button
-						onClick={send}
-						disabled={!input.trim()}
-						className="bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-700 text-white p-2 rounded-xl flex-shrink-0"
-					>
-						<Send className="w-5 h-5" />
+					<button onClick={() => void sendText(input)} disabled={!input.trim() || typing} className="flex-shrink-0 rounded-2xl bg-emerald-500 px-4 py-3 text-white disabled:bg-slate-700">
+						<Send className="h-5 w-5" />
 					</button>
 				</div>
+				<p className={`mt-2 text-xs text-slate-500 ${expanded ? "mx-auto max-w-3xl" : ""}`}>
+					Hold the mic to speak. Zoe will transcribe into the input so you can confirm before sending.
+				</p>
 			</div>
 		</div>
 	);

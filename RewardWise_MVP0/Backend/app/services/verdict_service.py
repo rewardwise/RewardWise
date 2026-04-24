@@ -1,227 +1,137 @@
-import random
 from typing import Optional
 
 PROGRAM_URL_OVERRIDES = {
-    "american":  "https://www.aa.com/",
-    "aeroplan":  "https://www.aircanada.com/",
-    "velocity":  "https://www.virginaustralia.com/",
+    "american": "https://www.aa.com/",
+    "aeroplan": "https://www.aircanada.com/",
+    "velocity": "https://www.virginaustralia.com/",
     "lifemiles": "https://www.lifemiles.com/",
-    "smiles":    "https://www.smiles.com.br/",
+    "smiles": "https://www.smiles.com.br/",
     "singapore": "https://www.singaporeair.com/",
-    "cathay":    "https://www.cathaypacific.com/",
-    "qatar":     "https://www.qatarairways.com/",
-    "turkish":   "https://www.turkishairlines.com/",
+    "cathay": "https://www.cathaypacific.com/",
+    "qatar": "https://www.qatarairways.com/",
+    "turkish": "https://www.turkishairlines.com/",
     "ethiopian": "https://www.ethiopianairlines.com/",
-    "alaska":    "https://www.alaskaair.com/",
+    "alaska": "https://www.alaskaair.com/",
 }
 
 
 def _get_airline_url(program: str) -> str:
-    name = program.lower().strip()
+    name = (program or "").lower().strip()
     if name in PROGRAM_URL_OVERRIDES:
         return PROGRAM_URL_OVERRIDES[name]
-    return f"https://www.{name}.com/"
+    return f"https://www.{name}.com/" if name else "https://www.google.com/travel/flights"
 
 
-def _get_booking_link(program: str, trip_ids: list) -> dict:
-    airline_url = _get_airline_url(program)
+def _get_booking_link(program: Optional[str], trip_ids: list) -> dict:
+    airline_url = _get_airline_url(program or "")
     return {
         "seats_aero_link": None,
         "airline_link": airline_url,
-        "preferred": "airline",
+        "preferred": "airline" if program else "none",
     }
 
 
 def _fmt(name: str) -> str:
-    return name.replace("_", " ").title() 
+    return (name or "").replace("_", " ").title()
 
 
-def _ftype(direct: bool) -> str:
-    return "nonstop" if direct else "connecting"
+def _cash_label(cash_price: Optional[float]) -> str:
+    return f"${cash_price:.0f}" if cash_price is not None else "cash unavailable"
 
 
-def _build_verdict(
-    origin: str,
-    destination: str,
-    cabin: str,
-    travelers: int,
-    is_roundtrip: bool,
-    cash_price: Optional[float],
-    award_options: list,
-    user_programs: Optional[list],
-) -> dict:
-    candidates = award_options
-    if user_programs:
-        user_lower = [p.lower() for p in user_programs]
-        user_picks = [a for a in award_options if a.get("program", "").lower() in user_lower]
-        if user_picks:
-            candidates = user_picks
-        else:
-            # Award space exists but none from the user's programs
-            return {
-                "verdict": f"There's award space on this route but none of your programs cover it — just pay the ${cash_price:.0f} cash.",
-                "winner": None,
-                "pay_cash": True,
-                "confidence": "high",
-                "booking_note": "Book directly through Google Flights or the airline's site.",
-            }
-
-    if not candidates:
-        return {
-            "verdict": f"Nothing's showing up on points for {origin}→{destination} right now. Just book the cash fare.",
-            "winner": None,
-            "pay_cash": True,
-            "confidence": "high",
-            "booking_note": "Check Google Flights for the best cash price.",
-        }
-
-    top      = candidates[0]
-    program  = top.get("program", "unknown")
-    prog     = _fmt(program)
-    points   = top.get("points", 0)
-    taxes    = top.get("taxes") or 0
-    cpp      = top.get("cpp") or 0
-    direct   = top.get("direct", False)
-    seats    = top.get("remaining_seats", 0)
-    pts_str  = f"{points:,}"
-    ftype    = _ftype(direct)
-    urgency  = 0 < seats <= 3
-
-    if cash_price is None:
-        return {
-            "verdict": (
-                f"{prog} has {pts_str} pts available {ftype} — "
-                f"couldn't pull a cash price to compare but that's your best award option right now."
-            ),
-            "winner": {"program": program, "points": points, "taxes": taxes, "cpp": cpp, "direct": direct},
-            "pay_cash": False,
-            "confidence": "low",
-            "booking_note": f"Search {prog}'s site to verify and book.",
-        }
-
-    cash_str  = f"${cash_price:.0f}"
-    saves     = round(cash_price - taxes)
-    saves_str = f"~${saves:,}"
-
-    if cash_price < 250:
-        return {
-            "verdict": (
-                f"Honestly just pay the {cash_str} cash — even {prog} at {pts_str} pts isn't worth burning "
-                f"points on a flight this cheap. Save them for a bigger trip."
-            ),
-            "winner": None,
-            "pay_cash": True,
-            "confidence": "high",
-            "booking_note": "Book directly through Google Flights or the airline's site.",
-        }
-
-    tax_ratio = taxes / cash_price if cash_price else 0
-    if tax_ratio > 0.4 and cpp >= 1.3:
-        low_tax_alts = [
-            a for a in award_options
-            if (a.get("taxes") or 0) < taxes * 0.5 and (a.get("cpp") or 0) >= 1.0
-        ]
-        if low_tax_alts:
-            alt       = low_tax_alts[0]
-            alt_prog  = _fmt(alt.get("program", ""))
-            alt_pts   = f"{alt.get('points', 0):,}"
-            alt_taxes = alt.get("taxes") or 0
-            alt_saves = round(cash_price - alt_taxes)
-            return {
-                "verdict": (
-                    f"{prog} looks good on paper but you'd still owe ${taxes:.0f} in taxes on top of {pts_str} pts. "
-                    f"{alt_prog} at {alt_pts} pts + ${alt_taxes:.0f} fees saves you ~${alt_saves:,} — better deal overall."
-                ),
-                "winner": {
-                    "program": alt.get("program"),
-                    "points": alt.get("points"),
-                    "taxes": alt_taxes,
-                    "cpp": alt.get("cpp"),
-                    "direct": alt.get("direct"),
-                },
-                "pay_cash": False,
-                "confidence": "high",
-                "booking_note": f"Go with {alt_prog} — search their site to book with your points.",
-            }
-        else:
-            return {
-                "verdict": (
-                    f"Ngl {prog} at {pts_str} pts is tempting but you'd still pay ${taxes:.0f} in taxes — "
-                    f"with cash at {cash_str} that's not a huge save. Easier to just pay cash here."
-                ),
-                "winner": None,
-                "pay_cash": True,
-                "confidence": "medium",
-                "booking_note": "Total out-of-pocket with points isn't much better than cash on this route.",
-            }
-
-    if cpp >= 2.0:
-        if urgency:
-            templates = [
-                f"Only {seats} seat{'s' if seats > 1 else ''} left on {prog} at {pts_str} pts — cash is {cash_str} and you'd save {saves_str}. Lock it in now.",
-                f"{prog} at {pts_str} pts saves you {saves_str} vs {cash_str} cash and there's only {seats} seat{'s' if seats > 1 else ''} left. Go.",
-            ]
-            booking_note = f"Only {seats} seat{'s' if seats > 1 else ''} left — head to {prog}'s site and book now."
-        else:
-            templates = [
-                f"{prog} at {pts_str} pts {ftype} is genuinely one of the better deals here — cash is {cash_str} and you'd save {saves_str}. Book it.",
-                f"Okay yeah this is a good one — {prog} at {pts_str} pts saves you {saves_str} vs {cash_str} cash. Don't sleep on this.",
-                f"{prog} at {pts_str} pts is exactly what points are for — cash is {cash_str}, you save {saves_str}. Do it.",
-                f"This is the kind of redemption you save points for. {prog} at {pts_str} pts {ftype}, saves you {saves_str} vs {cash_str} cash.",
-            ]
-            booking_note = f"Head to {prog}'s site and search with your loyalty account to book."
-        pay_cash   = False
-        confidence = "high"
-
-    elif cpp >= 1.5:
-        templates = [
-            f"{prog} at {pts_str} pts is actually not bad — cash is {cash_str} and you'd save {saves_str}. Worth it if you've got the points.",
-            f"Honestly {prog} at {pts_str} pts is solid. You'd save {saves_str} vs {cash_str} cash — I'd go for it.",
-            f"{prog} at {pts_str} pts {ftype} saves you {saves_str} vs {cash_str} cash. That's decent value — worth redeeming.",
-            f"Yeah {prog} at {pts_str} pts works here. Cash is {cash_str}, you save {saves_str}. Not a slam dunk but solid.",
-        ]
-        pay_cash     = False
-        confidence   = "high"
-        booking_note = f"Head to {prog}'s site and search with your loyalty account to book."
-
-    elif cpp >= 1.3:
-        templates = [
-            f"{prog} at {pts_str} pts is okay — you'd save {saves_str} vs {cash_str} cash but it's not a home run. Only do it if you're flush on points.",
-            f"Tbh {prog} at {pts_str} pts is fine, saves you {saves_str} vs {cash_str} cash. Decent but I'd only burn them if you've got plenty.",
-            f"{prog} at {pts_str} pts gets you {saves_str} in savings vs {cash_str} cash. Not amazing, not terrible — your call.",
-            f"It's okay. {prog} at {pts_str} pts saves you {saves_str} vs paying {cash_str} cash. Worth it only if you've got more points than you know what to do with.",
-        ]
-        pay_cash     = False
-        confidence   = "medium"
-        booking_note = f"Only redeem if you have plenty of {prog} points — search their site to book."
-
-    else:
-        templates = [
-            f"Just pay the {cash_str} cash — {prog} at {pts_str} pts isn't giving you enough value here. Save those points for a bigger trip.",
-            f"Yeah no, {prog} at {pts_str} pts isn't worth it when cash is only {cash_str}. You'd barely save anything — hold the points.",
-            f"Skip the points on this one. {prog} at {pts_str} pts just doesn't move the needle when cash is {cash_str}. Save them for something better.",
-            f"Ngl {prog} at {pts_str} pts is a bad burn here — cash is {cash_str} and the savings aren't there. Pay cash, keep your points.",
-        ]
-        pay_cash     = True
-        confidence   = "medium" if cpp > 1.0 else "high"
-        booking_note = "Book directly through Google Flights or the airline's site for the cash fare."
-
-    verdict_text = random.choice(templates)
-    winner = None if pay_cash else {
-        "program": program,
-        "points": points,
+def _metrics(cash_price: Optional[float], winner: Optional[dict]) -> dict:
+    winner = winner or {}
+    taxes = winner.get("taxes") or 0
+    points_cost = winner.get("points")
+    cpp = winner.get("cpp")
+    savings = None
+    if cash_price is not None and taxes is not None:
+        savings = max(0, round(float(cash_price) - float(taxes), 2))
+    return {
+        "cash_price": cash_price,
+        "points_cost": points_cost,
         "taxes": taxes,
         "cpp": cpp,
-        "direct": direct,
+        "estimated_savings": savings,
     }
 
+
+def _build_next_step(recommendation: str, origin: str, destination: str, cabin: str) -> dict:
+    if recommendation == "use_points":
+        return {
+            "type": "retry_dates",
+            "label": "Try a week earlier",
+            "prompt": f"What about {origin} to {destination} a week earlier?",
+        }
+    if recommendation == "pay_cash":
+        alt_cabin = "business" if cabin == "economy" else "economy"
+        return {
+            "type": "try_other_cabin",
+            "label": f"Check {alt_cabin.title()} instead",
+            "prompt": f"What if I fly {alt_cabin} instead?",
+        }
     return {
-        "verdict": verdict_text,
+        "type": "retry_dates",
+        "label": "Try different dates",
+        "prompt": f"Check {origin} to {destination} a week earlier.",
+    }
+
+
+def _base_response(
+    *,
+    recommendation: str,
+    verdict_label: str,
+    headline: str,
+    explanation: str,
+    confidence: str,
+    confidence_reason: str,
+    booking_note: str,
+    booking_link: Optional[dict] = None,
+    winner: Optional[dict] = None,
+    cash_price: Optional[float] = None,
+    data_quality: str = "full",
+    missing_sources: Optional[list] = None,
+    safe_fallback_used: bool = False,
+    next_step: Optional[dict] = None,
+) -> dict:
+    missing_sources = missing_sources or []
+    winner = winner or None
+    booking_link = booking_link or {
+        "seats_aero_link": None,
+        "airline_link": None,
+        "preferred": "none",
+    }
+    pay_cash = recommendation == "pay_cash"
+    verdict = f"{verdict_label}: {headline} {explanation}".strip()
+    return {
+        "recommendation": recommendation,
+        "verdict_label": verdict_label,
+        "headline": headline,
+        "explanation": explanation,
+        "verdict": verdict,
         "winner": winner,
         "pay_cash": pay_cash,
         "confidence": confidence,
+        "confidence_reason": confidence_reason,
         "booking_note": booking_note,
+        "booking_link": booking_link,
+        "data_quality": data_quality,
+        "missing_sources": missing_sources,
+        "safe_fallback_used": safe_fallback_used,
+        "metrics": _metrics(cash_price, winner),
+        "next_step": next_step,
     }
+
+
+def _choose_candidate(award_options: list, user_programs: Optional[list]) -> tuple[list, list]:
+    if not award_options:
+        return [], []
+    if not user_programs:
+        return award_options, award_options
+    user_lower = [p.lower() for p in user_programs]
+    user_picks = [a for a in award_options if a.get("program", "").lower() in user_lower]
+    return user_picks, award_options
+
 
 async def generate_verdict(
     origin: str,
@@ -236,28 +146,213 @@ async def generate_verdict(
     return_award_options: list,
     user_programs: Optional[list] = None,
 ) -> dict:
-    verdict_data = _build_verdict(
-        origin=origin,
-        destination=destination,
-        cabin=cabin,
-        travelers=travelers,
-        is_roundtrip=is_roundtrip,
+    del date, is_roundtrip, return_date, return_award_options  # reserved for future richer copy
+
+    candidates, all_awards = _choose_candidate(award_options, user_programs)
+    missing_sources: list[str] = []
+    if cash_price is None:
+        missing_sources.append("cash_price")
+    if not all_awards:
+        missing_sources.append("award_space")
+
+    data_quality = "full"
+    if len(missing_sources) == 2:
+        data_quality = "missing_both"
+    elif missing_sources == ["cash_price"]:
+        data_quality = "missing_cash"
+    elif missing_sources == ["award_space"]:
+        data_quality = "missing_awards"
+    elif missing_sources:
+        data_quality = "partial"
+
+    # No usable data at all.
+    if cash_price is None and not all_awards:
+        response = _base_response(
+            recommendation="wait",
+            verdict_label="Wait",
+            headline="I do not have enough live data to make a safe call yet.",
+            explanation="I could not confirm either live cash pricing or award availability for this route, so the safest move is to wait or retry the search.",
+            confidence="low",
+            confidence_reason="Both the cash and award data sources were unavailable for this search.",
+            booking_note="Retry this search in a moment or try a nearby date.",
+            cash_price=cash_price,
+            data_quality=data_quality,
+            missing_sources=missing_sources,
+            safe_fallback_used=True,
+            next_step=_build_next_step("wait", origin, destination, cabin),
+        )
+        return response
+
+    # Cash only.
+    if cash_price is not None and not all_awards:
+        cash_label = _cash_label(cash_price)
+        response = _base_response(
+            recommendation="pay_cash",
+            verdict_label="Pay Cash",
+            headline=f"Cash wins here at {cash_label}.",
+            explanation="I could not find award availability worth using, so paying cash is the safer move right now.",
+            confidence="medium",
+            confidence_reason="Live cash pricing was available, but no matching award availability was found.",
+            booking_note="Book the cash fare and save your points for a stronger redemption.",
+            cash_price=cash_price,
+            data_quality=data_quality,
+            missing_sources=missing_sources,
+            safe_fallback_used=bool(missing_sources),
+            next_step=_build_next_step("pay_cash", origin, destination, cabin),
+        )
+        return response
+
+    # Awards exist but the user's programs do not cover them.
+    if all_awards and user_programs and not candidates:
+        cash_label = _cash_label(cash_price)
+        response = _base_response(
+            recommendation="pay_cash" if cash_price is not None else "wait",
+            verdict_label="Pay Cash" if cash_price is not None else "Wait",
+            headline=(
+                f"There is award space, but none of your current programs can book it, so {cash_label} is the cleaner move."
+                if cash_price is not None
+                else "There is award space, but none of your current programs can book it right now."
+            ),
+            explanation="You would need a different program or transfer path for the available award space, so this is not a clean points redemption from your wallet.",
+            confidence="medium" if cash_price is not None else "low",
+            confidence_reason="Award space was found, but not through the user's redeemable programs.",
+            booking_note="Keep your points for a route your wallet can actually support.",
+            cash_price=cash_price,
+            data_quality=data_quality,
+            missing_sources=missing_sources,
+            safe_fallback_used=bool(missing_sources),
+            next_step=_build_next_step("pay_cash" if cash_price is not None else "wait", origin, destination, cabin),
+        )
+        return response
+
+    # Candidate winner.
+    winner = (candidates or all_awards)[0]
+    program = winner.get("program") or "unknown"
+    points = int(winner.get("points") or 0)
+    taxes = float(winner.get("taxes") or 0)
+    cpp = float(winner.get("cpp") or 0)
+    direct = bool(winner.get("direct", False))
+    remaining_seats = int(winner.get("remaining_seats") or 0)
+    program_label = _fmt(program)
+    trip_ids = winner.get("trip_ids", []) if isinstance(winner, dict) else []
+    booking_link = _get_booking_link(program, trip_ids)
+    winner_payload = {
+        "program": program,
+        "points": points,
+        "taxes": taxes,
+        "cpp": cpp,
+        "direct": direct,
+    }
+
+    # Awards only, no cash comparison.
+    if cash_price is None:
+        response = _base_response(
+            recommendation="wait",
+            verdict_label="Wait",
+            headline=f"{program_label} has award space, but I do not have a live cash fare to compare it against.",
+            explanation=f"The best current option I found is {points:,} points{' nonstop' if direct else ''}. Without a live cash price, I cannot safely say whether using points beats paying cash.",
+            confidence="low",
+            confidence_reason="Award availability was found, but live cash pricing was unavailable.",
+            booking_note=f"If you want to use points, verify the award on {program_label}'s site before transferring.",
+            booking_link=booking_link,
+            winner=winner_payload,
+            cash_price=cash_price,
+            data_quality=data_quality,
+            missing_sources=missing_sources,
+            safe_fallback_used=True,
+            next_step=_build_next_step("wait", origin, destination, cabin),
+        )
+        return response
+
+    savings = max(0, round(cash_price - taxes, 2))
+    urgency = 0 < remaining_seats <= 3
+
+    if cash_price <= 250 or cpp < 1.25:
+        explanation = (
+            f"Cash is only {_cash_label(cash_price)}, while the best award I found is {points:,} points"
+            f"{' plus about $' + str(int(round(taxes))) + ' in taxes' if taxes else ''}."
+            " Your points are likely worth more on a different trip."
+        )
+        response = _base_response(
+            recommendation="pay_cash",
+            verdict_label="Pay Cash",
+            headline=f"Cash wins here at {_cash_label(cash_price)}.",
+            explanation=explanation,
+            confidence="high" if cpp < 1.0 or cash_price <= 200 else "medium",
+            confidence_reason="Live cash pricing is low relative to the best award option available.",
+            booking_note="Pay cash and keep your points for a higher-value redemption.",
+            booking_link=booking_link,
+            winner=winner_payload,
+            cash_price=cash_price,
+            data_quality=data_quality,
+            missing_sources=missing_sources,
+            safe_fallback_used=bool(missing_sources),
+            next_step=_build_next_step("pay_cash", origin, destination, cabin),
+        )
+        return response
+
+    if cpp >= 1.8:
+        explanation = (
+            f"The best award is {points:,} points"
+            f"{' plus about $' + str(int(round(taxes))) + ' in taxes' if taxes else ''}"
+            f", which saves about ${savings:,.0f} compared with paying {_cash_label(cash_price)} cash."
+        )
+        if urgency:
+            explanation += f" There are only {remaining_seats} seat{'s' if remaining_seats != 1 else ''} left, so this is worth acting on soon."
+        response = _base_response(
+            recommendation="use_points",
+            verdict_label="Use Points",
+            headline=f"{program_label} is the strongest redemption on this trip.",
+            explanation=explanation,
+            confidence="high",
+            confidence_reason="Live cash pricing and matching award availability were both found, and the cents-per-point value is strong.",
+            booking_note=f"Verify the award on {program_label}'s site before you transfer any points.",
+            booking_link=booking_link,
+            winner=winner_payload,
+            cash_price=cash_price,
+            data_quality=data_quality,
+            missing_sources=missing_sources,
+            safe_fallback_used=bool(missing_sources),
+            next_step=_build_next_step("use_points", origin, destination, cabin),
+        )
+        return response
+
+    if 1.25 <= cpp < 1.8:
+        response = _base_response(
+            recommendation="wait",
+            verdict_label="Wait",
+            headline="This one is close enough that I would check another date before booking.",
+            explanation=(
+                f"I found {program_label} at {points:,} points versus {_cash_label(cash_price)} cash."
+                f" That is decent value, but not a slam dunk once you factor in the fees and flexibility tradeoff."
+            ),
+            confidence="medium",
+            confidence_reason="Both cash and award data were found, but the value gap is not wide enough to be decisive.",
+            booking_note="Try shifting the date or cabin to see if better award value opens up.",
+            booking_link=booking_link,
+            winner=winner_payload,
+            cash_price=cash_price,
+            data_quality=data_quality,
+            missing_sources=missing_sources,
+            safe_fallback_used=bool(missing_sources),
+            next_step=_build_next_step("wait", origin, destination, cabin),
+        )
+        return response
+
+    # Defensive fallback.
+    return _base_response(
+        recommendation="wait",
+        verdict_label="Wait",
+        headline="I have the trip data, but I am not comfortable forcing a recommendation yet.",
+        explanation="Try a nearby date or a different cabin so I can compare a cleaner set of options.",
+        confidence="low",
+        confidence_reason="The result landed in a fallback decision path.",
+        booking_note="Retry with a nearby date for a stronger answer.",
+        booking_link=booking_link,
+        winner=winner_payload,
         cash_price=cash_price,
-        award_options=award_options,
-        user_programs=user_programs,
+        data_quality=data_quality,
+        missing_sources=missing_sources,
+        safe_fallback_used=True,
+        next_step=_build_next_step("wait", origin, destination, cabin),
     )
-
-    winner  = verdict_data.get("winner") or {}
-    program = winner.get("program")
-    if program:
-        matched  = next((a for a in award_options if a.get("program", "").lower() == program.lower()), None)
-        trip_ids = matched.get("trip_ids", []) if matched else []
-        verdict_data["booking_link"] = _get_booking_link(program, trip_ids)
-    else:
-        verdict_data["booking_link"] = {
-            "seats_aero_link": None,
-            "airline_link": None,
-            "preferred": "none",
-        }
-
-    return verdict_data

@@ -34,6 +34,8 @@ export default function SearchPage() {
 					awardOptions={results.award_options}
 					returnAwardOptions={results.return_award_options}
 					flights={results.flights}
+					searchId={results.search_id}
+					verdictId={results.verdict_id}
 				/>
 			)}
 		</main>
