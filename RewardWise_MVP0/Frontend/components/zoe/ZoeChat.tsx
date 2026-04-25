@@ -111,6 +111,14 @@ function getVerdictLabel(verdict?: VerdictPayload | null) {
 	return (verdict.verdict_label || verdict.verdict || "Verdict").trim();
 }
 
+const WELCOME_MESSAGE =
+	"Tell me the trip you have in mind and I’ll turn it into a clear points-vs-cash verdict. I’ll keep track of the details and only ask for what’s missing.";
+
+const WELCOME_SUGGESTIONS: DestSuggestion[] = [
+	{ emoji: "✈️", label: "Start with a route", query: "I want to compare a flight" },
+	{ emoji: "💬", label: "Ask points vs cash", query: "Should I use points or pay cash for a trip?" },
+];
+
 function getVerdictExplanation(verdict?: VerdictPayload | null, fallback?: string) {
 	const candidate = cleanVerdictText(verdict?.explanation || verdict?.headline || fallback || "");
 	const label = getVerdictLabel(verdict).toLowerCase();
@@ -457,10 +465,16 @@ export default function ZoeChat({
 	};
 
 	useEffect(() => {
-		if (isOpen && messages.length === 0) {
-			void sendText("start");
-		}
-	}, [isOpen]);
+	if (isOpen && messages.length === 0) {
+		setMessages([
+			{
+				role: "assistant",
+				content: WELCOME_MESSAGE,
+				suggestions: WELCOME_SUGGESTIONS,
+			},
+		]);
+	}
+}, [isOpen, messages.length, setMessages]);
 
 	if (!isOpen) {
 		return (
@@ -741,7 +755,7 @@ export default function ZoeChat({
 								void sendText(input);
 							}
 						}}
-						placeholder={listening ? "Listening… release to keep the transcript" : "Tell Zoe the trip you want evaluated…"}
+						placeholder={listening ? "Listening… release to keep the transcript" : "Send Message..."}
 						className="flex-1 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
 					/>
 					<button onClick={() => void sendText(input)} disabled={!input.trim() || typing} className="flex-shrink-0 rounded-2xl bg-emerald-500 px-4 py-3 text-white disabled:bg-slate-700">
@@ -749,7 +763,7 @@ export default function ZoeChat({
 					</button>
 				</div>
 				<p className={`mt-2 text-xs text-slate-500 ${expanded ? "mx-auto max-w-3xl" : ""}`}>
-					Hold the mic to speak. Zoe will transcribe into the input so you can confirm before sending.
+					Hold the mic to talk to Zoe. Review {'->'} Send!
 				</p>
 			</div>
 		</div>
