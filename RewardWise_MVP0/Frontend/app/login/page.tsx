@@ -143,11 +143,11 @@ function LoginPageInner() {
 					</div>
 
 					<h1 className="text-3xl font-bold tracking-tight text-white">
-						Team sign in
+						Authorized User Login
 					</h1>
 
 					<p className="mt-2 text-sm leading-6 text-white/65">
-						Internal access for approved MyTravelWallet team members.
+						Sign in with your approved email to access the app.
 					</p>
 
 					{callbackMessage ? (
