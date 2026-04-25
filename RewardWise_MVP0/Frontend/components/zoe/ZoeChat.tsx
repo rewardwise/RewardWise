@@ -18,6 +18,7 @@ import {
 	ThumbsUp,
 	Volume2,
 	CheckCircle2,
+	HelpCircle,
 	VolumeX,
 	X,
 	ArrowRight,
@@ -188,6 +189,7 @@ export default function ZoeChat({
 	const [showNudge, setShowNudge] = useState(true);
 	const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
 	const [feedbackState, setFeedbackState] = useState<Record<number, { rating?: 1 | 5; open?: boolean; comment?: string; saved?: boolean; saving?: boolean; error?: string }>>({});
+	const [messageFeedback, setMessageFeedback] = useState<Record<number, "up" | "down">>({});
 	const [selected, setSelected] = useState<Record<string, any>>({});
 
 	const inputRef = useRef<HTMLInputElement>(null);
@@ -220,6 +222,21 @@ export default function ZoeChat({
 	}, []);
 
 	const speakingAvailable = useMemo(() => typeof window !== "undefined" && "speechSynthesis" in window, []);
+
+	useEffect(() => {
+		if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+
+		const loadVoices = () => {
+			window.speechSynthesis.getVoices();
+		};
+
+		loadVoices();
+		window.speechSynthesis.onvoiceschanged = loadVoices;
+
+		return () => {
+			window.speechSynthesis.onvoiceschanged = null;
+		};
+	}, []);
 
 	const startListening = () => {
 		if (typing || listening) return;
@@ -275,6 +292,43 @@ export default function ZoeChat({
 		setListening(false);
 	};
 
+	const getPreferredZoeVoice = () => {
+		if (typeof window === "undefined" || !("speechSynthesis" in window)) return null;
+
+		const voices = window.speechSynthesis.getVoices();
+		const englishVoices = voices.filter((voice) => voice.lang?.toLowerCase().startsWith("en"));
+		const preferredFemaleVoiceNames = [
+			"zira",
+			"jenny",
+			"aria",
+			"ava",
+			"samantha",
+			"victoria",
+			"susan",
+			"karen",
+			"moira",
+			"tessa",
+			"serena",
+			"hazel",
+			"fiona",
+			"allison",
+			"joanna",
+			"kendra",
+			"kimberly",
+			"salli",
+			"female",
+		];
+
+		return (
+			englishVoices.find((voice) =>
+				preferredFemaleVoiceNames.some((name) => voice.name.toLowerCase().includes(name))
+			) ||
+			englishVoices.find((voice) => !/david|mark|daniel|alex|fred|tom|male/i.test(voice.name)) ||
+			englishVoices[0] ||
+			null
+		);
+	};
+
 	const speakMessage = (index: number, message: Message) => {
 		if (!speakingAvailable) return;
 		if (speakingIndex === index) {
@@ -282,10 +336,23 @@ export default function ZoeChat({
 			setSpeakingIndex(null);
 			return;
 		}
+
 		window.speechSynthesis.cancel();
+
 		const utterance = new SpeechSynthesisUtterance(buildSpeechText(message).replace(/[*_#>`]/g, " "));
+		const preferredVoice = getPreferredZoeVoice();
+
+		if (preferredVoice) {
+			utterance.voice = preferredVoice;
+		}
+
+		utterance.rate = 0.95;
+		utterance.pitch = 1.02;
+		utterance.volume = 1;
+
 		utterance.onend = () => setSpeakingIndex(null);
 		utterance.onerror = () => setSpeakingIndex(null);
+
 		setSpeakingIndex(index);
 		window.speechSynthesis.speak(utterance);
 	};
@@ -509,9 +576,14 @@ export default function ZoeChat({
 										)}
 
 										<div className="mt-3 flex flex-wrap items-center gap-2">
-											<button onClick={() => speakMessage(index, msg)} className="rounded-xl border border-white/10 bg-white/[0.03] px-2.5 py-2 text-xs text-slate-200 transition hover:bg-white/[0.06] flex items-center gap-1.5">
-												{speakingIndex === index ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />} {speakingIndex === index ? "Stop" : "Listen"}
-											</button>
+											<button
+												onClick={() => speakMessage(index, msg)}
+												title={speakingIndex === index ? "Stop listening" : "Listen"}
+												aria-label={speakingIndex === index ? "Stop listening" : "Listen to Zoe's response"}
+												className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-slate-200 transition hover:bg-white/[0.06]"
+												>
+												{speakingIndex === index ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+												</button>
 											{msg.verdictId && !feedback.saved && (
 												<>
 													<button onClick={() => setFeedbackState((prev) => ({ ...prev, [index]: { ...prev[index], rating: 5, open: true, comment: prev[index]?.comment || "" } }))} className={`rounded-xl border px-2.5 py-2 text-xs flex items-center gap-1.5 ${feedback.rating === 5 ? "border-emerald-400 bg-emerald-500/10 text-emerald-300" : "border-white/10 bg-white/[0.03] text-slate-300"}`}>
@@ -570,9 +642,52 @@ export default function ZoeChat({
 											</ReactMarkdown>
 										</div>
 										<div className="mt-2 flex flex-wrap gap-2">
-											<button onClick={() => speakMessage(index, msg)} className="rounded-xl border border-white/10 bg-white/[0.03] px-2.5 py-2 text-xs text-slate-200 transition hover:bg-white/[0.06] flex items-center gap-1.5">
-												{speakingIndex === index ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />} {speakingIndex === index ? "Stop" : "Listen"}
+											<button
+												onClick={() => speakMessage(index, msg)}
+												title={speakingIndex === index ? "Stop listening" : "Listen"}
+												aria-label={speakingIndex === index ? "Stop listening" : "Listen to Zoe's response"}
+												className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-slate-200 transition hover:bg-white/[0.06]"
+												>
+												{speakingIndex === index ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />}
+												</button>
+											<button
+												onClick={() => setMessageFeedback((prev) => ({ ...prev, [index]: "up" }))}
+												title="Helpful"
+												aria-label="Mark Zoe's reply as helpful"
+												className={`flex h-9 w-9 items-center justify-center rounded-xl border transition ${
+													messageFeedback[index] === "up"
+														? "border-emerald-400/60 bg-emerald-500/15 text-emerald-200"
+														: "border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.06]"
+												}`}
+											>
+												<ThumbsUp className="h-4 w-4" />
 											</button>
+											<button
+												onClick={() => setMessageFeedback((prev) => ({ ...prev, [index]: "down" }))}
+												title="Not helpful"
+												aria-label="Mark Zoe's reply as not helpful"
+												className={`flex h-9 w-9 items-center justify-center rounded-xl border transition ${
+													messageFeedback[index] === "down"
+														? "border-rose-400/60 bg-rose-500/15 text-rose-200"
+														: "border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.06]"
+												}`}
+											>
+												<ThumbsDown className="h-4 w-4" />
+											</button>
+											<div className="group relative">
+												<button
+													type="button"
+													title="About Zoe feedback"
+													aria-label="About Zoe feedback"
+													className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-slate-300 transition hover:bg-white/[0.06] hover:text-white"
+												>
+													<HelpCircle className="h-4 w-4" />
+												</button>
+												<div className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-64 -translate-x-1/2 rounded-xl border border-white/10 bg-slate-950 px-3 py-2 text-xs leading-5 text-slate-300 shadow-2xl group-hover:block">
+													Zoe is still being improved by our developers. It can make mistakes or hallucinate, so your feedback helps us make it better.
+												</div>
+											</div>
+											{/* {messageFeedback[index] && <span className="text-xs text-emerald-300">Sent</span>} */}
 										</div>
 										{msg.suggestions && msg.suggestions.length > 0 && (
 											<div className="mt-3 flex flex-wrap gap-2">
