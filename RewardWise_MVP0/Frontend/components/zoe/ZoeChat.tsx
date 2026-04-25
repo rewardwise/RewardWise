@@ -148,6 +148,30 @@ function dedupeSuggestions(suggestions?: DestSuggestion[] | null, primaryLabel?:
 	}).slice(0, 2);
 }
 
+function isAirportCode(value?: string) {
+	return typeof value === "string" && /^[A-Z]{3}$/.test(value.trim().toUpperCase()) && !["YES", "YEP", "YEA", "NOO"].includes(value.trim().toUpperCase());
+}
+
+function isCleanSearchSync(data: any) {
+	const params = data?.params || {};
+	if (data?.type !== "search_result") return false;
+	return Boolean(isAirportCode(params.origin) && isAirportCode(params.destination));
+}
+
+function cleanInternalParams(params: any) {
+	if (!params || typeof params !== "object") return {};
+	const next = { ...params };
+	for (const key of ["origin", "destination"]) {
+		if (typeof next[key] === "string") {
+			next[key] = next[key].trim().toUpperCase();
+			if (["YES", "YEA", "YEP", "NO", "NOPE", "OK", "OKAY"].includes(next[key])) {
+				delete next[key];
+			}
+		}
+	}
+	return next;
+}
+
 export default function ZoeChat({
 	isOpen,
 	setIsOpen,
@@ -268,8 +292,16 @@ export default function ZoeChat({
 
 	const applyBackendResponse = (data: any) => {
 		if (data.params) {
-			setSelected((prev) => ({ ...prev, ...data.params }));
-			onFillSearch?.(data.params);
+			const cleanedParams = cleanInternalParams(data.params);
+			setSelected((prev) => ({ ...prev, ...cleanedParams }));
+
+			// Keep the home/search form clean. Intermediate Zoe state can include
+			// confirmations, hints, and partial values, so only sync the form after
+			// Zoe has produced a real validated search result. This prevents values
+			// like "YES" from ever landing in FROM/TO fields.
+			if (isCleanSearchSync(data)) {
+				onFillSearch?.(cleanedParams);
+			}
 		}
 
 		setMessages((prev) => [
