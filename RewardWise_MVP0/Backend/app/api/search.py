@@ -317,10 +317,11 @@ async def search(
             "cash_price_used": cash_price,
             "points_cost_used": winner.get("points") if isinstance(winner, dict) else None,
         }
-        insert_one(supabase, "verdicts", verdict_row)
+        inserted_verdict = insert_one(supabase, "verdicts", verdict_row)
+        verdict_id = inserted_verdict.get("id")
 
         try:
-            memory_cache.set(cache_params, search_id=search_id, verdict=verdict_row)
+            memory_cache.set(cache_params, search_id=search_id, verdict=inserted_verdict)
         except Exception:
             pass
 
@@ -331,6 +332,8 @@ async def search(
         )
 
     return {
+        "search_id": search_id if "search_id" in locals() else None,
+        "verdict_id": verdict_id if "verdict_id" in locals() else None,
         "origin": origin,
         "destination": destination,
         "date": departure_date,

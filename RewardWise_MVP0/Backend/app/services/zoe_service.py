@@ -1,131 +1,71 @@
-from typing import Dict, Any, List, Optional
-from app.api.validators import SearchParams
-from app.services.llm import generate_text
-import re
-import json
-import asyncio
+from __future__ import annotations
+
+from typing import Any, Dict, List
+
+from fastapi import HTTPException
+
+from app.api.search import run_search
 from app.rag.flights_retriever import retrieve
-from app.services.verdict_service import generate_verdict
-from app.services.seats_service import search_award_availability
-from app.services.pricing_service import get_cash_price
-from app.utils.math_utils import calculate_cpp
-from datetime import datetime
+from app.services.airport_resolver import is_airport_options_request, resolve_airport_text
+from app.services.llm import generate_text
+from app.services.zoe_intents import detect_general_question, detect_reset_intent, looks_like_replacement_trip
+from app.services.zoe_reconciler import reconcile_turn
+from app.services.zoe_response import (
+    build_collecting_response,
+    build_reset_response,
+    build_suggestions,
+    build_zoe_verdict_message,
+    welcome_response,
+)
+from app.services.zoe_state import (
+    META_KEY,
+    apply_active_slot_answer,
+    apply_airport_resolution,
+    apply_basic_updates,
+    clean_after_update,
+    extract_travelers,
+    fresh_state,
+    get_meta,
+    handle_airport_options_request,
+    handle_pending_confirmation,
+    next_missing_slot,
+    normalize_cabin,
+    normalize_incoming_state,
+    normalize_trip_type,
+    parse_date_text,
+    prompt_for_missing,
+    public_params,
+    set_last_requested,
+    validate_ready_state,
+    validation_message,
+)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# PROGRAM_ALIASES  (must match search.py exactly)
-# seats.aero source string → card program names that transfer there
-# Without this, user_programs never matches award programs in _build_verdict
-# ─────────────────────────────────────────────────────────────────────────────
+
 PROGRAM_ALIASES: dict[str, list[str]] = {
-    "united":         ["United MileagePlus"],
-    "delta":          ["Delta SkyMiles"],
-    "american":       ["Citi ThankYou Points", "Chase Ultimate Rewards"],
-    "alaska":         [],
-    "jetblue":        [],
-    "aeroplan":       ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
+    "united": ["United MileagePlus"],
+    "delta": ["Delta SkyMiles"],
+    "american": ["Citi ThankYou Points", "Chase Ultimate Rewards"],
+    "aeroplan": ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
     "virginatlantic": ["Chase Ultimate Rewards", "Capital One Miles"],
-    "flyingblue":     ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
-    "british":        ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
-    "singapore":      ["Chase Ultimate Rewards", "Amex Membership Rewards"],
-    "cathay":         ["Chase Ultimate Rewards", "Amex Membership Rewards"],
-    "emirates":       ["Chase Ultimate Rewards", "Amex Membership Rewards"],
-    "turkish":        ["Chase Ultimate Rewards"],
-    "qantas":         ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
-    "avianca":        ["Capital One Miles"],
-    "lifemiles":      ["Capital One Miles"],
-    "etihad":         ["Amex Membership Rewards"],
-    "qatar":          ["Amex Membership Rewards"],
-    "saudia":         [],
-    "smiles":         [],
-    "azul":           [],
-    "korean":         [],
-    "ana":            ["Amex Membership Rewards"],
-    "air_france":     ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
-    "hyatt":          ["World of Hyatt"],
-    "marriott":       ["Marriott Bonvoy"],
+    "flyingblue": ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
+    "british": ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
+    "singapore": ["Chase Ultimate Rewards", "Amex Membership Rewards"],
+    "cathay": ["Chase Ultimate Rewards", "Amex Membership Rewards"],
+    "emirates": ["Chase Ultimate Rewards", "Amex Membership Rewards"],
+    "turkish": ["Chase Ultimate Rewards"],
+    "qantas": ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
+    "avianca": ["Capital One Miles"],
+    "lifemiles": ["Capital One Miles"],
+    "etihad": ["Amex Membership Rewards"],
+    "qatar": ["Amex Membership Rewards"],
+    "ana": ["Amex Membership Rewards"],
+    "air_france": ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
+    "hyatt": ["World of Hyatt"],
+    "marriott": ["Marriott Bonvoy"],
 }
 
 
-def _wallet_to_programs(wallet: list) -> list[str]:
-    """
-    Map wallet card program names → seats.aero source strings.
-    e.g. user has "Amex Membership Rewards" → ["qatar", "etihad", "ana", ...]
-    This must mirror what search.py's _get_user_programs() does.
-    """
-    owned = {
-        (card.get("program") or card.get("name") or "").strip()
-        for card in wallet
-    }
-    return [
-        source
-        for source, aliases in PROGRAM_ALIASES.items()
-        if any(alias in owned for alias in aliases)
-    ]
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# CITY → IATA  (city dict checked FIRST so "nyc" → JFK not → "NYC")
-# ─────────────────────────────────────────────────────────────────────────────
-CITY_TO_AIRPORT = {
-    "new york": "JFK", "nyc": "JFK",
-    "los angeles": "LAX", "la": "LAX",
-    "san francisco": "SFO", "sf": "SFO",
-    "seattle": "SEA", "chicago": "ORD",
-    "houston": "IAH", "dallas": "DFW",
-    "miami": "MIA", "atlanta": "ATL",
-    "boston": "BOS", "washington dc": "IAD", "dc": "IAD",
-    "denver": "DEN", "las vegas": "LAS", "vegas": "LAS",
-    "orlando": "MCO", "phoenix": "PHX",
-    "san diego": "SAN", "minneapolis": "MSP",
-    "detroit": "DTW", "philadelphia": "PHL",
-    "charlotte": "CLT", "tampa": "TPA",
-    "austin": "AUS", "nashville": "BNA",
-    "salt lake city": "SLC", "portland": "PDX",
-    "oakland": "OAK", "san jose": "SJC",
-    "london": "LHR", "paris": "CDG", "amsterdam": "AMS",
-    "frankfurt": "FRA", "munich": "MUC", "zurich": "ZRH",
-    "vienna": "VIE", "madrid": "MAD", "barcelona": "BCN",
-    "rome": "FCO", "milan": "MXP", "dublin": "DUB",
-    "lisbon": "LIS", "copenhagen": "CPH", "stockholm": "ARN",
-    "oslo": "OSL", "helsinki": "HEL", "istanbul": "IST",
-    "tokyo": "NRT", "osaka": "KIX", "seoul": "ICN",
-    "beijing": "PEK", "shanghai": "PVG", "hong kong": "HKG",
-    "singapore": "SIN", "bangkok": "BKK", "kuala lumpur": "KUL",
-    "jakarta": "CGK", "manila": "MNL", "delhi": "DEL",
-    "mumbai": "BOM", "bangalore": "BLR", "hyderabad": "HYD",
-    "chennai": "MAA", "kolkata": "CCU", "doha": "DOH",
-    "dubai": "DXB", "abu dhabi": "AUH",
-    "sydney": "SYD", "melbourne": "MEL", "brisbane": "BNE",
-    "perth": "PER", "auckland": "AKL",
-    "toronto": "YYZ", "vancouver": "YVR", "montreal": "YUL", "calgary": "YYC",
-    "mexico city": "MEX", "cancun": "CUN", "sao paulo": "GRU",
-    "rio": "GIG", "buenos aires": "EZE", "lima": "LIM",
-    "bogota": "BOG", "santiago": "SCL",
-}
-
-
-def normalize_location(value: str) -> str:
-    if not value:
-        return value
-    v = value.lower().strip()
-    if v in CITY_TO_AIRPORT:
-        return CITY_TO_AIRPORT[v]
-    for city, code in CITY_TO_AIRPORT.items():
-        if city in v:
-            return code
-    v_nospace = v.replace(" ", "").replace("-", "")
-    for city, code in CITY_TO_AIRPORT.items():
-        if city.replace(" ", "") == v_nospace:
-            return code
-    for city, code in CITY_TO_AIRPORT.items():
-        if city.replace(" ", "") in v_nospace:
-            return code
-    if len(v) == 3 and v.isalpha():
-        return v.upper()
-    return value.upper() if len(value) <= 4 else value
-
-
-def format_wallet_context(wallet):
+def _format_wallet_context(wallet: list) -> str:
     if not wallet:
         return "User has no wallet data."
     lines = []
@@ -133,62 +73,22 @@ def format_wallet_context(wallet):
         program = card.get("program") or card.get("name")
         points = int(card.get("points") or card.get("balance") or 0)
         if program and points:
-            lines.append(f"{program}: {points} points")
+            lines.append(f"{program}: {points:,} points")
     return "\n".join(lines) if lines else "User has no points yet."
 
 
-def is_question(text: str) -> bool:
-    text = text.lower()
-    return any(k in text for k in ["how", "what", "why", "when", "where", "points", "miles", "balance"])
-
-
-def looks_like_date_range(text: str) -> bool:
-    months = [
-        "january","february","march","april","may","june","july",
-        "august","september","october","november","december",
-        "jan","feb","mar","apr","jun","jul","aug","sep","oct","nov","dec",
-    ]
-    t = text.lower()
-    return any(m in t for m in months) or bool(re.search(r'\d', t))
-
-
-def parse_date_string(date_str: str):
-    if not date_str:
-        return None
-    date_str = date_str.strip()
-    for fmt in ["%B %d %Y", "%B %d, %Y", "%b %d %Y", "%b %d, %Y",
-                "%Y-%m-%d", "%m/%d/%Y", "%B %d", "%b %d"]:
-        try:
-            parsed = datetime.strptime(date_str, fmt)
-            if parsed.year == 1900:
-                parsed = parsed.replace(year=datetime.now().year)
-                if parsed.date() < datetime.now().date():
-                    parsed = parsed.replace(year=datetime.now().year + 1)
-            return parsed.date()
-        except ValueError:
-            continue
-    return None
-
-
-def validate(slots):
-    try:
-        return SearchParams(**slots)
-    except Exception:
-        return None
-
-
-async def retrieve_context(query: str):
+async def _retrieve_context(query: str) -> str:
     results = await retrieve(query, top_k=3)
     if not results:
         return "No relevant knowledge found."
     return "\n".join([f"{r.title}\n{r.snippet}" for r in results])
 
 
-async def handle_question(text: str, wallet):
+async def _handle_question(text: str, wallet: list) -> dict[str, Any]:
     text_lower = text.lower()
     if "points" in text_lower or "balance" in text_lower or "miles" in text_lower:
         if not wallet:
-            return {"type": "answer", "message": "You haven't added any loyalty programs yet. Add your cards in Wallet to track your points."}
+            return {"type": "answer", "message": "You haven’t added any loyalty programs yet. Add your cards in Wallet to track your points."}
         lines, total = [], 0
         for card in wallet:
             program = card.get("program") or card.get("name")
@@ -198,331 +98,235 @@ async def handle_question(text: str, wallet):
                 total += points
         return {
             "type": "answer",
-            "message": "Here's your current points balance:\n\n" + "\n".join(lines) + f"\n\nTotal: {total:,} points"
+            "message": "Here’s your current points balance:\n\n" + "\n".join(lines) + f"\n\nTotal: {total:,} points",
         }
 
-    context = await retrieve_context(text)
-    wallet_context = format_wallet_context(wallet)
-    prompt = f"""You are Zoe, a smart travel rewards assistant.
-USER WALLET:\n{wallet_context}\nKNOWLEDGE:\n{context}\nRULES:\n- Use wallet data when relevant\n- Be concise and practical\nUSER QUESTION:\n{text}"""
-    try:
-        answer = await generate_text(prompt)
-    except Exception as e:
-        print("LLM ERROR:", str(e))
-        answer = None
-    return {"type": "answer", "message": answer or "I couldn't answer that. Try asking differently."}
+    context = await _retrieve_context(text)
+    wallet_context = _format_wallet_context(wallet)
+    prompt = f"""You are Zoe, a practical travel rewards assistant.
+USER WALLET:\n{wallet_context}
+KNOWLEDGE:\n{context}
+RULES:
+- Be concise and grounded.
+- Do not invent live prices or award availability.
+- If the user asks a non-trip question, answer directly.
+USER QUESTION:\n{text}"""
+    answer = await generate_text(prompt)
+    return {"type": "answer", "message": answer or "I couldn’t answer that. Try asking differently."}
 
 
-def format_history_for_prompt(history: List[Dict]) -> str:
-    if not history:
-        return ""
-    lines = []
-    for msg in history[-10:]:
-        lines.append(msg.get("content", ""))
-    return "\n".join(lines)
+def _has_trip_state(state: dict[str, Any]) -> bool:
+    if any(state.get(k) for k in ["origin", "destination", "date", "tripType", "travelers", "cabin", "return_date"]):
+        return True
+    meta = get_meta(state)
+    return bool(
+        meta.get("last_requested_slot")
+        or meta.get("pending_confirmation")
+        or meta.get("origin_hint")
+        or meta.get("destination_hint")
+        or meta.get("month_hint")
+        or meta.get("airport_options_slot")
+        or meta.get("airport_options")
+    )
+
+
+def _looks_trip_like(text: str, state: dict[str, Any]) -> bool:
+    if _has_trip_state(state):
+        return True
+    t = text.lower()
+    keywords = [
+        "flight", "fly", "flying", "go to", "travel", "trip", "cash", "points", "miles", "award",
+        "one way", "round trip", "roundtrip", "business", "economy", "first", "traveler", "passenger",
+        "tomorrow", "next week", "next weekend", "weekend", "earlier", "later",
+    ]
+    return any(k in t for k in keywords)
+
+
+def _maybe_reset_for_replacement_trip(text: str, state: dict[str, Any]) -> dict[str, Any]:
+    meta = get_meta(state)
+    if meta.get("conversation_mode") == "post_verdict" and looks_like_replacement_trip(text):
+        return fresh_state()
+    return state
+
+
+def _apply_airport_text_delta(state: dict[str, Any], slot: str, value: Any) -> dict[str, Any] | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    result = apply_airport_resolution(state, slot, text)
+    if result and result.get("question"):
+        return build_collecting_response(result["question"], state)
+    return None
+
+
+def _apply_reconciler_result(state: dict[str, Any], result: dict[str, Any]) -> dict[str, Any] | None:
+    if not isinstance(result, dict):
+        return None
+
+    # Never honor model reset here. Deterministic reset is handled before this.
+    for field in result.get("clear_fields") or []:
+        if field in {"origin", "destination", "date", "tripType", "travelers", "cabin", "return_date"}:
+            state.pop(field, None)
+
+    airport_text = result.get("airport_text") or {}
+    if isinstance(airport_text, dict):
+        # Resolve origin/destination text through the resolver, not the model.
+        for slot in ["origin", "destination"]:
+            if airport_text.get(slot):
+                response = _apply_airport_text_delta(state, slot, airport_text[slot])
+                if response:
+                    return response
+
+    updates = result.get("updates") or {}
+    if isinstance(updates, dict):
+        if updates.get("date"):
+            parsed = parse_date_text(str(updates["date"]), base_date=state.get("date"), slot="date")
+            if parsed.get("date"):
+                state["date"] = parsed["date"]
+            elif parsed.get("month_hint"):
+                get_meta(state)["month_hint"] = parsed["month_hint"]
+        if updates.get("tripType"):
+            trip_type = normalize_trip_type(updates["tripType"])
+            if trip_type:
+                state["tripType"] = trip_type
+        if updates.get("travelers") is not None:
+            travelers = extract_travelers(str(updates["travelers"]))
+            if travelers:
+                state["travelers"] = travelers
+        if updates.get("cabin"):
+            cabin = normalize_cabin(updates["cabin"])
+            if cabin:
+                state["cabin"] = cabin
+        if updates.get("return_date"):
+            parsed = parse_date_text(str(updates["return_date"]), base_date=state.get("date"), slot="return_date")
+            if parsed.get("date"):
+                state["return_date"] = parsed["date"]
+
+    clean_after_update(state)
+    return None
 
 
 async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
-    text    = payload.get("message", "")
-    wallet  = payload.get("wallet", [])
+    text = (payload.get("message") or "").strip()
+    wallet = payload.get("wallet", [])
     incoming = payload.get("slots", {}) or {}
-    history = payload.get("history", [])
+    history = payload.get("history", []) or []
+    explicit_slot = payload.get("slot")
 
     print("📩 USER:", text)
     print("📦 INCOMING SLOTS:", incoming)
 
-    # ── Normalize incoming state ──────────────────────────────────────────────
-    state: Dict[str, Any] = {}
-    for k, v in incoming.items():
-        if v is None or v == "":
-            continue
-        if k == "cabin":
-            state[k] = str(v).lower()
-        elif k in ["origin", "destination"]:
-            state[k] = normalize_location(str(v))
-        elif k == "travelers":
-            try:
-                state[k] = int(v)
-            except (ValueError, TypeError):
-                state[k] = v
-        elif k == "tripType":
-            val = str(v).lower()
-            state[k] = "oneway" if "one" in val else "roundtrip" if "round" in val else val
-        else:
-            state[k] = v
+    if not text:
+        return build_collecting_response("Tell me the trip you want to check.", normalize_incoming_state(incoming))
 
-    # ── Greeting ──────────────────────────────────────────────────────────────
-    if text.lower().strip() in ["start", "hi", "hello", "hey"]:
-        return {"type": "answer", "message": "Hey! Good to see you ✈️ Ready to plan your next trip?", "params": state}
+    if text.lower() == "start":
+        return welcome_response()
 
-    # ── Question handler ───────────────────────────────────────────────────────
-    if is_question(text):
-        result = await handle_question(text, wallet)
-        result["params"] = state
-        return result
+    state = normalize_incoming_state(incoming)
+    state = _maybe_reset_for_replacement_trip(text, state)
+    meta = get_meta(state)
 
-    # ── RAG + LLM extraction ──────────────────────────────────────────────────
-    context = await retrieve_context(text)
-    history_str = format_history_for_prompt(history)
+    # Deterministic reset only. Do not trust the LLM to reset state.
+    if detect_reset_intent(text):
+        return build_reset_response(fresh_state())
 
-    extract_prompt = f"""You are extracting travel details from a conversation.
+    # User is asking for airport options, not trying to change a hint to that full sentence.
+    options_response = handle_airport_options_request(state, text)
+    if options_response:
+        print("🧠 STATE AFTER OPTIONS:", state)
+        return options_response
 
-CONVERSATION SO FAR:
-{history_str}
+    # Pending confirmations must resolve transactionally before AI or other parsing.
+    pending_response = handle_pending_confirmation(state, text)
+    if pending_response:
+        if pending_response.get("type") == "followup":
+            print("🧠 STATE AFTER PENDING:", state)
+            return pending_response
 
-LATEST USER MESSAGE:
-{text}
+    # If frontend explicitly says which slot is being answered, honor that.
+    if explicit_slot:
+        meta["last_requested_slot"] = explicit_slot
 
-CURRENT KNOWN TRIP DETAILS:
-{json.dumps(state)}
+    # Active requested slot gets first shot. This prevents date answers from reopening airport choices.
+    active_response = apply_active_slot_answer(state, text)
+    if active_response:
+        if active_response.get("type") == "followup":
+            print("🧠 STATE AFTER ACTIVE SLOT:", state)
+            return active_response
+        print("🧠 STATE AFTER ACTIVE SLOT:", state)
+    else:
+        apply_basic_updates(state, text)
 
-Extract ONLY NEW information. Return JSON with keys:
-origin, destination, date, return_date, tripType, cabin, travelers, emotion
+        # AI is a delta interpreter only. It cannot reset or directly decide verdict.
+        ai_result = await reconcile_turn(text, state, history)
+        print("🤖 AI STATE DELTA:", ai_result)
+        response = _apply_reconciler_result(state, ai_result)
+        if response:
+            print("🧠 STATE AFTER AI AIRPORT:", state)
+            return response
 
-Rules:
-- If already known → return null
-- If not mentioned → return null
-- tripType: "oneway" or "roundtrip" or null
-- cabin: "economy", "business", or "first" or null
-- travelers: integer or null
-- dates: ISO YYYY-MM-DD if possible
+        if ai_result.get("intent") == "general_question" and not _looks_trip_like(text, state):
+            answer = await _handle_question(text, wallet)
+            answer["params"] = public_params(state)
+            return answer
 
-Return ONLY valid JSON."""
-
-    raw = await generate_text(extract_prompt)
-    try:
-        start = raw.find("{")
-        end = raw.rfind("}") + 1
-        if start == -1 or end == 0:
-            raise ValueError("No JSON")
-        data = json.loads(raw[start:end])
-    except Exception as e:
-        print("❌ JSON PARSE ERROR:", str(e), "\nRAW:", raw)
-        data = {}
-
-    # ── Date range ("June 5 to June 10") ─────────────────────────────────────
-    if " to " in text.lower() and looks_like_date_range(text):
-        parts = re.split(r"\s+to\s+", text, maxsplit=1, flags=re.IGNORECASE)
-        if len(parts) == 2:
-            p0, p1 = parts[0].strip(), parts[1].strip()
-            if not (len(p0) <= 4 and p0.isalpha() and len(p1) <= 4 and p1.isalpha()):
-                if not state.get("date"):
-                    state["date"] = p0
-                if not state.get("return_date"):
-                    state["return_date"] = p1
-                if not state.get("tripType"):
-                    state["tripType"] = "roundtrip"
-
-    # ── Merge — never overwrite existing slots ────────────────────────────────
-    for k, v in data.items():
-        if not v:
-            continue
-        if state.get(k) is not None and state.get(k) != "":
-            continue
-        if k in ["origin", "destination"]:
-            state[k] = normalize_location(str(v))
-        elif k == "travelers":
-            try:
-                state[k] = int(v)
-            except (ValueError, TypeError):
-                pass
-        elif k == "cabin":
-            state[k] = str(v).lower()
-        elif k == "tripType":
-            val = str(v).lower()
-            if "one" in val:
-                state["tripType"] = "oneway"
-                state.pop("return_date", None)
-            elif "round" in val:
-                state["tripType"] = "roundtrip"
-        else:
-            state[k] = v
-
-    if not state.get("tripType") and state.get("return_date"):
-        state["tripType"] = "roundtrip"
-
+    clean_after_update(state)
     print("🧠 STATE AFTER MERGE:", state)
 
-    # ── Type coercion ─────────────────────────────────────────────────────────
-    if isinstance(state.get("travelers"), str):
-        try:
-            state["travelers"] = int(state["travelers"])
-        except ValueError:
-            state["travelers"] = 1
+    if not _looks_trip_like(text, state):
+        answer = await _handle_question(text, wallet)
+        answer["params"] = public_params(state)
+        return answer
 
-    for date_key in ["date", "return_date"]:
-        val = state.get(date_key)
-        if val and isinstance(val, str):
-            parsed = parse_date_string(val)
-            if parsed:
-                state[date_key] = str(parsed)
+    missing = next_missing_slot(state)
+    if missing:
+        question = prompt_for_missing(state, missing)
+        return build_collecting_response(question, state)
 
-    # ── Readiness check ───────────────────────────────────────────────────────
-    def is_ready_for_search(s: dict) -> bool:
-        if not all(s.get(k) for k in ["origin", "destination", "date", "travelers", "cabin"]):
-            return False
-        if not s.get("tripType"):
-            return False
-        if s.get("tripType") == "roundtrip" and not s.get("return_date"):
-            return False
-        return True
+    try:
+        params = validate_ready_state(state)
+    except Exception as exc:
+        question = validation_message(exc, state)
+        return build_collecting_response(question, state)
 
-    is_ready = is_ready_for_search(state)
-    print("✅ IS READY:", is_ready, "| STATE:", state)
+    if request is None:
+        return {
+            "type": "error",
+            "message": "I need a live session before I can run a search. Please reload and try again.",
+            "params": public_params(state),
+        }
 
-    # ── SEARCH ────────────────────────────────────────────────────────────────
-    if is_ready:
-        try:
-            origin       = state["origin"]
-            destination  = state["destination"]
-            dep_date     = state["date"]
-            ret_date     = state.get("return_date")
-            cabin        = state.get("cabin", "economy")
-            travelers    = int(state.get("travelers", 1))
-            is_roundtrip = bool(ret_date)
-
-            # Parallel award + cash fetch
-            async def outbound():
-                raw = await search_award_availability(origin, destination, dep_date, cabin)
-                return [a for a in raw if a.get("remaining_seats", 0) >= travelers]
-
-            async def ret_leg():
-                if not ret_date:
-                    return []
-                raw = await search_award_availability(destination, origin, ret_date, cabin)
-                return [a for a in raw if a.get("remaining_seats", 0) >= travelers]
-
-            outbound_awards, cash_data, return_awards = await asyncio.gather(
-                outbound(),
-                get_cash_price(origin, destination, dep_date, cabin, travelers, ret_date),
-                ret_leg(),
-            )
-
-            cash_price = cash_data.get("cash_price")
-
-            def build_options(awards):
-                results = []
-                for award in awards:
-                    pts = award.get("points")
-                    if not pts:
-                        continue
-                    taxes = (award.get("taxes") or 0) / 100
-                    cpp = calculate_cpp(cash_price, taxes, pts) if cash_price else None
-                    results.append({**award, "cash_price": cash_price, "taxes": taxes, "cpp": cpp})
-                results.sort(key=lambda x: x.get("cpp") or 0, reverse=True)
-                return results
-
-            award_options        = build_options(outbound_awards)
-            return_award_options = build_options(return_awards)
-
-            # ── CRITICAL: map wallet names → seats.aero sources ──────────────
-            # Raw names ("Amex Membership Rewards") never equal "qatar" etc.
-            # Must use PROGRAM_ALIASES — same logic as search.py
-            user_programs = _wallet_to_programs(wallet)
-            print("🎯 USER PROGRAMS (mapped):", user_programs)
-
-            verdict = await generate_verdict(
-                origin=origin,
-                destination=destination,
-                date=dep_date,
-                cabin=cabin,
-                travelers=travelers,
-                is_roundtrip=is_roundtrip,
-                return_date=ret_date,
-                cash_price=cash_price,          # pass None — verdict_service handles it safely
-                award_options=award_options,
-                return_award_options=return_award_options,
-                user_programs=user_programs or None,
-            )
-
-            # ── Build structured Zoe message ──────────────────────────────────
-            pay_cash     = verdict.get("pay_cash", False)
-            winner       = verdict.get("winner") or {}
-            w_program    = winner.get("program", "")
-            w_points     = winner.get("points", 0)
-            w_taxes      = winner.get("taxes") or 0
-            prog_fmt     = w_program.replace("_", " ").title() if w_program else ""
-            cash_str     = f"${cash_price:.0f}" if cash_price else "N/A"
-            travelers_label = f"{travelers} traveler{'s' if travelers != 1 else ''}"
-            trip_label   = "roundtrip" if is_roundtrip else "one way"
-
-            # Line 1 — context
-            opening = (
-                f"I see you're looking to fly from **{origin}** to **{destination}** "
-                f"on {dep_date}, {travelers_label}, {cabin} class, {trip_label}."
-            )
-
-            if pay_cash:
-                verdict_label = "**Verdict: Pay Cash 💵**"
-                cost_line     = f"**Cash:** {cash_str}"
-                savings_line  = "**You'd Save:** Points for a bigger trip ✈️"
-                book_line     = "You can book directly through Google Flights or the airline's site. Safe travels!"
-            else:
-                verdict_label = "**Verdict: Use Points ✨**"
-                total_pts     = w_points * travelers          # winner.points is per-person
-                pts_str       = f"{total_pts:,}"
-                per_person    = f" ({w_points:,} pts per person)" if travelers > 1 else ""
-                cost_line     = f"**Points Required:** {pts_str} pts{per_person}"
-                savings       = round(cash_price - w_taxes) if cash_price else None
-                saves_str     = f"~${savings:,}" if savings else "significant savings"
-                savings_line  = f"**You'd Save:** {saves_str}"
-                airline_site  = f"{prog_fmt}'s site" if prog_fmt else "the airline's site"
-                book_line     = f"You can book directly through {airline_site}. Safe travels!"
-
-            zoe_msg = (
-                f"{opening}\n\n"
-                f"{verdict_label}\n"
-                f"{cost_line}\n\n"
-                f"{savings_line}\n\n"
-                f"{book_line}"
-            )
-
-            return {
-                "type": "search_result",
-                "message": zoe_msg,
-                "data": verdict,
-                "params": state,
-            }
-
-        except Exception as e:
-            import traceback
-            print("❌ SEARCH ERROR:", traceback.format_exc())
-            return {
-                "type": "error",
-                "message": "Sorry, I ran into an issue fetching results. Please try again.",
-                "params": state,
-            }
-
-    # ── Ask next missing slot ─────────────────────────────────────────────────
-    missing_order = ["origin", "destination", "date", "tripType", "travelers", "cabin"]
-    missing = next((k for k in missing_order if not state.get(k)), None)
-    if not missing and state.get("tripType") == "roundtrip" and not state.get("return_date"):
-        missing = "return_date"
-
-    known_summary = ", ".join(f"{k}={v}" for k, v in state.items() if v is not None and v != "")
-
-    response_prompt = f"""You are Zoe, a friendly and emotionally intelligent travel assistant.
-
-CONVERSATION:
-{history_str}
-
-CURRENT TRIP DETAILS (already collected):
-{known_summary or "nothing yet"}
-
-MISSING:
-{missing or "nothing, all details collected!"}
-
-Instructions:
-- Acknowledge what the user just said naturally
-- DO NOT ask for information already collected
-- Ask ONLY for the one missing detail: {missing}
-- Keep it short, warm, and human (1-2 sentences max)
-- Do NOT use dashes or em dashes (— or -) in your response"""
-
-    msg = await generate_text(response_prompt)
-
-    return {
-        "type": "followup",
-        "message": msg,
-        "params": state,
-    }
+    try:
+        search_data = await run_search(request=request, params=params)
+        verdict = search_data.get("verdict") or {}
+        message = build_zoe_verdict_message(search_data)
+        meta = get_meta(state)
+        meta["conversation_mode"] = "post_verdict"
+        set_last_requested(state, None, None)
+        return {
+            "type": "search_result",
+            "message": message,
+            "data": verdict,
+            "search_data": search_data,
+            "search_id": search_data.get("search_id"),
+            "verdict_id": search_data.get("verdict_id"),
+            "params": public_params(state),
+            "suggestions": build_suggestions(state, verdict, stage="post_verdict"),
+        }
+    except HTTPException as exc:
+        friendly = str(exc.detail) if getattr(exc, "detail", None) else "I hit a search error."
+        if "Missing authorization header" in friendly or "Invalid or expired session" in friendly:
+            friendly = "Please log in again so I can run a live search for you."
+        elif "Date" in friendly:
+            friendly = validation_message(Exception(friendly), state)
+        else:
+            friendly = "Sorry, I ran into an issue fetching live results. Please try again."
+        return {"type": "error", "message": friendly, "params": public_params(state), "suggestions": []}
+    except Exception as exc:
+        print("❌ SEARCH ERROR:", repr(exc))
+        return {
+            "type": "error",
+            "message": "Sorry, I ran into an issue fetching live results. Please try again.",
+            "params": public_params(state),
+            "suggestions": [],
+        }

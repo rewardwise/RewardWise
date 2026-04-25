@@ -1,11 +1,27 @@
 /** @format */
 "use client";
 
-import { useState } from "react";
-import { ExternalLink, Search, Sparkles, Zap, PlaneTakeoff, PlaneLanding, Bell, Check } from "lucide-react";
+import { useMemo, useState } from "react";
+import {
+  Bell,
+  Check,
+  ExternalLink,
+  PlaneLanding,
+  PlaneTakeoff,
+  Search,
+  Sparkles,
+  Volume2,
+  VolumeX,
+  ThumbsUp,
+  ThumbsDown,
+  MessageSquare,
+} from "lucide-react";
 import { useAlerts } from "@/context/AlertContext";
+import { createClient } from "@/utils/supabase/client";
 
-// ─── TYPES ──────────────────────────────────────────────────────────────────────
+const supabase = createClient();
+
+type Confidence = "high" | "medium" | "low";
 
 interface VerdictWinner {
   program: string | null;
@@ -21,42 +37,54 @@ interface BookingLink {
   preferred: "seats_aero" | "airline" | "none";
 }
 
+interface NextStep {
+  type: string;
+  label: string;
+  prompt: string;
+}
+
 interface Verdict {
   verdict: string;
+  verdict_label?: string;
+  recommendation?: "use_points" | "pay_cash" | "wait";
+  headline?: string;
+  explanation?: string;
   winner: VerdictWinner | null;
   pay_cash: boolean;
-  confidence: "high" | "medium" | "low";
+  confidence: Confidence;
+  confidence_reason?: string;
   booking_note: string;
   booking_link: BookingLink;
+  data_quality?: string;
+  missing_sources?: string[];
+  safe_fallback_used?: boolean;
+  metrics?: {
+    cash_price?: number | null;
+    points_cost?: number | null;
+    taxes?: number | null;
+    estimated_savings?: number | null;
+  };
+  next_step?: NextStep | null;
 }
 
 interface CashLeg {
   flight_number?: string;
   airline?: string;
-  airline_logo?: string;
   airplane?: string;
-  travel_class?: string;
-  legroom?: string;
   duration?: number;
-  departure_airport?: string;
   departure_iata?: string;
   departure_time?: string;
-  arrival_airport?: string;
   arrival_iata?: string;
   arrival_time?: string;
-  overnight?: boolean;
-  often_delayed?: boolean;
 }
 
 interface CashReturnFlight {
-  departure_airport?: string;
-  departure_iata?: string;
-  departure_time?: string;
-  arrival_airport?: string;
-  arrival_iata?: string;
-  arrival_time?: string;
   total_duration?: number;
   stops?: number;
+  departure_iata?: string;
+  departure_time?: string;
+  arrival_iata?: string;
+  arrival_time?: string;
   legs?: CashLeg[];
 }
 
@@ -64,10 +92,8 @@ interface CashFlight {
   price?: number;
   total_duration?: number;
   stops?: number;
-  departure_airport?: string;
   departure_iata?: string;
   departure_time?: string;
-  arrival_airport?: string;
   arrival_iata?: string;
   arrival_time?: string;
   legs?: CashLeg[];
@@ -100,9 +126,7 @@ interface AwardOption {
   direct: boolean;
   remaining_seats: number;
   airlines?: string;
-  trip_ids?: string[];
   trips?: TripDetail[];
-  source?: string;
 }
 
 interface VerdictCardProps {
@@ -119,34 +143,31 @@ interface VerdictCardProps {
   returnAwardOptions?: AwardOption[];
   flights?: CashFlight[];
   userPrograms?: string[];
-}
-
-// ─── HELPERS ────────────────────────────────────────────────────────────────────
-
-function buildGoogleFlightsUrl(origin: string, destination: string, departDate: string, returnDate?: string | null, cabin?: string): string {
-  const cabinStr = ({ economy: "economy", premium: "premium economy", business: "business", first: "first class" } as Record<string, string>)[cabin ?? "economy"] ?? "economy";
-  const q = returnDate
-    ? `Flights from ${origin} to ${destination} on ${departDate} returning ${returnDate} ${cabinStr}`
-    : `Flights from ${origin} to ${destination} on ${departDate} ${cabinStr}`;
-  return `https://www.google.com/travel/flights?q=${encodeURIComponent(q)}`;
+  verdictId?: string | null;
 }
 
 function formatDate(d: string) {
   const [year, month, day] = d.split("-").map(Number);
-  return new Date(year, month - 1, day).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return new Date(year, month - 1, day).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 }
 
 function fmtTime(t?: string) {
   if (!t) return "";
-  const str = t.includes("T") ? t : t.replace(" ", "T");
-  // Append Z only if no timezone info present — treat naive datetimes as local, not UTC
-  const normalized = str.endsWith("Z") || str.includes("+") ? str : str + "Z";
-  // Actually we want to display AS-IS (airline local time), so strip timezone and parse as local
-  const bare = str.replace("Z", "").split("+")[0];
+  const safe = t.includes("T") ? t : t.replace(" ", "T");
+  const bare = safe.replace("Z", "").split("+")[0];
   const [datePart, timePart] = bare.split("T");
+  if (!datePart || !timePart) return t;
   const [year, month, day] = datePart.split("-").map(Number);
-  const [hour, minute] = (timePart ?? "00:00").split(":").map(Number);
-  return new Date(year, month - 1, day, hour, minute).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+  const [hour, minute] = timePart.split(":").map(Number);
+  return new Date(year, month - 1, day, hour, minute).toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
 }
 
 function fmtDuration(mins?: number) {
@@ -156,309 +177,159 @@ function fmtDuration(mins?: number) {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
-function fmtProgram(s: string) {
-  return s.split(/[\s_]/).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+function fmtProgram(s?: string | null) {
+  const raw = (s || "").replace(/_/g, " ").trim();
+  if (!raw) return "";
+  const normalized = raw.toLowerCase();
+  const special: Record<string, string> = {
+    "flyingblue": "Flying Blue",
+    "flying blue": "Flying Blue",
+    "virginatlantic": "Virgin Atlantic",
+    "virgin atlantic": "Virgin Atlantic",
+    "american airlines": "American Airlines",
+    "british airways": "British Airways",
+  };
+  if (special[normalized]) return special[normalized];
+  return raw
+    .split(/\s+/)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
 }
 
-function cabinLabel(c?: string) {
-  return ({ economy: "Economy", premium: "Premium Economy", business: "Business", first: "First Class" } as Record<string, string>)[c ?? "economy"] ?? "Economy";
+function buildGoogleFlightsUrl(origin: string, destination: string, departDate: string, returnDate?: string | null, cabin?: string): string {
+  const cabinStr = ({ economy: "economy", premium_economy: "premium economy", business: "business", first: "first class" } as Record<string, string>)[cabin ?? "economy"] ?? "economy";
+  const q = returnDate
+    ? `Flights from ${origin} to ${destination} on ${departDate} returning ${returnDate} ${cabinStr}`
+    : `Flights from ${origin} to ${destination} on ${departDate} ${cabinStr}`;
+  return `https://www.google.com/travel/flights?q=${encodeURIComponent(q)}`;
 }
 
-// ─── LOADING SKELETON ────────────────────────────────────────────────────────────
-
-const THINKING_PHRASES = [
-  "Crunching the numbers...",
-  "Checking award availability...",
-  "Consulting the points oracle...",
-  "Doing the math so you don't have to...",
-  "Finding your best deal...",
-];
+function confidenceTone(confidence: Confidence) {
+  if (confidence === "high") return "border-emerald-400/25 bg-emerald-500/10 text-emerald-200";
+  if (confidence === "medium") return "border-amber-400/25 bg-amber-500/10 text-amber-200";
+  return "border-slate-400/20 bg-slate-400/10 text-slate-200";
+}
 
 export function VerdictCardSkeleton({ origin, destination }: { origin: string; destination: string }) {
   return (
-    <div
-      className="rounded-2xl overflow-hidden shadow-2xl"
-      style={{
-        display: "grid",
-        gridTemplateColumns: "1fr 1fr",
-        border: "1px solid rgba(255,255,255,0.07)",
-        boxShadow: "0 25px 60px rgba(0,0,0,0.4)",
-      }}
-    >
-      {/* LEFT — animated verdict skeleton */}
-      <div
-        className="flex flex-col p-5 gap-4"
-        style={{ background: "linear-gradient(150deg, #1e293b 0%, #0f172a 100%)" }}
-      >
-        {/* Header row */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
-            <Sparkles className="w-3 h-3 animate-pulse" style={{ color: "#34d399" }} />
-            <span className="text-[10px] font-bold uppercase" style={{ color: "#34d399", letterSpacing: "0.14em" }}>
-              The Verdict
-            </span>
-          </div>
-          <div className="h-3 w-20 rounded-full animate-pulse" style={{ background: "rgba(255,255,255,0.08)" }} />
-        </div>
-
-        {/* Big headline skeleton */}
+    <div className="animate-pulse rounded-2xl border border-white/10 bg-slate-900/80 p-6 shadow-2xl">
+      <div className="mb-6 flex items-center justify-between">
         <div>
-          <div className="h-10 w-48 rounded-lg mb-2 animate-pulse" style={{ background: "rgba(255,255,255,0.08)" }} />
-          <div className="h-3 w-32 rounded-full animate-pulse" style={{ background: "rgba(255,255,255,0.05)" }} />
+          <div className="mb-2 h-3 w-20 rounded bg-white/10" />
+          <div className="h-8 w-40 rounded bg-white/10" />
         </div>
+        <div className="h-6 w-24 rounded-full bg-white/10" />
+      </div>
+      <div className="grid gap-6 md:grid-cols-2">
+        <div className="space-y-4">
+          <div className="h-20 rounded-2xl bg-white/5" />
+          <div className="h-24 rounded-2xl bg-white/5" />
+          <div className="h-12 rounded-2xl bg-white/5" />
+        </div>
+        <div className="space-y-4">
+          <div className="h-10 rounded-xl bg-white/5" />
+          <div className="h-16 rounded-2xl bg-white/5" />
+          <div className="h-16 rounded-2xl bg-white/5" />
+        </div>
+      </div>
+      <p className="mt-6 text-sm text-slate-500">Loading {origin} → {destination}…</p>
+    </div>
+  );
+}
 
-        {/* Thinking animation */}
-        <div className="flex-1 flex flex-col gap-3 justify-center">
-          {/* Animated dots + phrase */}
+function FeedbackInline({ verdictId }: { verdictId?: string | null }) {
+  const [choice, setChoice] = useState<1 | 5 | null>(null);
+  const [open, setOpen] = useState(false);
+  const [comment, setComment] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+
+  if (!verdictId) return null;
+
+  const submit = async () => {
+    if (!choice || saving) return;
+    setSaving(true);
+    setError("");
+    const { data: userData } = await supabase.auth.getUser();
+    const userId = userData.user?.id;
+    if (!userId) {
+      setSaving(false);
+      setError("Please log in again before submitting feedback.");
+      return;
+    }
+    const payload = {
+      verdict_id: verdictId,
+      user_id: userId,
+      rating: choice,
+      comment: comment.trim() || null,
+      did_book: false,
+      booking_method: null,
+    };
+    const { error: insertError } = await supabase.from("feedback").insert(payload);
+    if (insertError) {
+      setSaving(false);
+      setError(insertError.message || "Failed to save feedback.");
+      return;
+    }
+    setSaving(false);
+    setSaved(true);
+    setOpen(false);
+  };
+
+  return (
+    <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2 text-slate-300">
+          <MessageSquare className="h-4 w-4" />
+          <span className="text-sm font-medium">Was this useful?</span>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => {
+              setChoice(5);
+              setOpen(true);
+            }}
+            className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${choice === 5 ? "border-emerald-400 bg-emerald-500/10 text-emerald-300" : "border-white/10 bg-white/[0.03] text-slate-300"}`}
+          >
+            <ThumbsUp className="h-4 w-4" /> Helpful
+          </button>
+          <button
+            onClick={() => {
+              setChoice(1);
+              setOpen(true);
+            }}
+            className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${choice === 1 ? "border-rose-400 bg-rose-500/10 text-rose-300" : "border-white/10 bg-white/[0.03] text-slate-300"}`}
+          >
+            <ThumbsDown className="h-4 w-4" /> Needs work
+          </button>
+        </div>
+      </div>
+      {open && !saved && (
+        <div className="mt-3 space-y-3">
+          <textarea
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            placeholder="Optional: what should Zoe do better here?"
+            className="min-h-[92px] w-full rounded-xl border border-white/10 bg-slate-900/80 px-3 py-2 text-sm text-white placeholder:text-slate-500"
+          />
           <div className="flex items-center gap-2">
-            <div className="flex gap-1">
-              {[0, 1, 2].map((i) => (
-                <div
-                  key={i}
-                  className="w-1.5 h-1.5 rounded-full"
-                  style={{
-                    background: "#34d399",
-                    animation: `bounce 1.2s ease-in-out ${i * 0.2}s infinite`,
-                  }}
-                />
-              ))}
-            </div>
-            <span className="text-sm animate-pulse" style={{ color: "#64748b" }}>
-              Analyzing your options...
-            </span>
-          </div>
-          {/* Skeleton text lines */}
-          <div className="space-y-2">
-            <div className="h-3 w-full rounded-full animate-pulse" style={{ background: "rgba(255,255,255,0.05)" }} />
-            <div className="h-3 w-5/6 rounded-full animate-pulse" style={{ background: "rgba(255,255,255,0.05)" }} />
-            <div className="h-3 w-4/6 rounded-full animate-pulse" style={{ background: "rgba(255,255,255,0.05)" }} />
-          </div>
-        </div>
-
-        {/* Stats skeleton */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
-          {[0, 1, 2].map((i) => (
-            <div
-              key={i}
-              className="rounded-xl p-3 text-center animate-pulse"
-              style={{ background: "rgba(255,255,255,0.05)" }}
+            <button
+              onClick={submit}
+              disabled={saving}
+              className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-600 disabled:bg-slate-700"
             >
-              <div className="h-5 w-12 rounded mx-auto mb-1" style={{ background: "rgba(255,255,255,0.08)" }} />
-              <div className="h-2 w-8 rounded-full mx-auto" style={{ background: "rgba(255,255,255,0.05)" }} />
-            </div>
-          ))}
+              {saving ? "Saving…" : "Submit feedback"}
+            </button>
+            <button onClick={() => setOpen(false)} className="rounded-xl border border-white/10 px-4 py-2 text-sm text-slate-300">Cancel</button>
+          </div>
+          {error && <p className="text-xs text-rose-300">{error}</p>}
         </div>
-
-        {/* Booking note skeleton */}
-        <div className="h-3 w-3/4 rounded-full animate-pulse" style={{ background: "rgba(255,255,255,0.05)" }} />
-      </div>
-
-      {/* RIGHT — booking summary skeleton */}
-      <div className="flex flex-col" style={{ background: "#0d1424", borderLeft: "1px solid rgba(255,255,255,0.06)" }}>
-        {/* Purple header */}
-        <div
-          className="px-5 py-5 text-center"
-          style={{
-            background: "linear-gradient(135deg, #1e1b4b 0%, #2e1065 50%, #1e1b4b 100%)",
-            borderBottom: "1px solid rgba(255,255,255,0.07)",
-          }}
-        >
-          <p className="text-[10px] font-bold uppercase mb-2" style={{ color: "#a5b4fc", letterSpacing: "0.14em" }}>
-            Booking Summary
-          </p>
-          <p className="text-white text-2xl font-extrabold tracking-tight">
-            {origin.toUpperCase()} ↔ {destination.toUpperCase()}
-          </p>
-          <div className="h-3 w-32 rounded-full animate-pulse mx-auto mt-2" style={{ background: "rgba(255,255,255,0.1)" }} />
-        </div>
-
-        {/* Legs skeleton */}
-        <div className="px-5 flex-1 py-4 space-y-4">
-          {[0, 1].map((i) => (
-            <div key={i} className="flex gap-3 items-start py-3 border-b border-white/[0.06]">
-              <div className="w-8 h-8 rounded-lg animate-pulse flex-shrink-0" style={{ background: "rgba(99,102,241,0.15)" }} />
-              <div className="flex-1 space-y-2">
-                <div className="h-3 w-24 rounded-full animate-pulse" style={{ background: "rgba(255,255,255,0.08)" }} />
-                <div className="h-2.5 w-40 rounded-full animate-pulse" style={{ background: "rgba(255,255,255,0.05)" }} />
-                <div className="h-2.5 w-32 rounded-full animate-pulse" style={{ background: "rgba(255,255,255,0.05)" }} />
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Footer skeleton */}
-        <div className="px-5 pb-5 pt-3" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-          <div className="h-2.5 w-24 rounded-full animate-pulse mb-1" style={{ background: "rgba(255,255,255,0.05)" }} />
-          <div className="h-8 w-36 rounded-lg animate-pulse mb-4" style={{ background: "rgba(255,255,255,0.08)" }} />
-          <div className="h-12 w-full rounded-xl animate-pulse" style={{ background: "rgba(16,185,129,0.15)" }} />
-        </div>
-      </div>
-
-      <style>{`
-        @keyframes bounce {
-          0%, 100% { transform: translateY(0); opacity: 0.4; }
-          50% { transform: translateY(-4px); opacity: 1; }
-        }
-      `}</style>
+      )}
+      {saved && <p className="mt-3 text-sm text-emerald-300">Thanks — your feedback was saved.</p>}
     </div>
   );
 }
-
-// ─── CASH FLIGHT LEG ROW (SerpAPI) ──────────────────────────────────────────────
-
-function CashLegRow({ flight, isReturn, label }: { flight: CashFlight | CashReturnFlight; isReturn?: boolean; label?: string }) {
-  const Icon = isReturn ? PlaneLanding : PlaneTakeoff;
-  const firstLeg = flight.legs?.[0];
-  const lastLeg = flight.legs?.[flight.legs.length - 1];
-  const airlines = [...new Set(flight.legs?.map((l) => l.airline).filter(Boolean))].join(", ");
-  const flightNums = flight.legs?.map((l) => l.flight_number).filter(Boolean).join(", ") ?? "";
-  const aircraft = firstLeg?.airplane ?? "";
-  const depTime = fmtTime(flight.departure_time ?? firstLeg?.departure_time);
-  const arrTime = fmtTime(flight.arrival_time ?? lastLeg?.arrival_time);
-  const depIata = flight.departure_iata ?? firstLeg?.departure_iata ?? "";
-  const arrIata = flight.arrival_iata ?? lastLeg?.arrival_iata ?? "";
-
-  return (
-    <div className="py-4 border-b border-white/[0.06] last:border-0">
-      <p className="text-[10px] font-bold uppercase mb-3" style={{ color: "#475569", letterSpacing: "0.12em" }}>
-        {label ?? (isReturn ? "Return" : "Outbound")}
-      </p>
-      <div className="flex items-start gap-3">
-        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.2)" }}>
-          <Icon className="w-4 h-4 text-indigo-400" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-baseline gap-2 flex-wrap">
-            <p className="text-white font-semibold text-sm">{airlines || "—"}</p>
-            {flightNums && <span className="text-gray-500 text-xs font-mono">{flightNums}</span>}
-          </div>
-          {(depTime || depIata) && (
-            <p className="text-sm font-medium mt-0.5" style={{ color: "#94a3b8" }}>
-              {depIata && arrIata ? `${depIata} → ${arrIata}` : ""}
-              {depTime && arrTime ? ` · ${depTime} – ${arrTime}` : ""}
-            </p>
-          )}
-          <p className="text-xs mt-0.5" style={{ color: "#64748b" }}>
-            {fmtDuration(flight.total_duration)}
-            {flight.stops !== undefined && <> · {flight.stops === 0 ? "Nonstop" : `${flight.stops} stop${flight.stops > 1 ? "s" : ""}`}</>}
-            {aircraft && <> · {aircraft}</>}
-          </p>
-          {(flight.legs?.length ?? 0) > 1 && (
-            <div className="mt-2 space-y-0.5 pl-2 border-l border-white/[0.08]">
-              {flight.legs!.map((leg, i) => (
-                <p key={i} className="text-[10px]" style={{ color: "#334155" }}>
-                  {leg.flight_number ?? "—"}
-                  {leg.departure_iata && leg.arrival_iata ? ` · ${leg.departure_iata} → ${leg.arrival_iata}` : ""}
-                  {leg.airplane ? ` · ${leg.airplane}` : ""}
-                  {leg.departure_time ? ` ${fmtTime(leg.departure_time)}` : ""}
-                  {leg.overnight ? " 🌙" : ""}
-                </p>
-              ))}
-            </div>
-          )}
-          <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-            <span className="inline-flex items-center text-[10px] rounded-full px-2 py-0.5" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "#64748b" }}>
-              Google Flights
-            </span>
-            {firstLeg?.legroom && (
-              <span className="inline-flex items-center text-[10px] rounded-full px-2 py-0.5" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "#64748b" }}>
-                {firstLeg.legroom}
-              </span>
-            )}
-          </div>
-        </div>
-        <div className="w-1 flex-shrink-0" />
-      </div>
-    </div>
-  );
-}
-
-// ─── AWARD LEG ROW (seats.aero) ─────────────────────────────────────────────────
-
-function AwardLegRow({ direction, option, cabin, travelers, isReturn }: { direction: string; option: AwardOption; cabin?: string; travelers: number; isReturn?: boolean }) {
-  const pts = option.points * travelers;
-  const trip = option.trips?.[0] ?? null;
-  const segs = trip?.segments ?? [];
-  const firstSeg = segs[0];
-  const lastSeg = segs[segs.length - 1];
-  const Icon = isReturn ? PlaneLanding : PlaneTakeoff;
-  const flightNums = trip?.flight_numbers || segs.map((s) => s.flight_number).filter(Boolean).join(", ") || null;
-  const aircraft = firstSeg?.aircraft_name ?? null;
-  const departTime = fmtTime(trip?.departs_at ?? firstSeg?.departs_at);
-  const arriveTime = fmtTime(trip?.arrives_at ?? lastSeg?.arrives_at);
-  const stops = trip?.stops ?? (segs.length > 1 ? segs.length - 1 : option.direct ? 0 : null);
-  const routeFrom = firstSeg?.origin ?? null;
-  const routeTo = lastSeg?.destination ?? null;
-
-  return (
-    <div className="py-4 border-b border-white/[0.06] last:border-0">
-      <p className="text-[10px] font-bold uppercase mb-3" style={{ color: "#475569", letterSpacing: "0.12em" }}>
-        {direction}
-      </p>
-      <div className="flex items-start gap-3">
-        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.2)" }}>
-          <Icon className="w-4 h-4 text-indigo-400" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-baseline gap-2 flex-wrap">
-            <p className="text-white font-semibold text-sm">{fmtProgram(option.program)}</p>
-            {flightNums && <span className="text-gray-500 text-xs font-mono">{flightNums}</span>}
-          </div>
-          <p className="text-xs mt-0.5" style={{ color: "#64748b" }}>
-            {cabinLabel(cabin)} · {travelers} {travelers === 1 ? "passenger" : "passengers"}
-            {stops !== null && <> · {stops === 0 ? "Nonstop" : `${stops} stop${stops > 1 ? "s" : ""}`}</>}
-            {trip?.total_duration ? <> · {fmtDuration(trip.total_duration)}</> : null}
-          </p>
-          {(routeFrom || departTime) && (
-            <p className="text-xs mt-0.5" style={{ color: "#334155" }}>
-              {routeFrom && routeTo ? `${routeFrom} → ${routeTo}` : ""}
-              {departTime && arriveTime ? ` ${departTime} – ${arriveTime}` : ""}
-            </p>
-          )}
-          {aircraft && <p className="text-xs mt-0.5" style={{ color: "#334155" }}>{aircraft}</p>}
-          {segs.length > 1 && (
-            <div className="mt-2 space-y-0.5 pl-2 border-l border-white/[0.08]">
-              {segs.map((seg, i) => (
-                <p key={i} className="text-[10px]" style={{ color: "#334155" }}>
-                  {seg.flight_number ?? "—"}
-                  {seg.origin && seg.destination ? ` · ${seg.origin} → ${seg.destination}` : ""}
-                  {seg.aircraft_name ? ` · ${seg.aircraft_name}` : ""}
-                  {seg.departs_at ? ` ${fmtTime(seg.departs_at)}` : ""}
-                </p>
-              ))}
-            </div>
-          )}
-          <div className="flex items-center gap-1.5 mt-2 flex-wrap">
-            {option.source === "seats.aero" && (
-              <span className="inline-flex items-center text-[10px] rounded-full px-2 py-0.5" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "#64748b" }}>
-                seats.aero
-              </span>
-            )}
-            {option.airlines && option.airlines !== option.program && (
-              <span className="inline-flex items-center text-[10px] rounded-full px-2 py-0.5" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "#64748b" }}>
-                {option.airlines}
-              </span>
-            )}
-            {option.remaining_seats > 0 && option.remaining_seats <= 4 && (
-              <span className="inline-flex items-center gap-1 text-[10px] text-amber-400">
-                <Zap className="w-3 h-3" />
-                {option.remaining_seats} seat{option.remaining_seats > 1 ? "s" : ""} left
-              </span>
-            )}
-          </div>
-        </div>
-        <div className="text-right flex-shrink-0">
-          <p className="font-bold text-sm" style={{ color: "#34d399" }}>{pts.toLocaleString()} pts</p>
-          {option.taxes != null && option.taxes > 0 && (
-            <p className="text-xs" style={{ color: "#475569" }}>+${Number(option.taxes).toFixed(2)} fees</p>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── MAIN COMPONENT ──────────────────────────────────────────────────────────────
 
 export default function VerdictCard({
   verdict,
@@ -474,14 +345,69 @@ export default function VerdictCard({
   returnAwardOptions = [],
   flights = [],
   userPrograms = [],
+  verdictId,
 }: VerdictCardProps) {
   const { addToWatchlist, isWatching } = useAlerts();
-  const alreadyWatching = isWatching(origin, destination, departDate);
   const [justAdded, setJustAdded] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const alreadyWatching = isWatching(origin, destination, departDate);
+
+  const recommendation = verdict.recommendation ?? (verdict.pay_cash ? "pay_cash" : "use_points");
+  const recommendationLabel = verdict.verdict_label ?? (recommendation === "pay_cash" ? "Pay Cash" : recommendation === "wait" ? "Wait" : "Use Points");
+  const winner = verdict.winner;
+  const confidence = verdict.confidence ?? "medium";
+  const bookingUrl = verdict.booking_link?.preferred === "seats_aero" && verdict.booking_link?.seats_aero_link
+    ? verdict.booking_link.seats_aero_link
+    : verdict.booking_link?.airline_link ?? null;
+  const googleFlightsUrl = buildGoogleFlightsUrl(origin, destination, departDate, returnDate, cabin);
+  const bestCashFlight = flights[0] ?? null;
+  const bestOutbound = winner?.program
+    ? (awardOptions.find((option) => option.program.toLowerCase() === winner.program!.toLowerCase()) ?? awardOptions[0])
+    : awardOptions[0];
+  const bestReturn = returnAwardOptions[0] ?? null;
+  const metrics = verdict.metrics ?? {};
+  const evidenceItems = [
+    metrics.cash_price != null ? `Live cash fare came back at $${Number(metrics.cash_price).toFixed(0)}.` : null,
+    metrics.points_cost ? `The best award path available was ${Number(metrics.points_cost).toLocaleString()} points${metrics.taxes != null && metrics.taxes > 0 ? ` plus about $${Number(metrics.taxes).toFixed(0)} in taxes and fees` : ""}.` : null,
+    metrics.estimated_savings ? `Using cash here helps preserve roughly $${Number(metrics.estimated_savings).toFixed(0)} in point value for a stronger trip.` : null,
+  ].filter(Boolean) as string[];
+
+  const comparisonFacts = [
+    metrics.cash_price != null ? { label: "Cash fare", value: `$${Number(metrics.cash_price).toFixed(0)}` } : null,
+    metrics.points_cost ? { label: "Best award", value: `${Number(metrics.points_cost).toLocaleString()} pts` } : null,
+    metrics.taxes != null && metrics.taxes > 0 ? { label: "Taxes & fees", value: `$${Number(metrics.taxes).toFixed(0)}` } : null,
+    metrics.estimated_savings ? { label: recommendation === "pay_cash" ? "Points preserved" : "Estimated value" , value: `$${Number(metrics.estimated_savings).toFixed(0)}` } : null,
+  ].filter(Boolean) as { label: string; value: string }[];
+
+  const readout = useMemo(() => {
+    const pieces = [
+      `${recommendationLabel}.`,
+      verdict.headline || "",
+      verdict.explanation || verdict.verdict || "",
+      verdict.confidence ? `${confidence.charAt(0).toUpperCase() + confidence.slice(1)} confidence.` : "",
+      verdict.confidence_reason || "",
+      verdict.next_step?.label ? `Next step: ${verdict.next_step.label}.` : "",
+    ].filter(Boolean);
+    return pieces.join(" ");
+  }, [confidence, recommendationLabel, verdict]);
+
+  const speak = () => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    if (speaking) {
+      window.speechSynthesis.cancel();
+      setSpeaking(false);
+      return;
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(readout);
+    utterance.onend = () => setSpeaking(false);
+    utterance.onerror = () => setSpeaking(false);
+    setSpeaking(true);
+    window.speechSynthesis.speak(utterance);
+  };
 
   const handleSetAlert = () => {
     if (alreadyWatching || justAdded) return;
-    const totalPts = !pay_cash && winner?.points ? winner.points * travelers : null;
     addToWatchlist({
       origin,
       destination,
@@ -491,278 +417,222 @@ export default function VerdictCard({
       passengers: travelers,
       tripType: isRoundtrip ? "roundtrip" : "oneway",
       cashPrice,
-      pointsRequired: totalPts,
+      pointsRequired: winner?.points ? winner.points * travelers : null,
       program: winner?.program ?? null,
-      verdict: pay_cash ? "cash" : "points",
+      verdict: recommendation === "pay_cash" ? "cash" : "points",
     });
     setJustAdded(true);
   };
 
-  const { winner, pay_cash, booking_link, confidence } = verdict;
+  const renderCashLeg = (flight: CashFlight | CashReturnFlight | null, label: string, isReturnLeg = false) => {
+    if (!flight) return null;
+    return (
+      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+        <div className="flex items-start gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-indigo-400/20 bg-indigo-500/15">
+            {isReturnLeg ? <PlaneLanding className="h-4 w-4 text-indigo-300" /> : <PlaneTakeoff className="h-4 w-4 text-indigo-300" />}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="mb-1 text-xs uppercase tracking-[0.14em] text-slate-400">{label}</p>
+            <p className="text-sm font-semibold text-white">
+              {(flight as CashFlight).departure_iata || "—"} → {(flight as CashFlight).arrival_iata || "—"}
+            </p>
+            <p className="mt-1 text-xs text-slate-400">
+              {fmtTime((flight as CashFlight).departure_time)}{fmtTime((flight as CashFlight).arrival_time) ? ` – ${fmtTime((flight as CashFlight).arrival_time)}` : ""}
+              {(flight as CashFlight).total_duration ? ` · ${fmtDuration((flight as CashFlight).total_duration)}` : ""}
+              {(flight as CashFlight).stops !== undefined ? ` · ${flight.stops === 0 ? "Nonstop" : `${flight.stops} stop${flight.stops! > 1 ? "s" : ""}`}` : ""}
+            </p>
+          </div>
+          {"price" in flight && flight.price != null && <p className="font-bold text-amber-300">${flight.price}</p>}
+        </div>
+      </div>
+    );
+  };
 
-  const bookingUrl =
-    booking_link.preferred === "seats_aero" && booking_link.seats_aero_link
-      ? booking_link.seats_aero_link
-      : booking_link.airline_link ?? null;
-
-  const googleFlightsUrl = buildGoogleFlightsUrl(origin, destination, departDate, returnDate, cabin);
-
-  const bestOutbound = winner?.program
-  ? (awardOptions.find((o) => o.program.toLowerCase() === winner.program!.toLowerCase()) ?? awardOptions[0])
-  : userPrograms.length
-    ? (awardOptions.find((o) => userPrograms.includes(o.program.toLowerCase())) ?? null)
-    : awardOptions[0];
-
-  const bestReturn = returnAwardOptions[0] ?? null;
-  const outPts = bestOutbound ? bestOutbound.points * travelers : 0;
-  const retPts = isRoundtrip && bestReturn ? bestReturn.points * travelers : 0;
-  const totalPoints = outPts + retPts;
-  const totalTaxes = (bestOutbound?.taxes ?? 0) + (isRoundtrip && bestReturn ? (bestReturn.taxes ?? 0) : 0);
-  const savings = cashPrice != null && cashPrice > 0 ? Math.max(0, cashPrice - totalTaxes) : null;
-
-  const bestCashFlight = flights[0] ?? null;
-  const confidenceColor = { high: "#34d399", medium: "#fbbf24", low: "#6b7280" }[confidence] ?? "#6b7280";
+  const renderAwardLeg = (option: AwardOption | null, label: string, isReturnLeg = false) => {
+    if (!option) return null;
+    const trip = option.trips?.[0];
+    const first = trip?.segments?.[0];
+    const last = trip?.segments?.[trip.segments.length - 1];
+    return (
+      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+        <div className="flex items-start gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-emerald-400/20 bg-emerald-500/15">
+            {isReturnLeg ? <PlaneLanding className="h-4 w-4 text-emerald-300" /> : <PlaneTakeoff className="h-4 w-4 text-emerald-300" />}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="mb-1 text-xs uppercase tracking-[0.14em] text-slate-400">{label}</p>
+            <p className="text-sm font-semibold text-white">{fmtProgram(option.program)}</p>
+            <p className="mt-1 text-xs text-slate-400">
+              {first?.origin && last?.destination ? `${first.origin} → ${last.destination}` : "Award itinerary"}
+              {trip?.departs_at && trip?.arrives_at ? ` · ${fmtTime(trip.departs_at)} – ${fmtTime(trip.arrives_at)}` : ""}
+              {trip?.total_duration ? ` · ${fmtDuration(trip.total_duration)}` : ""}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="font-bold text-emerald-300">{(option.points * travelers).toLocaleString()} pts</p>
+            {option.taxes != null && option.taxes > 0 && <p className="text-xs text-slate-400">+${Number(option.taxes).toFixed(2)}</p>}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
-    <div
-      className="rounded-2xl overflow-hidden shadow-2xl"
-      style={{
-        display: "grid",
-        gridTemplateColumns: "1fr 1fr",
-        border: "1px solid rgba(255,255,255,0.07)",
-        boxShadow: "0 25px 60px rgba(0,0,0,0.4)",
-      }}
-    >
-      {/* ══ LEFT — Verdict ══ */}
-      <div className="flex flex-col p-5 gap-4" style={{ background: "linear-gradient(150deg, #1e293b 0%, #0f172a 100%)" }}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
-            <Sparkles className="w-3 h-3" style={{ color: "#34d399" }} />
-            <span className="text-[10px] font-bold uppercase" style={{ color: "#34d399", letterSpacing: "0.14em" }}>The Verdict</span>
-          </div>
-          <span className="text-[10px] font-bold uppercase" style={{ color: confidenceColor, letterSpacing: "0.12em" }}>
-            {confidence} confidence
-          </span>
-        </div>
-
-        <div>
-          <p className="text-4xl font-extrabold leading-none mb-2" style={{ color: pay_cash ? "#fbbf24" : "#ffffff" }}>
-            {pay_cash ? "Pay Cash" : "Use Points"}
-          </p>
-          <p className="text-xs" style={{ color: "#94a3b8" }}>
-            {origin.toUpperCase()} → {destination.toUpperCase()}
-            {isRoundtrip ? ` → ${origin.toUpperCase()} · Round trip` : " · One way"}
-          </p>
-          {!pay_cash && winner?.program && (
-            <p className="text-xs mt-0.5" style={{ color: "#64748b" }}>
-              {fmtProgram(winner.program)}
-              {isRoundtrip && bestReturn && bestReturn.program !== winner.program ? ` → ${fmtProgram(bestReturn.program)}` : ""}
-            </p>
-          )}
-        </div>
-
-        <p className="text-sm leading-relaxed flex-1" style={{ color: "#cbd5e1" }}>{verdict.verdict}</p>
-
-        {/* Stats — always show cash vs best points side by side */}
-        {cashPrice && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
-            {/* Cash option */}
-            <div className="rounded-xl p-3" style={{
-              background: pay_cash ? "rgba(245,158,11,0.08)" : "rgba(255,255,255,0.05)",
-              border: pay_cash ? "1px solid rgba(245,158,11,0.25)" : "1px solid transparent",
-            }}>
-              <p className="text-[10px] font-bold uppercase mb-1" style={{ color: pay_cash ? "#fbbf24" : "#64748b", letterSpacing: "0.08em" }}>
-                {pay_cash ? "✓ Best Cash" : "Cash"}
-              </p>
-              <p className="font-bold text-lg leading-tight" style={{ color: pay_cash ? "#fbbf24" : "#94a3b8" }}>
-                ${cashPrice}
-              </p>
-              <p className="text-[10px] mt-0.5" style={{ color: "#475569" }}>book directly</p>
-            </div>
-
-            {/* Points option */}
-            {bestOutbound ? (
-              <div className="rounded-xl p-3" style={{
-                background: !pay_cash ? "rgba(16,185,129,0.08)" : "rgba(255,255,255,0.05)",
-                border: !pay_cash ? "1px solid rgba(16,185,129,0.2)" : "1px solid transparent",
-              }}>
-                <p className="text-[10px] font-bold uppercase mb-1" style={{ color: !pay_cash ? "#34d399" : "#64748b", letterSpacing: "0.08em" }}>
-                  {!pay_cash ? "✓ Best Points" : "Points"}
-                </p>
-                <p className="font-bold text-lg leading-tight" style={{ color: !pay_cash ? "#34d399" : "#94a3b8" }}>
-                  {(bestOutbound.points * travelers).toLocaleString()} pts
-                </p>
-                <p className="text-[10px] mt-0.5" style={{ color: "#475569" }}>
-                  {bestOutbound.taxes && bestOutbound.taxes > 0 ? `+$${Number(bestOutbound.taxes).toFixed(2)} fees · ` : ""}
-                  {fmtProgram(bestOutbound.program)}
-                </p>
+    <div className="overflow-hidden rounded-3xl border border-white/10 bg-slate-950/90 shadow-2xl">
+      <div className="grid lg:grid-cols-[1.12fr_0.88fr]">
+        <div className="border-b border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 p-6 lg:border-b-0 lg:border-r lg:p-7">
+          <div className="mb-6 flex items-start justify-between gap-4">
+            <div>
+              <div className="mb-3 inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.16em] text-emerald-300">
+                <Sparkles className="h-3.5 w-3.5" /> The Verdict
               </div>
+              <h2 className="text-3xl font-extrabold tracking-tight text-white">{recommendationLabel}</h2>
+              <p className="mt-2 max-w-xl text-slate-300">{verdict.headline || "A clear decision based on the strongest live cash and award signals available for this trip."}</p>
+            </div>
+            <div className="flex flex-col items-end gap-2">
+              <span className={`rounded-full border px-3 py-1.5 text-xs font-bold uppercase tracking-[0.14em] ${confidenceTone(confidence)}`}>
+                {confidence} confidence
+              </span>
+              {verdict.data_quality && verdict.data_quality !== "full" && (
+                <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-200">
+                  Partial data
+                </span>
+              )}
+            </div>
+          </div>
+
+          <div className="mb-4 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+            <p className="text-[11px] uppercase tracking-[0.14em] text-slate-400">Why this is the call</p>
+            <p className="mt-2 text-[15px] leading-7 text-slate-100">{verdict.explanation || verdict.verdict}</p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 mb-4">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-400">Confidence</p>
+              <p className="mt-1 text-lg font-semibold text-white">{confidence.charAt(0).toUpperCase() + confidence.slice(1)}</p>
+              <p className="mt-2 text-sm leading-6 text-slate-300">{verdict.confidence_reason || "Zoe is comparing the live cash fare against the strongest award option available for this trip."}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-400">What Zoe looked at</p>
+              <div className="mt-3 space-y-2.5">
+                {evidenceItems.length > 0 ? evidenceItems.map((item) => (
+                  <div key={item} className="rounded-xl border border-white/8 bg-slate-900/55 px-3 py-2.5 text-sm leading-6 text-slate-200">
+                    {item}
+                  </div>
+                )) : (
+                  <span className="text-sm leading-6 text-slate-300">Live trip data came back, but the clearest signal here is the overall recommendation rather than any single metric.</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {comparisonFacts.length > 0 && (
+            <div className="mb-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-400">Decision details</p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {comparisonFacts.map((item) => (
+                  <div key={item.label} className="rounded-xl border border-white/8 bg-slate-900/55 px-3 py-3">
+                    <p className="text-[11px] uppercase tracking-[0.12em] text-slate-500">{item.label}</p>
+                    <p className="mt-1 text-base font-semibold text-white">{item.value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {verdict.next_step?.label && (
+            <div className="mb-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-4">
+              <p className="mb-1 text-[11px] uppercase tracking-[0.14em] text-emerald-300">Next step</p>
+              <p className="font-semibold text-white">{verdict.next_step.label}</p>
+              {verdict.next_step.prompt && <p className="mt-1 text-sm text-slate-300">Try asking: “{verdict.next_step.prompt}”</p>}
+            </div>
+          )}
+
+          {verdict.missing_sources && verdict.missing_sources.length > 0 && (
+            <div className="mb-4 rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-amber-200">Missing data</p>
+              <p className="mt-1 text-sm leading-6 text-slate-200">
+                Zoe could not fully verify: {verdict.missing_sources.map((item) => item.replace(/_/g, " ")).join(", ")}.
+              </p>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-3">
+            <button onClick={speak} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-medium text-slate-200 hover:bg-white/[0.06]">
+              {speaking ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />} {speaking ? "Stop" : "Listen"}
+            </button>
+            {bookingUrl ? (
+              <a href={bookingUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-600">
+                Book / verify <ExternalLink className="h-4 w-4" />
+              </a>
             ) : (
-              <div className="rounded-xl p-3" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid transparent" }}>
-                <p className="text-[10px] font-bold uppercase mb-1" style={{ color: "#334155", letterSpacing: "0.08em" }}>Points</p>
-                <p className="font-bold text-lg leading-tight" style={{ color: "#334155" }}>N/A</p>
-                <p className="text-[10px] mt-0.5" style={{ color: "#334155" }}>no availability</p>
+              <a href={googleFlightsUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-xl bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-600">
+                Search fares <Search className="h-4 w-4" />
+              </a>
+            )}
+            <button
+              onClick={handleSetAlert}
+              disabled={alreadyWatching || justAdded}
+              className="flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold disabled:opacity-60"
+              style={{
+                borderColor: "rgba(251,191,36,0.25)",
+                background: "rgba(251,191,36,0.08)",
+                color: "#fbbf24",
+              }}
+            >
+              {alreadyWatching || justAdded ? <Check className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
+              {alreadyWatching || justAdded ? "Alert set" : "Set alert"}
+            </button>
+          </div>
+
+          {verdict.booking_note && <p className="mt-4 text-xs text-slate-500">{verdict.booking_note}</p>}
+          <FeedbackInline verdictId={verdictId} />
+        </div>
+
+        <div className="bg-slate-950/80 p-6 lg:p-7">
+          <div className="mb-5">
+            <p className="mb-2 text-[11px] uppercase tracking-[0.16em] text-indigo-300">Trip summary</p>
+            <h3 className="text-2xl font-bold text-white">{origin} → {destination}</h3>
+            <p className="mt-1 text-sm text-slate-400">
+              {formatDate(departDate)}{returnDate ? ` → ${formatDate(returnDate)}` : ""} · {travelers} traveler{travelers !== 1 ? "s" : ""} · {(cabin || "economy").replace(/_/g, " ")}
+            </p>
+            {userPrograms.length > 0 && <p className="mt-2 text-xs text-slate-500">Wallet programs considered: {userPrograms.join(", ")}</p>}
+          </div>
+
+          <div className="space-y-3">
+            {recommendation === "pay_cash" ? (
+              <>
+                {renderCashLeg(bestCashFlight, isRoundtrip ? "Outbound" : "Flight")}
+                {isRoundtrip && renderCashLeg(bestCashFlight?.return_flight ?? null, "Return", true)}
+              </>
+            ) : recommendation === "use_points" ? (
+              <>
+                {renderAwardLeg(bestOutbound ?? null, isRoundtrip ? "Outbound award" : "Award option")}
+                {isRoundtrip && renderAwardLeg(bestReturn ?? null, "Return award", true)}
+              </>
+            ) : (
+              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                <p className="mb-1 font-semibold text-white">This one needs a second look</p>
+                <p className="text-sm text-slate-300">The current data is not decisive enough yet, so the safest move is to compare another nearby date or cabin before booking.</p>
               </div>
             )}
           </div>
-        )}
 
-        {/* Savings callout — only when points win */}
-        {!pay_cash && savings != null && savings > 0 && (
-          <div className="rounded-xl p-3 text-center" style={{ background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.15)" }}>
-            <p className="text-[10px] font-bold uppercase" style={{ color: "#64748b", letterSpacing: "0.08em" }}>You Save</p>
-            <p className="font-bold text-2xl" style={{ color: "#34d399" }}>~${savings.toFixed(2)}</p>
-          </div>
-        )}
-
-        {verdict.booking_note && (
-          <p className="text-xs italic" style={{ color: "#475569" }}>{verdict.booking_note}</p>
-        )}
-      </div>
-
-      {/* ══ RIGHT — Booking Summary ══ */}
-      <div className="flex flex-col" style={{ background: "#0d1424", borderLeft: "1px solid rgba(255,255,255,0.06)" }}>
-        <div
-          className="px-5 py-5 text-center"
-          style={{
-            background: "linear-gradient(135deg, #1e1b4b 0%, #2e1065 50%, #1e1b4b 100%)",
-            borderBottom: "1px solid rgba(255,255,255,0.07)",
-          }}
-        >
-          <p className="text-[10px] font-bold uppercase mb-2" style={{ color: "#a5b4fc", letterSpacing: "0.14em" }}>Booking Summary</p>
-          <p className="text-white text-2xl font-extrabold tracking-tight">
-            {origin.toUpperCase()} ↔ {destination.toUpperCase()}
-          </p>
-          <p className="text-xs mt-1" style={{ color: "#a5b4fc" }}>
-            {formatDate(departDate)}{returnDate ? ` – ${formatDate(returnDate)}` : ""}
-          </p>
-        </div>
-
-        <div className="px-5 flex-1">
-          {pay_cash ? (
-            bestCashFlight ? (
-              <>
-                <CashLegRow flight={bestCashFlight} label={isRoundtrip ? "Outbound" : "Flight"} isReturn={false} />
-                {isRoundtrip && bestCashFlight.return_flight && (
-                  <CashLegRow flight={bestCashFlight.return_flight} label="Return" isReturn={true} />
-                )}
-              </>
-            ) : (
-              <div className="py-8 text-center">
-                <p className="text-sm font-medium" style={{ color: "#94a3b8" }}>Cash beats points here</p>
-                <p className="text-xs mt-1" style={{ color: "#475569" }}>Award rates don't offer enough value on this route.</p>
-              </div>
-            )
-          ) : (
-            bestOutbound ? (
-              <>
-                <AwardLegRow direction={isRoundtrip ? "Outbound" : "Flight"} option={bestOutbound} cabin={cabin} travelers={travelers} isReturn={false} />
-                {isRoundtrip && bestReturn && (
-                  <AwardLegRow direction="Return" option={bestReturn} cabin={cabin} travelers={travelers} isReturn={true} />
-                )}
-              </>
-            ) : (
-              <div className="py-8 text-center">
-                <p className="text-sm font-medium" style={{ color: "#94a3b8" }}>No award space found</p>
-                <p className="text-xs mt-1" style={{ color: "#475569" }}>Try different dates or cabin class.</p>
-              </div>
-            )
-          )}
-        </div>
-
-        <div className="px-5 pb-5 pt-3" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-          {!pay_cash && totalPoints > 0 ? (
-            <>
-              <div className="flex items-end justify-between mb-4">
+          {bestOutbound && (
+            <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <p className="mb-2 text-[11px] uppercase tracking-[0.14em] text-slate-400">Best points path</p>
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="text-[10px] font-bold uppercase mb-0.5" style={{ color: "#64748b", letterSpacing: "0.12em" }}>Points Required</p>
-                  <p className="text-2xl font-extrabold" style={{ color: "#fff" }}>{totalPoints.toLocaleString()} pts</p>
-                  {travelers > 1 && (
-                    <p className="text-xs" style={{ color: "#475569" }}>
-                      {travelers} travelers · {(totalPoints / travelers).toLocaleString()} ea
-                    </p>
-                  )}
+                  <p className="font-semibold text-white">{fmtProgram(bestOutbound.program)}</p>
+                  <p className="text-sm text-slate-400">
+                    {bestOutbound.direct ? "Nonstop" : `${bestOutbound.remaining_seats ? `${bestOutbound.remaining_seats} seat${bestOutbound.remaining_seats !== 1 ? "s" : ""} left` : "Award space found"}`}
+                    {bestOutbound.taxes != null && bestOutbound.taxes > 0 ? ` · $${Number(bestOutbound.taxes).toFixed(2)} taxes` : ""}
+                  </p>
                 </div>
-                {savings != null && savings > 0 && (
-                  <div className="text-right">
-                    <p className="text-[10px] font-bold uppercase mb-0.5" style={{ color: "#64748b", letterSpacing: "0.12em" }}>You Save</p>
-                    <p className="text-2xl font-extrabold" style={{ color: "#34d399" }}>~${savings.toFixed(2)}</p>
-                  </div>
-                )}
+                <p className="text-lg font-bold text-emerald-300">{(bestOutbound.points * travelers).toLocaleString()} pts</p>
               </div>
-              {bookingUrl ? (
-                <a
-                  href={bookingUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-2 w-full text-sm font-bold py-3.5 rounded-xl transition-all hover:brightness-110 active:scale-[0.98]"
-                  style={{ background: "linear-gradient(90deg, #10b981, #059669)", color: "#fff" }}
-                >
-                  Book This Flight <ExternalLink className="w-4 h-4" />
-                </a>
-              ) : (
-                <a
-                  href={googleFlightsUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-2 w-full text-sm font-bold py-3.5 rounded-xl transition-all hover:brightness-110"
-                  style={{ background: "linear-gradient(90deg, #10b981, #059669)", color: "#fff" }}
-                >
-                  <Search className="w-4 h-4" /> Search Google Flights
-                </a>
-              )}
-              <p className="text-[10px] text-center mt-2" style={{ color: "#334155" }}>⚠ Verify availability before transferring points</p>
-              <button
-                onClick={handleSetAlert}
-                disabled={alreadyWatching || justAdded}
-                className="flex items-center justify-center gap-2 w-full text-sm font-semibold py-3 rounded-xl transition-all mt-2"
-                style={{
-                  background: alreadyWatching || justAdded ? "rgba(255,255,255,0.05)" : "rgba(251,191,36,0.1)",
-                  border: `1px solid ${alreadyWatching || justAdded ? "rgba(255,255,255,0.1)" : "rgba(251,191,36,0.3)"}`,
-                  color: alreadyWatching || justAdded ? "#64748b" : "#fbbf24",
-                  cursor: alreadyWatching || justAdded ? "default" : "pointer",
-                }}
-              >
-                {alreadyWatching || justAdded ? (
-                  <><Check className="w-4 h-4" /> Alert Set</>
-                ) : (
-                  <><Bell className="w-4 h-4" /> Set Alert for This Route</>
-                )}
-              </button>
-            </>
-          ) : (
-            <>
-              <div className="mb-4">
-                <p className="text-[10px] font-bold uppercase mb-0.5" style={{ color: "#64748b", letterSpacing: "0.12em" }}>Best Cash Price</p>
-                <p className="text-2xl font-extrabold" style={{ color: "#fbbf24" }}>${cashPrice ?? "—"}</p>
-              </div>
-              <a
-                href={googleFlightsUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center gap-2 w-full text-sm font-bold py-3.5 rounded-xl transition-all hover:brightness-110"
-                style={{ background: "linear-gradient(90deg, #10b981, #059669)", color: "#fff" }}
-              >
-                Find Cash Fares <Search className="w-4 h-4" />
-              </a>
-              <button
-                onClick={handleSetAlert}
-                disabled={alreadyWatching || justAdded}
-                className="flex items-center justify-center gap-2 w-full text-sm font-semibold py-3 rounded-xl transition-all mt-2"
-                style={{
-                  background: alreadyWatching || justAdded ? "rgba(255,255,255,0.05)" : "rgba(251,191,36,0.1)",
-                  border: `1px solid ${alreadyWatching || justAdded ? "rgba(255,255,255,0.1)" : "rgba(251,191,36,0.3)"}`,
-                  color: alreadyWatching || justAdded ? "#64748b" : "#fbbf24",
-                  cursor: alreadyWatching || justAdded ? "default" : "pointer",
-                }}
-              >
-                {alreadyWatching || justAdded ? (
-                  <><Check className="w-4 h-4" /> Alert Set</>
-                ) : (
-                  <><Bell className="w-4 h-4" /> Set Alert for This Route</>
-                )}
-              </button>
-            </>
+            </div>
           )}
         </div>
       </div>

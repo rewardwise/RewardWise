@@ -72,14 +72,35 @@ interface BookingLink {
 
 interface Verdict {
 	verdict: string;
+	verdict_label?: string;
+	recommendation?: "use_points" | "pay_cash" | "wait";
+	headline?: string;
+	explanation?: string;
 	winner: VerdictWinner | null;
 	pay_cash: boolean;
 	confidence: "high" | "medium" | "low";
+	confidence_reason?: string;
 	booking_note: string;
 	booking_link: BookingLink;
+	data_quality?: string;
+	missing_sources?: string[];
+	metrics?: {
+		cash_price?: number | null;
+		points_cost?: number | null;
+		taxes?: number | null;
+		cpp?: number | null;
+		estimated_savings?: number | null;
+	};
+	next_step?: {
+		type: string;
+		label: string;
+		prompt: string;
+	} | null;
 }
 
 interface SearchResult {
+	search_id?: string | null;
+	verdict_id?: string | null;
 	origin: string;
 	destination: string;
 	date: string;
@@ -487,6 +508,7 @@ export default function HomePage() {
 									returnAwardOptions={results.return_award_options}
 									flights={results.flights}
 									userPrograms={userPrograms}
+									verdictId={results.verdict_id}
 								/>
 							) : !hasWallet ? (
 								<div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">

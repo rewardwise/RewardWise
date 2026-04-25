@@ -29,28 +29,21 @@ export default function TopNav() {
 
 	// Static alerts (system-level) — always shown at the bottom
 	const staticAlerts = [
-		{
-			id: "static-1",
-			icon: AlertTriangle,
-			title: "45K Marriott points expiring",
-			desc: "90 days left — transfer or book to save ~$540",
-			page: "/circle",
-		},
-		{
-			id: "static-2",
-			icon: Gift,
-			title: "Amex → BA: 30% transfer bonus",
-			desc: "80,000 MR → 104,000 Avios. Ends Mar 15",
-			page: "/circle",
-		},
-		{
-			id: "static-3",
-			icon: TrendingUp,
-			title: "Chase → Hyatt: 25% bonus",
-			desc: "50,000 UR → 62,500 Hyatt points. Ends Mar 31",
-			page: "/circle",
-		},
-	];
+	{
+		id: "static-1",
+		icon: AlertTriangle,
+		title: "Beta access is limited",
+		desc: "Only approved testers can use Zoe during this preview.",
+		page: "/home",
+	},
+	{
+		id: "static-2",
+		icon: Gift,
+		title: "Feedback helps improve Zoe",
+		desc: "After a verdict, use the History page to rate the answer.",
+		page: "/history",
+	},
+];
 
 	const totalCount = unreadCount + staticAlerts.length;
 

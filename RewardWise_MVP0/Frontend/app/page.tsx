@@ -49,6 +49,10 @@ function LandingPageInner() {
 		});
 	};
 
+	const handleAuthorizedTesterAccess = () => {
+		router.push(user ? "/home" : "/login");
+	};
+
 	const validateEmail = (value: string) => {
 		return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 	};
@@ -154,13 +158,23 @@ function LandingPageInner() {
 							</span>
 						</div>
 
-						<button
-							onClick={scrollToForm}
-							className="inline-flex items-center gap-2 rounded-full border border-[rgba(34,197,94,0.28)] bg-[rgba(34,197,94,0.12)] px-4 py-2 text-sm font-semibold text-[#86EFAC] transition hover:bg-[rgba(34,197,94,0.18)]"
-						>
-							Join Waitlist
-							<ArrowRight className="h-4 w-4" />
-						</button>
+						<div className="flex items-center gap-2">
+							<button
+								onClick={handleAuthorizedTesterAccess}
+								className="inline-flex items-center gap-2 rounded-full border border-white/14 bg-white/7 px-4 py-2 text-sm font-semibold text-white/78 transition hover:bg-white/12 hover:text-white"
+							>
+								Authorized Testers
+								<ArrowRight className="h-4 w-4" />
+							</button>
+
+							<button
+								onClick={scrollToForm}
+								className="inline-flex items-center gap-2 rounded-full border border-[rgba(34,197,94,0.28)] bg-[rgba(34,197,94,0.12)] px-4 py-2 text-sm font-semibold text-[#86EFAC] transition hover:bg-[rgba(34,197,94,0.18)]"
+							>
+								Join Waitlist
+								<ArrowRight className="h-4 w-4" />
+							</button>
+						</div>
 					</div>
 				</header>
 
