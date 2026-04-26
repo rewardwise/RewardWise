@@ -93,6 +93,7 @@ def _base_response(
     missing_sources: Optional[list] = None,
     safe_fallback_used: bool = False,
     next_step: Optional[dict] = None,
+    historical_price_context: Optional[dict] = None,
 ) -> dict:
     missing_sources = missing_sources or []
     winner = winner or None
@@ -119,6 +120,7 @@ def _base_response(
         "missing_sources": missing_sources,
         "safe_fallback_used": safe_fallback_used,
         "metrics": _metrics(cash_price, winner),
+        "historical_price_context": historical_price_context,
         "next_step": next_step,
     }
 
@@ -133,6 +135,49 @@ def _choose_candidate(award_options: list, user_programs: Optional[list]) -> tup
     return user_picks, award_options
 
 
+def _historical_price_sentence(context: Optional[dict]) -> str:
+    if not context or not context.get("has_baseline"):
+        return ""
+    label = context.get("cash_price_label")
+    confidence = context.get("confidence")
+    match_level = context.get("match_level")
+    normal_range = context.get("normal_range") or []
+    median = context.get("median_cash_price")
+    if label == "unknown" or median is None:
+        return ""
+
+    range_text = ""
+    if len(normal_range) == 2 and all(v is not None for v in normal_range):
+        range_text = f" The usual range is about ${normal_range[0]:.0f}-${normal_range[1]:.0f}."
+
+    if match_level == "exact_route":
+        scope = "this route"
+    elif match_level == "reverse_route":
+        scope = "the reverse route"
+    else:
+        scope = "similar domestic route contexts"
+
+    label_text = {
+        "cheap": "below the usual historical range",
+        "normal": "within the usual historical range",
+        "high": "above the usual historical range",
+        "unusually_high": "well above the usual historical range",
+    }.get(label, "outside the expected range")
+
+    caution = ""
+    if confidence in {"low", "insufficient"}:
+        caution = " This baseline is still low-confidence, so I am using it as context rather than the whole decision."
+
+    return f" Historically, cash looks {label_text} for {scope}.{range_text}{caution}"
+
+
+def _with_historical_context(explanation: str, context: Optional[dict]) -> str:
+    sentence = _historical_price_sentence(context)
+    if not sentence:
+        return explanation
+    return f"{explanation} {sentence}".strip()
+
+
 async def generate_verdict(
     origin: str,
     destination: str,
@@ -145,6 +190,7 @@ async def generate_verdict(
     award_options: list,
     return_award_options: list,
     user_programs: Optional[list] = None,
+    historical_price_context: Optional[dict] = None,
 ) -> dict:
     del date, is_roundtrip, return_date, return_award_options  # reserved for future richer copy
 
@@ -179,6 +225,7 @@ async def generate_verdict(
             data_quality=data_quality,
             missing_sources=missing_sources,
             safe_fallback_used=True,
+            historical_price_context=historical_price_context,
             next_step=_build_next_step("wait", origin, destination, cabin),
         )
         return response
@@ -190,7 +237,7 @@ async def generate_verdict(
             recommendation="pay_cash",
             verdict_label="Pay Cash",
             headline=f"Cash wins here at {cash_label}.",
-            explanation="I could not find award availability worth using, so paying cash is the safer move right now.",
+            explanation=_with_historical_context("I could not find award availability worth using, so paying cash is the safer move right now.", historical_price_context),
             confidence="medium",
             confidence_reason="Live cash pricing was available, but no matching award availability was found.",
             booking_note="Book the cash fare and save your points for a stronger redemption.",
@@ -198,6 +245,7 @@ async def generate_verdict(
             data_quality=data_quality,
             missing_sources=missing_sources,
             safe_fallback_used=bool(missing_sources),
+            historical_price_context=historical_price_context,
             next_step=_build_next_step("pay_cash", origin, destination, cabin),
         )
         return response
@@ -213,7 +261,7 @@ async def generate_verdict(
                 if cash_price is not None
                 else "There is award space, but none of your current programs can book it right now."
             ),
-            explanation="You would need a different program or transfer path for the available award space, so this is not a clean points redemption from your wallet.",
+            explanation=_with_historical_context("You would need a different program or transfer path for the available award space, so this is not a clean points redemption from your wallet.", historical_price_context),
             confidence="medium" if cash_price is not None else "low",
             confidence_reason="Award space was found, but not through the user's redeemable programs.",
             booking_note="Keep your points for a route your wallet can actually support.",
@@ -221,6 +269,7 @@ async def generate_verdict(
             data_quality=data_quality,
             missing_sources=missing_sources,
             safe_fallback_used=bool(missing_sources),
+            historical_price_context=historical_price_context,
             next_step=_build_next_step("pay_cash" if cash_price is not None else "wait", origin, destination, cabin),
         )
         return response
@@ -260,6 +309,7 @@ async def generate_verdict(
             data_quality=data_quality,
             missing_sources=missing_sources,
             safe_fallback_used=True,
+            historical_price_context=historical_price_context,
             next_step=_build_next_step("wait", origin, destination, cabin),
         )
         return response
@@ -277,7 +327,7 @@ async def generate_verdict(
             recommendation="pay_cash",
             verdict_label="Pay Cash",
             headline=f"Cash wins here at {_cash_label(cash_price)}.",
-            explanation=explanation,
+            explanation=_with_historical_context(explanation, historical_price_context),
             confidence="high" if cpp < 1.0 or cash_price <= 200 else "medium",
             confidence_reason="Live cash pricing is low relative to the best award option available.",
             booking_note="Pay cash and keep your points for a higher-value redemption.",
@@ -287,6 +337,7 @@ async def generate_verdict(
             data_quality=data_quality,
             missing_sources=missing_sources,
             safe_fallback_used=bool(missing_sources),
+            historical_price_context=historical_price_context,
             next_step=_build_next_step("pay_cash", origin, destination, cabin),
         )
         return response
@@ -303,7 +354,7 @@ async def generate_verdict(
             recommendation="use_points",
             verdict_label="Use Points",
             headline=f"{program_label} is the strongest redemption on this trip.",
-            explanation=explanation,
+            explanation=_with_historical_context(explanation, historical_price_context),
             confidence="high",
             confidence_reason="Live cash pricing and matching award availability were both found, and the cents-per-point value is strong.",
             booking_note=f"Verify the award on {program_label}'s site before you transfer any points.",
@@ -313,6 +364,7 @@ async def generate_verdict(
             data_quality=data_quality,
             missing_sources=missing_sources,
             safe_fallback_used=bool(missing_sources),
+            historical_price_context=historical_price_context,
             next_step=_build_next_step("use_points", origin, destination, cabin),
         )
         return response
@@ -322,9 +374,10 @@ async def generate_verdict(
             recommendation="wait",
             verdict_label="Wait",
             headline="This one is close enough that I would check another date before booking.",
-            explanation=(
+            explanation=_with_historical_context(
                 f"I found {program_label} at {points:,} points versus {_cash_label(cash_price)} cash."
-                f" That is decent value, but not a slam dunk once you factor in the fees and flexibility tradeoff."
+                f" That is decent value, but not a slam dunk once you factor in the fees and flexibility tradeoff.",
+                historical_price_context,
             ),
             confidence="medium",
             confidence_reason="Both cash and award data were found, but the value gap is not wide enough to be decisive.",
@@ -335,6 +388,7 @@ async def generate_verdict(
             data_quality=data_quality,
             missing_sources=missing_sources,
             safe_fallback_used=bool(missing_sources),
+            historical_price_context=historical_price_context,
             next_step=_build_next_step("wait", origin, destination, cabin),
         )
         return response
@@ -354,5 +408,6 @@ async def generate_verdict(
         data_quality=data_quality,
         missing_sources=missing_sources,
         safe_fallback_used=True,
+        historical_price_context=historical_price_context,
         next_step=_build_next_step("wait", origin, destination, cabin),
     )

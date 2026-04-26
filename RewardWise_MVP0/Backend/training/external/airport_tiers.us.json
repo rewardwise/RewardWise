@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "notes": "Seed airport tiers for Zoe Price Baseline Model v1. This file is intentionally editable and can be replaced by a passenger-volume driven build later.",
+  "hubs": [
+    "ATL", "BOS", "BWI", "CLT", "DCA", "DEN", "DFW", "DTW", "EWR", "FLL", "HNL", "IAD", "IAH", "JFK", "LAS", "LAX", "LGA", "MCO", "MDW", "MIA", "MSP", "ORD", "PHL", "PHX", "SEA", "SFO", "SLC"
+  ],
+  "majors": [
+    "ABQ", "ANC", "AUS", "BDL", "BNA", "BUR", "CLE", "CMH", "CVG", "DAL", "HOU", "IND", "JAX", "MCI", "MSY", "OAK", "ONT", "PBI", "PDX", "PIT", "RDU", "RSW", "SAN", "SAT", "SJC", "SMF", "SNA", "STL", "TPA"
+  ],
+  "regions": {
+    "northeast": ["ALB", "BDL", "BOS", "BTV", "DCA", "EWR", "HPN", "IAD", "JFK", "LGA", "MHT", "PHL", "PVD", "ROC", "SYR"],
+    "southeast": ["ATL", "AVL", "BNA", "CHS", "CLT", "FLL", "GSP", "JAX", "MCO", "MIA", "MYR", "RDU", "RSW", "SAV", "TPA"],
+    "midwest": ["CLE", "CMH", "CVG", "DTW", "IND", "MCI", "MDW", "MSP", "ORD", "OMA", "PIT", "STL"],
+    "south_central": ["ABQ", "AUS", "DAL", "DFW", "HOU", "IAH", "LIT", "MSY", "OKC", "SAT", "TUL"],
+    "mountain": ["BOI", "DEN", "GEG", "PHX", "SLC", "TUS"],
+    "west": ["BUR", "LAX", "OAK", "ONT", "PDX", "SAN", "SEA", "SFO", "SJC", "SMF", "SNA"],
+    "pacific": ["ANC", "HNL", "KOA", "LIH", "OGG"]
+  }
+}

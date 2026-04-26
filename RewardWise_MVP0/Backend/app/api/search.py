@@ -7,6 +7,7 @@ from app.cache import find_search_verdict_in_db, get_search_memory_cache
 from app.cache.types import SearchParams as CacheSearchParams
 from app.db import get_server_supabase, insert_one, insert_one_return_id
 from app.services.pricing_service import get_cash_price
+from app.services.price_intelligence import build_price_context
 from app.services.seats_service import search_award_availability
 from app.services.verdict_service import generate_verdict  # RW-VerdictGenerator
 from app.utils.math_utils import calculate_cpp
@@ -213,6 +214,23 @@ async def search(
 
     cash_price = cash_data.get("cash_price")
 
+    # --- Historical price context (offline model artifact, no Supabase dependency) ---
+    try:
+        historical_price_context = build_price_context(
+            origin=origin,
+            destination=destination,
+            departure_date=departure_date,
+            cabin=cabin,
+            trip_type="roundtrip" if return_date else "oneway",
+            current_cash_price=cash_price,
+        )
+    except Exception:
+        historical_price_context = {
+            "has_baseline": False,
+            "match_level": "context_error",
+            "summary": "No historical fare baseline was available for this route context.",
+        }
+
     # --- Build outbound award options with CPP ---
     results = []
     for award in outbound_awards:
@@ -282,6 +300,7 @@ async def search(
             award_options=award_options,
             return_award_options=return_award_options,
             user_programs=user_programs or None,
+            historical_price_context=historical_price_context,
         )
 
     # --- Persist search + verdict into Supabase ---
@@ -349,6 +368,7 @@ async def search(
         "award_options": award_options,
         "return_award_options": return_award_options,
         "verdict": verdict_details,
+        "historical_price_context": historical_price_context,
         "user_programs": user_programs,
     }
 
