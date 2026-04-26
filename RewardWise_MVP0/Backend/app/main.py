@@ -16,17 +16,20 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
         "https://reward-wise.vercel.app",
+        "https://mytravelwallet-ai.vercel.app",
+        "https://mytravelwallet.ai",
+        "https://www.mytravelwallet.ai",
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 # Routers
 app.include_router(health.router, prefix="/api")
 app.include_router(wallet.router, prefix="/api")
