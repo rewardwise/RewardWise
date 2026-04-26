@@ -1,0 +1,14 @@
+{
+  "model_version": "zoe-price-baseline-v1",
+  "created_at": "2026-04-26T03:00:38.627318+00:00",
+  "artifact_path": "C:\\Users\\JayVe\\OneDrive - NJIT\\Desktop\\RewardWise\\RewardWise_MVP0\\Backend\\app\\data\\price_model\\route_price_baselines.sqlite",
+  "sources_used": [
+    "training\\processed\\merged_historical_fares_plus_bts.csv"
+  ],
+  "rows_processed": 25829030,
+  "minimum_sample_size": 25,
+  "route_baseline_count": 37748,
+  "region_pair_baseline_count": 3722,
+  "distance_band_baseline_count": 248,
+  "notes": "Explainable percentile baseline artifact. No Supabase required for v1."
+}
