@@ -208,3 +208,9 @@ __marimo__/
 
 .claude/
 ./claude
+
+# Zoe price model training data
+RewardWise_MVP0/Backend/training/raw/
+RewardWise_MVP0/Backend/training/processed/
+*.asc
+*.zip
