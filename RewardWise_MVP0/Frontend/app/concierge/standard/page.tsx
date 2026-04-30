@@ -57,9 +57,6 @@ function ConciergeStandardInner() {
 	const supabase = createClient();
 	const { user } = useAuth();
 
-	const mockQuickPayEnabled =
-		process.env.NEXT_PUBLIC_MOCK_STRIPE_PAYMENT === "true";
-
 	const [form, setForm] = useState({
 		origin: "",
 		destination: "",
@@ -80,7 +77,6 @@ function ConciergeStandardInner() {
 	const [loadConfirm, setLoadConfirm] = useState(false);
 	const [canceling, setCanceling] = useState(false);
 
-	//Load receipt from URL after payment 
 	useEffect(() => {
 		if (!user || !requestParam) {
 			if (!requestParam) {
@@ -167,7 +163,10 @@ function ConciergeStandardInner() {
 		if (!sid || !user) return;
 
 		let cancelled = false;
-		(async () => {
+		let attempts = 0;
+		const maxAttempts = 10;
+
+		const pollPayment = async () => {
 			const res = await fetch(
 				`/api/payments/session?session_id=${encodeURIComponent(sid)}`,
 			);
@@ -182,29 +181,23 @@ function ConciergeStandardInner() {
 				return;
 			}
 			if (data.payment_status === "paid" && data.travel_request_id) {
-				const { data: row } = await supabase
-					.from("travel_requests")
-					.select("constraints")
-					.eq("id", data.travel_request_id)
-					.single();
-				const constraints = (row?.constraints as Record<string, unknown>) ?? {};
-				await supabase
-					.from("travel_requests")
-					.update({
-						status: "paid",
-						constraints: {
-							...constraints,
-							stripe_payment: "paid",
-						},
-					})
-					.eq("id", data.travel_request_id);
-
 				router.replace(
 					`/concierge/standard?request=${encodeURIComponent(data.travel_request_id)}`,
 					{ scroll: false },
 				);
+				return;
 			}
-		})();
+			attempts++;
+			if (attempts < maxAttempts) {
+				setTimeout(pollPayment, 2000);
+			} else {
+				setSubmitError(
+					"Payment is being processed. Please refresh the page in a moment.",
+				);
+			}
+		};
+
+		pollPayment();
 
 		return () => {
 			cancelled = true;
@@ -260,21 +253,6 @@ function ConciergeStandardInner() {
 			payload: { tier: "standard", flexibility: form.flexibility },
 			actor_user_id: user.id,
 		});
-
-		if (mockQuickPayEnabled) {
-			const mockRes = await fetch("/api/payments/dev-simulate-payment", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ travelRequestId: data.id }),
-			});
-			if (mockRes.ok) {
-				router.replace(`/concierge/standard?request=${encodeURIComponent(data.id)}`, {
-					scroll: false,
-				});
-				setLoading(false);
-				return;
-			}
-		}
 
 		const checkoutRes = await fetch("/api/payments/checkout", {
 			method: "POST",

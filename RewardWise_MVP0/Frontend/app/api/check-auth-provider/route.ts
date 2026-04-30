@@ -1,36 +1,32 @@
 /** @format */
 
+import { createRouteHandlerClient } from "@/utils/supabase/route-handler";
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
-export async function POST(request: Request) {
+export async function POST() {
 	try {
-		const { email } = await request.json();
+		const supabase = await createRouteHandlerClient();
+		const {
+			data: { user },
+		} = await supabase.auth.getUser();
 
-		if (!email) {
-			return NextResponse.json({ isGoogleOnly: false });
+		if (!user) {
+			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 		}
 
-		const supabase = createClient(
+		const adminClient = createClient(
 			process.env.NEXT_PUBLIC_SUPABASE_URL!,
 			process.env.SUPABASE_SERVICE_ROLE_KEY!,
 		);
 
-		const { data, error } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+		const { data, error } = await adminClient.auth.admin.getUserById(user.id);
 
-		if (error || !data) {
+		if (error || !data?.user) {
 			return NextResponse.json({ isGoogleOnly: false });
 		}
 
-		const user = data.users.find(
-			(u) => u.email?.toLowerCase() === email.toLowerCase(),
-		);
-
-		if (!user) {
-			return NextResponse.json({ isGoogleOnly: false });
-		}
-
-		const providers: string[] = user.app_metadata?.providers ?? [];
+		const providers: string[] = data.user.app_metadata?.providers ?? [];
 		const isGoogleOnly =
 			providers.includes("google") && !providers.includes("email");
 

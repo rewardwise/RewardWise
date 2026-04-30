@@ -1,8 +1,12 @@
 /** @format */
 
-import { getStripeClientOrNull } from "@/utils/stripe/loader";
+import { getStripe } from "@/utils/stripe/client";
+import { getStripeEnv } from "@/utils/stripe/env";
+import { checkRateLimit, getClientIp } from "@/utils/security/rate-limit";
 import { createRouteHandlerClient } from "@/utils/supabase/route-handler";
 import { NextResponse } from "next/server";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const TIER_AMOUNTS: Record<
 	string,
@@ -14,6 +18,23 @@ const TIER_AMOUNTS: Record<
 
 export async function POST(request: Request) {
 	try {
+		const ip = getClientIp(request);
+		const { allowed, retryAfterMs } = checkRateLimit(`checkout:${ip}`, {
+			maxRequests: 5,
+			windowMs: 60_000,
+		});
+		if (!allowed) {
+			return NextResponse.json(
+				{ error: "Too many requests. Please wait before trying again." },
+				{
+					status: 429,
+					headers: { "Retry-After": String(Math.ceil(retryAfterMs / 1000)) },
+				},
+			);
+		}
+
+		getStripeEnv();
+
 		const supabase = await createRouteHandlerClient();
 		const {
 			data: { user },
@@ -24,9 +45,9 @@ export async function POST(request: Request) {
 
 		const body = (await request.json()) as { travelRequestId?: string };
 		const travelRequestId = body.travelRequestId;
-		if (!travelRequestId) {
+		if (!travelRequestId || !UUID_RE.test(travelRequestId)) {
 			return NextResponse.json(
-				{ error: "travelRequestId is required" },
+				{ error: "Valid travelRequestId is required" },
 				{ status: 400 },
 			);
 		}
@@ -49,36 +70,11 @@ export async function POST(request: Request) {
 		const origin =
 			request.headers.get("origin") ?? new URL(request.url).origin;
 
-		const stripe = await getStripeClientOrNull();
-		if (!stripe) {
-			const { data: constraintsRow } = await supabase
-				.from("travel_requests")
-				.select("constraints")
-				.eq("id", travelRequestId)
-				.single();
-
-			const constraints =
-				(constraintsRow?.constraints as Record<string, unknown> | null) ?? {};
-
-			await supabase
-				.from("travel_requests")
-				.update({
-					status: "paid",
-					constraints: {
-						...constraints,
-						stripe_payment: "bypassed",
-					},
-				})
-				.eq("id", travelRequestId)
-				.eq("user_id", user.id);
-
-			return NextResponse.json({
-				url: `${origin}/concierge/${cfg.path}?request=${encodeURIComponent(travelRequestId)}`,
-			});
-		}
+		const stripe = getStripe();
 
 		const session = await stripe.checkout.sessions.create({
 			mode: "payment",
+			payment_method_types: ["card"],
 			line_items: [
 				{
 					price_data: {
@@ -109,9 +105,9 @@ export async function POST(request: Request) {
 		return NextResponse.json({ url: session.url });
 	} catch (e) {
 		console.error("payments checkout:", e);
-		const message =
-			e instanceof Error ? e.message : "Could not start checkout";
-		return NextResponse.json({ error: message }, { status: 500 });
+		return NextResponse.json(
+			{ error: "Could not start checkout. Please try again." },
+			{ status: 500 },
+		);
 	}
 }
-
