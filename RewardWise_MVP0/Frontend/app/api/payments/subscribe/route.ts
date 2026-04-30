@@ -38,6 +38,19 @@ export async function POST(request: Request) {
 
 		const stripe = getStripe();
 
+		const pmTesterEmails = (process.env.PM_TESTER_EMAILS ?? "")
+			.split(",")
+			.map((email) => email.trim().toLowerCase())
+			.filter(Boolean);
+
+		const userEmail = user.email?.toLowerCase() ?? "";
+		const isPmTester = pmTesterEmails.includes(userEmail);
+
+		const monthlyAmount = isPmTester ? 100 : 999;
+		const productName = isPmTester
+			? "MyTravelWallet Pro - PM Test Monthly"
+			: "MyTravelWallet Pro - Monthly";
+
 		const session = await stripe.checkout.sessions.create({
 			mode: "subscription",
 			payment_method_types: ["card"],
@@ -45,9 +58,9 @@ export async function POST(request: Request) {
 				{
 					price_data: {
 						currency: "usd",
-						unit_amount: 999,
+						unit_amount: monthlyAmount,
 						recurring: { interval: "month" },
-						product_data: { name: "MyTravelWallet Pro - Monthly" },
+						product_data: { name: productName },
 					},
 					quantity: 1,
 				},
