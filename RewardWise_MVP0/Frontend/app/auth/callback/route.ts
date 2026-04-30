@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import { isAllowedTeamEmail } from "@/utils/auth/allowlist";
+import { isSubscriptionActive } from "@/utils/subscription/check";
 
 export async function GET(request: Request) {
 	const { searchParams, origin } = new URL(request.url);
@@ -27,8 +28,20 @@ export async function GET(request: Request) {
 			}
 
 			const next = searchParams.get("next");
-			if (next) {
+			if (
+				next &&
+				next.startsWith("/") &&
+				!next.startsWith("//") &&
+				!/^\/\\/.test(next) &&
+				!next.includes("://")
+			) {
 				return NextResponse.redirect(`${origin}${next}`);
+			}
+
+			const hasActiveSubscription = await isSubscriptionActive(supabase, user.id);
+
+			if (!hasActiveSubscription) {
+				return NextResponse.redirect(`${origin}/subscribe`);
 			}
 
 			const { count } = await supabase

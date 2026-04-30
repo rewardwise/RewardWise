@@ -13,14 +13,12 @@ import {
 import { Session, User } from "@supabase/supabase-js";
 import { createClient } from "@/utils/supabase/client";
 
-// TYPES
 type AuthContextType = {
 	user: User | null;
 	session: Session | null;
 	loading: boolean;
 	hasCards: boolean | null;
 
-	// AUTH
 	signUpWithEmail: (email: string, password: string) => Promise<{ error: any }>;
 	signInWithEmail: (email: string, password: string) => Promise<{ error: any }>;
 	signInWithGoogle: () => Promise<void>;
@@ -28,7 +26,6 @@ type AuthContextType = {
 
 	checkPortfolio: () => Promise<void>;
 
-	// App state
 	subscription: string;
 	setSubscription: (value: string) => void;
 
@@ -38,7 +35,6 @@ type AuthContextType = {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// PROVIDER
 export function AuthProvider({ children }: { children: ReactNode }) {
 	const [session, setSession] = useState<Session | null>(null);
 	const [user, setUser] = useState<User | null>(null);
@@ -49,7 +45,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 	const supabase = createClient();
 
-	// CHECK PORTFOLIO
+	const checkSubscription = useCallback(
+		async (userId: string) => {
+			const { data } = await supabase
+				.from("subscriptions")
+				.select("status")
+				.eq("user_id", userId)
+				.eq("status", "active")
+				.single();
+
+			setSubscription(data ? "pro" : "free");
+		},
+		[supabase],
+	);
+
 	const checkPortfolio = useCallback(async () => {
 		const {
 			data: { user: currentUser },
@@ -69,16 +78,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		setHasCards((data?.length ?? 0) > 0);
 	}, [supabase]);
 
-	// INITIAL SESSION
 	useEffect(() => {
 		const loadSession = async () => {
 			const { data } = await supabase.auth.getSession();
+			const sess = data.session;
 
-			const session = data.session;
-
-			setSession(session);
-			setUser(session?.user ?? null);
+			setSession(sess);
+			setUser(sess?.user ?? null);
 			setLoading(false);
+
+			if (sess?.user) {
+				checkSubscription(sess.user.id);
+			}
 		};
 
 		loadSession();
@@ -91,8 +102,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 				if (session?.user) {
 					checkPortfolio();
+					checkSubscription(session.user.id);
 				} else {
 					setHasCards(null);
+					setSubscription("free");
 				}
 			},
 		);
@@ -100,14 +113,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		return () => {
 			listener.subscription.unsubscribe();
 		};
-	}, [supabase, checkPortfolio]);
+	}, [supabase, checkPortfolio, checkSubscription]);
 
-	// RECHECK PORTFOLIO
 	useEffect(() => {
 		if (user) checkPortfolio();
 	}, [user, checkPortfolio]);
 
-	// EMAIL SIGNUP
 	const signUpWithEmail = async (email: string, password: string) => {
 		const { error } = await supabase.auth.signUp({
 			email,
@@ -120,7 +131,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		return { error };
 	};
 
-	// EMAIL LOGIN
 	const signInWithEmail = async (email: string, password: string) => {
 		const { error } = await supabase.auth.signInWithPassword({
 			email,
@@ -130,7 +140,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		return { error };
 	};
 
-	// GOOGLE LOGIN / SIGNUP
 	const signInWithGoogle = async () => {
 		await supabase.auth.signInWithOAuth({
 			provider: "google",
@@ -140,10 +149,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		});
 	};
 
-	// SIGN OUT
 	const signOut = async () => {
 		await supabase.auth.signOut();
 		setHasCards(null);
+		setSubscription("free");
 	};
 
 	return (
@@ -172,7 +181,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	);
 }
 
-// HOOK
 export function useAuth() {
 	const context = useContext(AuthContext);
 	if (!context) {

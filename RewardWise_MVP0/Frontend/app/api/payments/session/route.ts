@@ -1,16 +1,35 @@
 /** @format */
 
-import { getStripeClientOrNull } from "@/utils/stripe/loader";
+import { getStripe } from "@/utils/stripe/client";
+import { getStripeEnv } from "@/utils/stripe/env";
+import { checkRateLimit, getClientIp } from "@/utils/security/rate-limit";
 import { createRouteHandlerClient } from "@/utils/supabase/route-handler";
 import { NextResponse } from "next/server";
 
 export async function GET(request: Request) {
 	try {
+		const ip = getClientIp(request);
+		const { allowed, retryAfterMs } = checkRateLimit(`session:${ip}`, {
+			maxRequests: 20,
+			windowMs: 60_000,
+		});
+		if (!allowed) {
+			return NextResponse.json(
+				{ error: "Too many requests" },
+				{
+					status: 429,
+					headers: { "Retry-After": String(Math.ceil(retryAfterMs / 1000)) },
+				},
+			);
+		}
+
+		getStripeEnv();
+
 		const { searchParams } = new URL(request.url);
 		const sessionId = searchParams.get("session_id");
-		if (!sessionId) {
+		if (!sessionId || !/^cs_/.test(sessionId)) {
 			return NextResponse.json(
-				{ error: "session_id query parameter is required" },
+				{ error: "Valid session_id is required" },
 				{ status: 400 },
 			);
 		}
@@ -23,16 +42,7 @@ export async function GET(request: Request) {
 			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 		}
 
-		const stripe = await getStripeClientOrNull();
-		if (!stripe) {
-			return NextResponse.json(
-				{
-					error:
-						"Session verification unavailable. Payment provider adapter is missing or disabled.",
-				},
-				{ status: 503 },
-			);
-		}
+		const stripe = getStripe();
 		const session = await stripe.checkout.sessions.retrieve(sessionId);
 
 		if (session.metadata?.user_id !== user.id) {
@@ -47,9 +57,9 @@ export async function GET(request: Request) {
 		});
 	} catch (e) {
 		console.error("payments session:", e);
-		const message =
-			e instanceof Error ? e.message : "Could not load checkout session";
-		return NextResponse.json({ error: message }, { status: 500 });
+		return NextResponse.json(
+			{ error: "Could not verify payment session. Please try again." },
+			{ status: 500 },
+		);
 	}
 }
-

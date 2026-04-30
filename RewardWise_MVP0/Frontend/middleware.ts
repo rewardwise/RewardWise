@@ -12,9 +12,17 @@ const publicRoutes = [
 	"/reset-password",
 ];
 
+const subscriptionFreeRoutes = ["/subscribe", "/profile"];
+
 function isPublicRoute(pathname: string) {
 	return publicRoutes.some((route) => {
 		if (route === "/") return pathname === "/";
+		return pathname === route || pathname.startsWith(`${route}/`);
+	});
+}
+
+function isSubscriptionFreeRoute(pathname: string) {
+	return subscriptionFreeRoutes.some((route) => {
 		return pathname === route || pathname.startsWith(`${route}/`);
 	});
 }
@@ -77,11 +85,38 @@ export async function middleware(request: NextRequest) {
 		return NextResponse.redirect(url);
 	}
 
+	if (user && !isPublic && !isSubscriptionFreeRoute(pathname)) {
+		const { data } = await supabase
+			.from("subscriptions")
+			.select("status")
+			.eq("user_id", user.id)
+			.single();
+
+		if (!data || data.status === "canceled") {
+			const url = request.nextUrl.clone();
+			url.pathname = "/subscribe";
+			url.search = "";
+			const redirectResponse = NextResponse.redirect(url);
+			copyCookies(supabaseResponse, redirectResponse);
+			return redirectResponse;
+		}
+
+		if (data.status === "past_due") {
+			const url = request.nextUrl.clone();
+			url.pathname = "/subscribe";
+			url.search = "";
+			url.searchParams.set("past_due", "1");
+			const redirectResponse = NextResponse.redirect(url);
+			copyCookies(supabaseResponse, redirectResponse);
+			return redirectResponse;
+		}
+	}
+
 	return supabaseResponse;
 }
 
 export const config = {
 	matcher: [
-		"/((?!api|_next/static|_next/image|favicon.ico|.*\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+		"/((?!api|_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
 	],
 };

@@ -171,12 +171,23 @@ export default function ProfilePage() {
 							</div>
 						</div>
 
-						<button
-							onClick={() => router.push("/subscription")}
-							className="w-full bg-gray-800/50 hover:bg-gray-800 text-emerald-400 py-2.5 rounded-lg text-sm font-medium border border-gray-700"
-						>
-							Manage Subscription
-						</button>
+					<button
+						onClick={async () => {
+							const res = await fetch("/api/payments/portal", {
+								method: "POST",
+								headers: { "Content-Type": "application/json" },
+							});
+							const data = await res.json();
+							if (data.url) {
+								window.location.href = data.url;
+							} else {
+								router.push("/subscribe");
+							}
+						}}
+						className="w-full bg-gray-800/50 hover:bg-gray-800 text-emerald-400 py-2.5 rounded-lg text-sm font-medium border border-gray-700"
+					>
+						Manage Subscription
+					</button>
 					</div>
 
 					{/* TOOLS GRID */}

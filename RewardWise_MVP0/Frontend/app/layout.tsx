@@ -8,6 +8,7 @@ import { AuthProvider } from "@/context/AuthProvider";
 import { SearchFillProvider } from "@/context/SearchFillContext";
 import { ABTestProvider } from "@/context/ABTestContext";
 import NavbarWrapper from "@/components/NavbarWrapper";
+import PaymentNotificationBanner from "@/components/PaymentNotificationBanner";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -43,6 +44,7 @@ export default function RootLayout({
 							<ABTestProvider>
 								<SearchFillProvider>
 									<NavbarWrapper />
+									<PaymentNotificationBanner />
 									{children}
 								</SearchFillProvider>
 							</ABTestProvider>
