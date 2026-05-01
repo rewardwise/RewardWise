@@ -54,7 +54,6 @@ type PageInsight = { page: string; visits: number; exits: number; avgSeconds: nu
 type SessionPath = { sessionId: string; user: string; startedAt: string; durationSeconds: number; path: string[]; pageViews: number; zoeMessages: number; searches: number };
 type ZoeConversation = { id: string; user: string; startedAt: string; messages: number; responses: number; lastMessage: string; lastResponse: string; searchesTriggered: number };
 type SearchInsight = { id: string; time: string; user: string; route: string; trip: string; cabin: string; travelers: string; verdict: string; price: string; source: string };
-type UsefulTimelineItem = { id: string; time: string; user: string; title: string; detail: string; page: string; kind: "page" | "time" | "zoe" | "search" | "verdict" | "feedback" | "error" };
 type CountRow = { name: string; value: number };
 
 export const dynamic = "force-dynamic";
@@ -122,11 +121,84 @@ function isUsefulEvent(event: AnalyticsEvent) {
 	return isPageView(event) || isPageExit(event) || isSearchEvent(event) || isZoeEvent(event) || isVerdictEvent(event) || isFeedbackEvent(event) || isErrorEvent(event);
 }
 
+const PAGE_LABELS: Record<string, string> = {
+	"/": "Landing page",
+	"/home": "Home",
+	"/profile": "Profile",
+	"/subscribe": "Subscribe",
+	"/about": "About",
+	"/trips": "Trips",
+	"/history": "History",
+	"/circle": "Circle",
+	"/wallet": "Wallet",
+	"/login": "Login",
+	"/auth/callback": "Auth callback",
+};
+
+const AIRPORT_NAMES: Record<string, string> = {
+	ATL: "Hartsfield-Jackson Atlanta International Airport",
+	AUS: "Austin-Bergstrom International Airport",
+	BNA: "Nashville International Airport",
+	BOS: "Boston Logan International Airport",
+	BWI: "Baltimore/Washington International Thurgood Marshall Airport",
+	CDG: "Paris Charles de Gaulle Airport",
+	CLT: "Charlotte Douglas International Airport",
+	CUN: "Cancun International Airport",
+	DCA: "Ronald Reagan Washington National Airport",
+	DEN: "Denver International Airport",
+	DFW: "Dallas Fort Worth International Airport",
+	DOH: "Hamad International Airport",
+	DXB: "Dubai International Airport",
+	EWR: "Newark Liberty International Airport",
+	FLL: "Fort Lauderdale-Hollywood International Airport",
+	GRU: "Sao Paulo/Guarulhos International Airport",
+	HND: "Tokyo Haneda Airport",
+	IAD: "Washington Dulles International Airport",
+	IAH: "George Bush Intercontinental Airport",
+	IST: "Istanbul Airport",
+	JFK: "John F. Kennedy International Airport",
+	LAS: "Harry Reid International Airport",
+	LAX: "Los Angeles International Airport",
+	LGA: "LaGuardia Airport",
+	LHR: "London Heathrow Airport",
+	MCO: "Orlando International Airport",
+	MEX: "Mexico City International Airport",
+	MIA: "Miami International Airport",
+	MSP: "Minneapolis-Saint Paul International Airport",
+	NRT: "Tokyo Narita International Airport",
+	ORD: "Chicago O'Hare International Airport",
+	PHL: "Philadelphia International Airport",
+	PHX: "Phoenix Sky Harbor International Airport",
+	SAN: "San Diego International Airport",
+	SEA: "Seattle-Tacoma International Airport",
+	SFO: "San Francisco International Airport",
+	SJU: "Luis Munoz Marin International Airport",
+	TPA: "Tampa International Airport",
+};
+
 function humanPage(page: string | null | undefined) {
 	if (!page) return "Unknown page";
-	if (page === "/") return "Landing page";
-	return page;
+	const cleanPath = page.split("?")[0]?.replace(/\/$/, "") || "/";
+	if (PAGE_LABELS[cleanPath]) return PAGE_LABELS[cleanPath];
+	const lastSegment = cleanPath.split("/").filter(Boolean).at(-1);
+	return titleCase(lastSegment || cleanPath);
 }
+
+function airportLabel(value: string | null | undefined) {
+	const raw = (value || "").trim();
+	if (!raw) return "?";
+	const code = raw.toUpperCase();
+	if (/^[A-Z]{3}$/.test(code)) {
+		return AIRPORT_NAMES[code] ? `${AIRPORT_NAMES[code]} (${code})` : `${code} airport (${code})`;
+	}
+	const codeMatch = raw.match(/([A-Z]{3})/);
+	if (codeMatch?.[1]) {
+		const matchedCode = codeMatch[1];
+		return AIRPORT_NAMES[matchedCode] ? `${AIRPORT_NAMES[matchedCode]} (${matchedCode})` : raw;
+	}
+	return titleCase(raw);
+}
+
 
 function short(value: string | null | undefined, max = 140) {
 	if (!value) return "-";
@@ -143,15 +215,6 @@ function formatDay(date: Date) {
 
 function seconds(ms: number | null | undefined) {
 	return Math.max(0, Math.round((ms ?? 0) / 1000));
-}
-
-function humanDuration(totalSeconds: number) {
-	if (!totalSeconds) return "0s";
-	if (totalSeconds < 60) return `${totalSeconds}s`;
-	const minutes = Math.floor(totalSeconds / 60);
-	const secondsLeft = totalSeconds % 60;
-	if (minutes < 60) return `${minutes}m ${secondsLeft}s`;
-	return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
 function titleCase(value: string | null | undefined) {
@@ -171,7 +234,7 @@ function routeLabel(event: AnalyticsEvent) {
 	const origin = event.search_origin || metadataText(event, "origin", "");
 	const destination = event.search_destination || metadataText(event, "destination", "");
 	if (!origin && !destination) return "Unknown route";
-	return `${origin || "?"} → ${destination || "?"}`;
+	return `${airportLabel(origin)} → ${airportLabel(destination)}`;
 }
 
 function buildActivity(days: number, events: AnalyticsEvent[]) {
@@ -217,7 +280,7 @@ function buildPageInsights(events: AnalyticsEvent[]): PageInsight[] {
 		map.set(page, existing);
 	}
 
-	return [...map.values()].sort((a, b) => b.visits - a.visits || b.totalSecondsRaw - a.totalSecondsRaw).slice(0, 12);
+	return [...map.values()].sort((a, b) => b.visits - a.visits || b.totalSecondsRaw - a.totalSecondsRaw);
 }
 
 function buildSessionPaths(events: AnalyticsEvent[]): SessionPath[] {
@@ -246,7 +309,7 @@ function buildSessionPaths(events: AnalyticsEvent[]): SessionPath[] {
 		})
 		.filter((session) => session.path.length)
 		.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
-		.slice(0, 20);
+		.slice(0, 8);
 }
 
 function buildZoeConversations(events: AnalyticsEvent[]): ZoeConversation[] {
@@ -268,35 +331,19 @@ function buildZoeConversations(events: AnalyticsEvent[]): ZoeConversation[] {
 				startedAt: sorted[0]?.created_at || new Date().toISOString(),
 				messages: messages.length,
 				responses: responses.length,
-				lastMessage: short([...messages].reverse()[0]?.zoe_user_message, 180),
-				lastResponse: short([...responses].reverse()[0]?.zoe_assistant_response, 180),
+				lastMessage: short([...messages].reverse()[0]?.zoe_user_message, 160),
+				lastResponse: short([...responses].reverse()[0]?.zoe_assistant_response, 160),
 				searchesTriggered: sorted.filter((event) => lower(event.event_name) === "zoe_search_triggered").length,
 			};
 		})
-		.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+		.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime())
+		.slice(0, 8);
 }
 
 function groupCount(items: string[], limit = 10): CountRow[] {
 	const map = new Map<string, number>();
 	for (const item of items) map.set(item || "Unknown", (map.get(item || "Unknown") ?? 0) + 1);
 	return [...map.entries()].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value).slice(0, limit);
-}
-
-function buildUsefulTimeline(events: AnalyticsEvent[], limit = 120): UsefulTimelineItem[] {
-	return events
-		.filter((event) => isPageView(event) || isPageExit(event) || isSearchSubmitted(event) || isZoeMessage(event) || isZoeOpen(event) || isVerdictEvent(event) || isFeedbackEvent(event) || isErrorEvent(event))
-		.slice(-limit)
-		.reverse()
-		.map((event) => {
-			if (isPageView(event)) return { id: event.id, time: formatDateTime(event.created_at), user: event.user_email || "Unknown user", title: `Visited ${humanPage(event.page_path)}`, detail: event.previous_page_path ? `Arrived from ${humanPage(event.previous_page_path)}` : "Page view", page: humanPage(event.page_path), kind: "page" as const };
-			if (isPageExit(event)) return { id: event.id, time: formatDateTime(event.created_at), user: event.user_email || "Unknown user", title: `Spent ${humanDuration(seconds(event.duration_ms))} on ${humanPage(event.page_path)}`, detail: event.next_page_path ? `Next page: ${humanPage(event.next_page_path)}` : "Left or refreshed", page: humanPage(event.page_path), kind: "time" as const };
-			if (isZoeMessage(event)) return { id: event.id, time: formatDateTime(event.created_at), user: event.user_email || "Unknown user", title: "Sent Zoe a message", detail: `“${short(event.zoe_user_message, 220)}”`, page: humanPage(event.page_path), kind: "zoe" as const };
-			if (isZoeOpen(event)) return { id: event.id, time: formatDateTime(event.created_at), user: event.user_email || "Unknown user", title: "Used Zoe", detail: "Opened or expanded the Zoe assistant", page: humanPage(event.page_path), kind: "zoe" as const };
-			if (isSearchSubmitted(event)) return { id: event.id, time: formatDateTime(event.created_at), user: event.user_email || "Unknown user", title: `Searched ${routeLabel(event)}`, detail: `${titleCase(event.search_trip_type)} • ${titleCase(event.search_cabin)} • ${event.search_travelers || "?"} traveler(s)`, page: humanPage(event.page_path), kind: "search" as const };
-			if (isVerdictEvent(event)) return { id: event.id, time: formatDateTime(event.created_at), user: event.user_email || "Unknown user", title: `Viewed verdict: ${titleCase(event.verdict_recommendation)}`, detail: event.cash_price ? `Cash price: $${Math.round(event.cash_price)}` : "Verdict viewed", page: humanPage(event.page_path), kind: "verdict" as const };
-			if (isFeedbackEvent(event)) return { id: event.id, time: formatDateTime(event.created_at), user: event.user_email || "Unknown user", title: "Submitted feedback", detail: `${event.feedback_rating || "Feedback"}${event.feedback_text ? ` • ${short(event.feedback_text, 180)}` : ""}`, page: humanPage(event.page_path), kind: "feedback" as const };
-			return { id: event.id, time: formatDateTime(event.created_at), user: event.user_email || "Unknown user", title: "Important error", detail: short(event.error_message || event.search_error_message || event.zoe_error_message, 220), page: humanPage(event.page_path), kind: "error" as const };
-		});
 }
 
 export default async function AnalyticsAdminPage({ searchParams }: { searchParams?: Promise<SearchParams> }) {
@@ -337,7 +384,6 @@ export default async function AnalyticsAdminPage({ searchParams }: { searchParam
 	const pageViews = events.filter(isPageView);
 	const pageExits = events.filter(isPageExit);
 	const searches = events.filter(isSearchSubmitted);
-	const zoeEvents = events.filter(isZoeEvent);
 	const zoeMessages = events.filter(isZoeMessage);
 	const zoeUses = events.filter(isZoeOpen);
 	const verdicts = events.filter(isVerdictEvent);
@@ -349,11 +395,12 @@ export default async function AnalyticsAdminPage({ searchParams }: { searchParam
 	const zoeConversations = buildZoeConversations(events);
 	const avgMessagesPerZoeChat = zoeConversations.length ? zoeConversations.reduce((sum, chat) => sum + chat.messages, 0) / zoeConversations.length : 0;
 
-	const users = [...new Map(events.map((event) => [event.user_id || event.user_email || "unknown", event.user_email || "Unknown user"])).entries()]
+	const users = [...new Map(events.filter((event) => event.user_email).map((event) => [event.user_id || event.user_email || "unknown", event.user_email || "Unknown user"])).entries()]
 		.map(([id, email]) => ({ userId: id, email }))
 		.sort((a, b) => a.email.localeCompare(b.email));
+	const selectedUserLabel = users.find((option) => option.userId === selectedUser || option.email === selectedUser)?.email ?? "All users";
 
-	const recentSearches: SearchInsight[] = searches.slice(0, 12).map((event) => ({
+	const recentSearches: SearchInsight[] = searches.slice(0, 9).map((event) => ({
 		id: event.id,
 		time: formatDateTime(event.created_at),
 		user: event.user_email || "Unknown user",
@@ -369,7 +416,7 @@ export default async function AnalyticsAdminPage({ searchParams }: { searchParam
 	return (
 		<AnalyticsChartsDashboard
 			error={error?.message ?? null}
-			filters={{ days, selectedUser }}
+			filters={{ days, selectedUser, selectedUserLabel }}
 			stats={{
 				activeUsers: activeUsers.size,
 				sessions: sessions.size,
@@ -389,20 +436,19 @@ export default async function AnalyticsAdminPage({ searchParams }: { searchParam
 				activityData: buildActivity(days, events),
 				pageVisits: pageInsights.map((page) => ({ name: page.page, value: page.visits })),
 				pageTime: pageInsights.map((page) => ({ name: page.page, value: page.avgSeconds })),
-				topRoutes: groupCount(searches.map(routeLabel), 10),
+				topRoutes: groupCount(searches.map(routeLabel), 50),
 				zoeBreakdown: [
 					{ name: "Opened Zoe", value: zoeUses.length },
-					{ name: "Messages sent", value: zoeMessages.length },
+					{ name: "Messages", value: zoeMessages.length },
 					{ name: "Chats", value: zoeConversations.length },
 				].filter((row) => row.value > 0),
-				verdicts: groupCount(verdicts.map((event) => titleCase(event.verdict_recommendation)), 6),
+				verdicts: groupCount(verdicts.map((event) => titleCase(event.verdict_recommendation)), 50),
 			}}
 			tables={{
 				pages: pageInsights,
 				sessionPaths: buildSessionPaths(chronological),
 				zoeConversations,
 				recentSearches,
-				timeline: buildUsefulTimeline(chronological),
 			}}
 		/>
 	);

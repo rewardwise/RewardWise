@@ -3,15 +3,12 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { useState } from "react";
 import {
 	Area,
 	AreaChart,
-	Bar,
-	BarChart,
 	CartesianGrid,
 	Cell,
-	Line,
-	LineChart,
 	Pie,
 	PieChart,
 	ResponsiveContainer,
@@ -24,12 +21,11 @@ type PageInsight = { page: string; visits: number; exits: number; avgSeconds: nu
 type SessionPath = { sessionId: string; user: string; startedAt: string; durationSeconds: number; path: string[]; pageViews: number; zoeMessages: number; searches: number };
 type ZoeConversation = { id: string; user: string; startedAt: string; messages: number; responses: number; lastMessage: string; lastResponse: string; searchesTriggered: number };
 type SearchInsight = { id: string; time: string; user: string; route: string; trip: string; cabin: string; travelers: string; verdict: string; price: string; source: string };
-type TimelineItem = { id: string; time: string; user: string; title: string; detail: string; page: string; kind: "page" | "time" | "zoe" | "search" | "verdict" | "feedback" | "error" };
 type CountRow = { name: string; value: number };
 
 type Props = {
 	error: string | null;
-	filters: { days: number; selectedUser: string };
+	filters: { days: number; selectedUser: string; selectedUserLabel: string };
 	stats: {
 		activeUsers: number;
 		sessions: number;
@@ -58,14 +54,13 @@ type Props = {
 		sessionPaths: SessionPath[];
 		zoeConversations: ZoeConversation[];
 		recentSearches: SearchInsight[];
-		timeline: TimelineItem[];
 	};
 };
 
-const COLORS = ["#2563eb", "#0f766e", "#9333ea", "#ea580c", "#dc2626", "#475569", "#0891b2"];
+const COLORS = ["#2563eb", "#0f766e", "#9333ea", "#f59e0b", "#dc2626", "#64748b"];
 
-function num(value: number) {
-	return new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(value);
+function num(value: number, digits = 0) {
+	return new Intl.NumberFormat("en-US", { maximumFractionDigits: digits }).format(value);
 }
 
 function humanDuration(totalSeconds: number) {
@@ -75,6 +70,15 @@ function humanDuration(totalSeconds: number) {
 	const seconds = Math.round(totalSeconds % 60);
 	if (minutes < 60) return `${minutes}m ${seconds}s`;
 	return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+function pathLabel(path: string[]) {
+	if (!path.length) return "No path captured";
+	return path.join(" → ");
+}
+
+function maxValue(rows: CountRow[]) {
+	return Math.max(...rows.map((row) => row.value), 1);
 }
 
 function StatCard({ label, value, detail }: { label: string; value: string | number; detail: string }) {
@@ -89,7 +93,7 @@ function StatCard({ label, value, detail }: { label: string; value: string | num
 
 function ChartCard({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
 	return (
-		<section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+		<section className="min-w-0 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
 			<div className="mb-4">
 				<h2 className="text-base font-semibold text-slate-950">{title}</h2>
 				<p className="mt-1 text-sm text-slate-500">{subtitle}</p>
@@ -99,26 +103,178 @@ function ChartCard({ title, subtitle, children }: { title: string; subtitle: str
 	);
 }
 
-function EmptyChart({ label = "No data yet" }: { label?: string }) {
-	return <div className="flex h-full items-center justify-center rounded-2xl bg-slate-50 text-sm text-slate-400">{label}</div>;
+function ScrollCard({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
+	return (
+		<section className="min-w-0 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+			<div className="mb-4">
+				<h2 className="text-base font-semibold text-slate-950">{title}</h2>
+				<p className="mt-1 text-sm text-slate-500">{subtitle}</p>
+			</div>
+			<div className="max-h-80 space-y-3 overflow-y-auto pr-2">{children}</div>
+		</section>
+	);
 }
 
-function pathLabel(path: string[]) {
-	if (!path.length) return "No page path captured";
-	return path.join(" → ");
+function EmptyState({ label = "No data yet" }: { label?: string }) {
+	return <div className="flex min-h-48 items-center justify-center rounded-2xl bg-slate-50 text-sm text-slate-400">{label}</div>;
 }
 
-function timelineTone(kind: TimelineItem["kind"]) {
-	const tones: Record<TimelineItem["kind"], string> = {
-		page: "bg-blue-50 text-blue-700 ring-blue-100",
-		time: "bg-slate-100 text-slate-700 ring-slate-200",
-		zoe: "bg-violet-50 text-violet-700 ring-violet-100",
-		search: "bg-emerald-50 text-emerald-700 ring-emerald-100",
-		verdict: "bg-amber-50 text-amber-700 ring-amber-100",
-		feedback: "bg-cyan-50 text-cyan-700 ring-cyan-100",
-		error: "bg-red-50 text-red-700 ring-red-100",
-	};
-	return tones[kind];
+function CountList({
+	rows,
+	label,
+	valueFormatter = (value) => String(value),
+}: {
+	rows: CountRow[];
+	label: string;
+	valueFormatter?: (value: number) => string;
+}) {
+	const largest = maxValue(rows);
+
+	if (!rows.length) return <EmptyState />;
+
+	return (
+		<>
+			{rows.map((row, index) => (
+				<div key={`${row.name}-${index}`} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+					<div className="flex items-start justify-between gap-3">
+						<div className="min-w-0">
+							<p className="break-words text-sm font-semibold text-slate-950">{row.name}</p>
+							<p className="mt-1 text-xs text-slate-500">{label}</p>
+						</div>
+						<span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">
+							{valueFormatter(row.value)}
+						</span>
+					</div>
+					<div className="mt-3 h-2 rounded-full bg-white ring-1 ring-slate-100">
+						<div
+							className="h-2 rounded-full bg-blue-600"
+							style={{ width: `${Math.max(6, Math.round((row.value / largest) * 100))}%` }}
+						/>
+					</div>
+				</div>
+			))}
+		</>
+	);
+}
+
+function PageDetailList({ pages }: { pages: PageInsight[] }) {
+	if (!pages.length) return <EmptyState label="No page visits yet." />;
+
+	return (
+		<>
+			{pages.map((page) => (
+				<div key={page.page} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+					<div className="flex items-start justify-between gap-3">
+						<p className="min-w-0 break-words text-sm font-semibold text-slate-950">{page.page}</p>
+						<span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">
+							{page.visits} visits
+						</span>
+					</div>
+					<div className="mt-4 grid grid-cols-3 gap-2 text-sm">
+						<div>
+							<p className="text-xs text-slate-400">Avg time</p>
+							<p className="font-semibold text-slate-900">{humanDuration(page.avgSeconds)}</p>
+						</div>
+						<div>
+							<p className="text-xs text-slate-400">Total time</p>
+							<p className="font-semibold text-slate-900">{page.totalMinutes}m</p>
+						</div>
+						<div>
+							<p className="text-xs text-slate-400">Exits</p>
+							<p className="font-semibold text-slate-900">{page.exits}</p>
+						</div>
+					</div>
+				</div>
+			))}
+		</>
+	);
+}
+
+function AskAnalyticsPanel({ filters }: { filters: Props["filters"] }) {
+	const [question, setQuestion] = useState("");
+	const [answer, setAnswer] = useState("");
+	const [loading, setLoading] = useState(false);
+	const [error, setError] = useState("");
+
+	const scopeLabel = filters.selectedUser ? filters.selectedUserLabel : "All users";
+	const starterPrompts = filters.selectedUser
+		? ["Summarize this user's behavior", "What pages did this user spend the most time on?", "How did this user use Zoe?", "Did this user search any routes?"]
+		: ["Summarize product usage", "Which pages are most visited?", "How are testers using Zoe?", "What routes are most popular?"];
+
+	async function askAnalytics(nextQuestion?: string) {
+		const prompt = (nextQuestion ?? question).trim();
+		if (!prompt || loading) return;
+		setQuestion(prompt);
+		setLoading(true);
+		setError("");
+		try {
+			const response = await fetch("/api/admin/analytics/ask", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ question: prompt, days: filters.days, selectedUser: filters.selectedUser }),
+			});
+			const data = await response.json().catch(() => ({}));
+			if (!response.ok) throw new Error(data?.error || "Analytics AI failed");
+			setAnswer(data.answer || "No answer returned.");
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Something went wrong.");
+		} finally {
+			setLoading(false);
+		}
+	}
+
+	return (
+		<section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+			<div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+				<div>
+					<p className="text-xs font-semibold uppercase tracking-[0.18em] text-blue-600">Analytics copilot</p>
+					<h2 className="mt-2 text-xl font-semibold text-slate-950">Ask the data in normal English</h2>
+					<p className="mt-1 text-sm text-slate-500">
+						Current scope: <span className="font-medium text-slate-800">{scopeLabel}</span> over the last {filters.days} days.
+					</p>
+				</div>
+				<span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">read-only analytics_events access</span>
+			</div>
+
+			<div className="mt-5 flex flex-wrap gap-2">
+				{starterPrompts.map((prompt) => (
+					<button
+						key={prompt}
+						type="button"
+						onClick={() => askAnalytics(prompt)}
+						className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100"
+					>
+						{prompt}
+					</button>
+				))}
+			</div>
+
+			<form
+				className="mt-4 flex flex-col gap-3 md:flex-row"
+				onSubmit={(event) => {
+					event.preventDefault();
+					askAnalytics();
+				}}
+			>
+				<input
+					value={question}
+					onChange={(event) => setQuestion(event.target.value)}
+					placeholder={filters.selectedUser ? "Ask about this user's pages, Zoe usage, searches, or drop-offs..." : "Ask about all users, pages, Zoe usage, routes, or drop-offs..."}
+					className="min-w-0 flex-1 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm outline-none focus:border-blue-400 focus:ring-4 focus:ring-blue-100"
+				/>
+				<button className="rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60" disabled={loading}>
+					{loading ? "Thinking..." : "Ask"}
+				</button>
+			</form>
+
+			{error ? <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</div> : null}
+			{answer ? (
+				<div className="mt-5 rounded-2xl border border-blue-100 bg-blue-50/70 p-5 text-sm leading-6 text-slate-800 whitespace-pre-wrap">
+					{answer}
+				</div>
+			) : null}
+		</section>
+	);
 }
 
 export default function AnalyticsChartsDashboard({ error, filters, stats, options, charts, tables }: Props) {
@@ -130,7 +286,7 @@ export default function AnalyticsChartsDashboard({ error, filters, stats, option
 						<p className="text-xs font-semibold uppercase tracking-[0.22em] text-blue-600">Admin only</p>
 						<h1 className="mt-2 text-3xl font-semibold tracking-tight text-slate-950">Product usage analytics</h1>
 						<p className="mt-2 max-w-2xl text-sm text-slate-500">
-							Only useful product behavior is shown here: pages visited, time spent, route paths, searches, verdicts, and Zoe usage.
+							A clean executive view of tester behavior. Use the copilot for deeper journeys, Zoe prompts, and session-level questions.
 						</p>
 					</div>
 
@@ -158,17 +314,17 @@ export default function AnalyticsChartsDashboard({ error, filters, stats, option
 				<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
 					<StatCard label="Users / sessions" value={`${stats.activeUsers} / ${stats.sessions}`} detail="Active testers and sessions in this filter" />
 					<StatCard label="Pages visited" value={stats.pageViews} detail={`${humanDuration(stats.avgPageSeconds)} avg time per page`} />
-					<StatCard label="Zoe usage" value={stats.zoeUses} detail={`${stats.zoeMessages} messages • ${num(stats.avgMessagesPerZoeChat)} msgs/chat`} />
-					<StatCard label="Core outcomes" value={stats.searches} detail={`${stats.verdicts} verdicts • ${stats.errors} important errors`} />
+					<StatCard label="Zoe usage" value={stats.zoeUses} detail={`${stats.zoeMessages} messages • ${num(stats.avgMessagesPerZoeChat, 1)} msgs/chat`} />
+					<StatCard label="Searches / verdicts" value={`${stats.searches} / ${stats.verdicts}`} detail={`${stats.errors} important errors`} />
 				</div>
 
-				<div className="grid gap-6 xl:grid-cols-[1.4fr_1fr]">
-					<ChartCard title="Activity over time" subtitle="Page views, time spent, searches, and Zoe messages.">
+				<div className="grid gap-6 xl:grid-cols-[1.35fr_0.9fr]">
+					<ChartCard title="Activity over time" subtitle="Page views, searches, and Zoe messages by day.">
 						<ResponsiveContainer width="100%" height="100%">
 							<AreaChart data={charts.activityData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
 								<defs>
-									<linearGradient id="pageViews" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#2563eb" stopOpacity={0.24}/><stop offset="95%" stopColor="#2563eb" stopOpacity={0}/></linearGradient>
-									<linearGradient id="zoeMessages" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#9333ea" stopOpacity={0.22}/><stop offset="95%" stopColor="#9333ea" stopOpacity={0}/></linearGradient>
+									<linearGradient id="pageViews" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#2563eb" stopOpacity={0.22}/><stop offset="95%" stopColor="#2563eb" stopOpacity={0}/></linearGradient>
+									<linearGradient id="zoeMessages" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#9333ea" stopOpacity={0.20}/><stop offset="95%" stopColor="#9333ea" stopOpacity={0}/></linearGradient>
 								</defs>
 								<CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
 								<XAxis dataKey="day" tick={{ fontSize: 11 }} stroke="#94a3b8" />
@@ -176,12 +332,12 @@ export default function AnalyticsChartsDashboard({ error, filters, stats, option
 								<Tooltip />
 								<Area type="monotone" dataKey="pageViews" name="Page views" stroke="#2563eb" fill="url(#pageViews)" strokeWidth={2} />
 								<Area type="monotone" dataKey="zoeMessages" name="Zoe messages" stroke="#9333ea" fill="url(#zoeMessages)" strokeWidth={2} />
-								<Line type="monotone" dataKey="searches" name="Searches" stroke="#0f766e" strokeWidth={2} dot={false} />
+								<Area type="monotone" dataKey="searches" name="Searches" stroke="#0f766e" fill="#0f766e22" strokeWidth={2} />
 							</AreaChart>
 						</ResponsiveContainer>
 					</ChartCard>
 
-					<ChartCard title="Zoe usage" subtitle="How often Zoe is opened and how many chats/messages happen.">
+					<ChartCard title="Zoe usage" subtitle="Opens, conversations, and messages sent to Zoe.">
 						{charts.zoeBreakdown.length ? (
 							<ResponsiveContainer width="100%" height="100%">
 								<PieChart>
@@ -191,169 +347,34 @@ export default function AnalyticsChartsDashboard({ error, filters, stats, option
 									<Tooltip />
 								</PieChart>
 							</ResponsiveContainer>
-						) : <EmptyChart label="No Zoe usage yet" />}
+						) : <EmptyState label="No Zoe usage yet" />}
 					</ChartCard>
 				</div>
 
 				<div className="grid gap-6 xl:grid-cols-2">
-					<ChartCard title="Pages visited" subtitle="Which pages testers actually visit.">
-						{charts.pageVisits.length ? (
-							<ResponsiveContainer width="100%" height="100%">
-								<BarChart data={charts.pageVisits} layout="vertical" margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
-									<CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-									<XAxis type="number" tick={{ fontSize: 11 }} stroke="#94a3b8" />
-									<YAxis dataKey="name" type="category" width={96} tick={{ fontSize: 11 }} stroke="#64748b" />
-									<Tooltip />
-									<Bar dataKey="value" name="Visits" radius={[0, 8, 8, 0]} fill="#2563eb" />
-								</BarChart>
-							</ResponsiveContainer>
-						) : <EmptyChart />}
-					</ChartCard>
+					<ScrollCard title="Most visited pages" subtitle="Plain-English page names, ranked by visits. Scroll to see every page.">
+						<CountList rows={charts.pageVisits} label="page visits" valueFormatter={(value) => `${value} visits`} />
+					</ScrollCard>
 
-					<ChartCard title="Time spent by page" subtitle="Average seconds spent before leaving each page.">
-						{charts.pageTime.length ? (
-							<ResponsiveContainer width="100%" height="100%">
-								<BarChart data={charts.pageTime} layout="vertical" margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
-									<CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-									<XAxis type="number" tick={{ fontSize: 11 }} stroke="#94a3b8" />
-									<YAxis dataKey="name" type="category" width={96} tick={{ fontSize: 11 }} stroke="#64748b" />
-									<Tooltip formatter={(value) => [`${value}s`, "Avg time"]} />
-									<Bar dataKey="value" name="Avg seconds" radius={[0, 8, 8, 0]} fill="#0f766e" />
-								</BarChart>
-							</ResponsiveContainer>
-						) : <EmptyChart />}
-					</ChartCard>
+					<ScrollCard title="Time spent by page" subtitle="Average time before testers leave or navigate away. Scroll to see every page.">
+						<CountList rows={charts.pageTime} label="average time on page" valueFormatter={(value) => humanDuration(value)} />
+					</ScrollCard>
 				</div>
 
 				<div className="grid gap-6 xl:grid-cols-2">
-					<ChartCard title="Route demand" subtitle="Most searched origin → destination pairs.">
-						{charts.topRoutes.length ? (
-							<ResponsiveContainer width="100%" height="100%">
-								<BarChart data={charts.topRoutes} margin={{ top: 5, right: 20, left: -20, bottom: 0 }}>
-									<CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-									<XAxis dataKey="name" tick={{ fontSize: 11 }} stroke="#64748b" />
-									<YAxis tick={{ fontSize: 11 }} stroke="#94a3b8" />
-									<Tooltip />
-									<Bar dataKey="value" name="Searches" radius={[8, 8, 0, 0]} fill="#0f766e" />
-								</BarChart>
-							</ResponsiveContainer>
-						) : <EmptyChart label="No searches yet" />}
-					</ChartCard>
+					<ScrollCard title="Popular routes" subtitle="Most searched origin and destination pairs with full airport names and IATA codes.">
+						<CountList rows={charts.topRoutes} label="route searches" valueFormatter={(value) => `${value} searches`} />
+					</ScrollCard>
 
-					<ChartCard title="Verdicts" subtitle="Distribution of verdict recommendations seen by testers.">
-						{charts.verdicts.length ? (
-							<ResponsiveContainer width="100%" height="100%">
-								<PieChart>
-									<Pie data={charts.verdicts} dataKey="value" nameKey="name" outerRadius={100} label>
-										{charts.verdicts.map((entry, index) => <Cell key={entry.name} fill={COLORS[index % COLORS.length]} />)}
-									</Pie>
-									<Tooltip />
-								</PieChart>
-							</ResponsiveContainer>
-						) : <EmptyChart label="No verdicts yet" />}
-					</ChartCard>
+					<ScrollCard title="Verdicts viewed" subtitle="Recommendations testers actually saw. Scroll if more verdict types are captured.">
+						<CountList rows={charts.verdicts} label="verdict views" valueFormatter={(value) => `${value} views`} />
+					</ScrollCard>
 				</div>
 
-				<section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-					<div className="mb-5 flex flex-col gap-1">
-						<h2 className="text-base font-semibold text-slate-950">Pages and time spent</h2>
-						<p className="text-sm text-slate-500">Clean page-level view: visits, average time, total time, and last seen.</p>
-					</div>
-					<div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-						{tables.pages.map((page) => (
-							<div key={page.page} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-								<div className="flex items-start justify-between gap-3">
-									<p className="truncate font-medium text-slate-950">{page.page}</p>
-									<span className="rounded-full bg-white px-2 py-1 text-xs font-medium text-slate-500 ring-1 ring-slate-200">{page.visits} visits</span>
-								</div>
-								<div className="mt-4 grid grid-cols-3 gap-2 text-sm">
-									<div><p className="text-slate-400">Avg</p><p className="font-semibold">{humanDuration(page.avgSeconds)}</p></div>
-									<div><p className="text-slate-400">Total</p><p className="font-semibold">{page.totalMinutes}m</p></div>
-									<div><p className="text-slate-400">Exits</p><p className="font-semibold">{page.exits}</p></div>
-								</div>
-							</div>
-						))}
-						{!tables.pages.length ? <p className="text-sm text-slate-400">No page visits yet.</p> : null}
-					</div>
-				</section>
-
-				<section className="grid gap-6 xl:grid-cols-2">
-					<div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-						<h2 className="text-base font-semibold text-slate-950">Route paths</h2>
-						<p className="mt-1 text-sm text-slate-500">Session-level page journeys, without click noise.</p>
-						<div className="mt-5 space-y-3">
-							{tables.sessionPaths.slice(0, 10).map((session) => (
-								<div key={session.sessionId} className="rounded-2xl border border-slate-100 p-4">
-									<div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-										<span>{session.user}</span>
-										<span>{humanDuration(session.durationSeconds)} • {session.pageViews} page views</span>
-									</div>
-									<p className="mt-2 break-words text-sm font-medium leading-6 text-slate-900">{pathLabel(session.path)}</p>
-									<p className="mt-2 text-xs text-slate-400">{session.searches} searches • {session.zoeMessages} Zoe messages</p>
-								</div>
-							))}
-							{!tables.sessionPaths.length ? <p className="text-sm text-slate-400">No route paths yet.</p> : null}
-						</div>
-					</div>
-
-					<div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-						<h2 className="text-base font-semibold text-slate-950">Zoe chats</h2>
-						<p className="mt-1 text-sm text-slate-500">How many chats happened, how many messages per chat, and what users asked.</p>
-						<div className="mt-5 space-y-3">
-							{tables.zoeConversations.slice(0, 10).map((chat) => (
-								<div key={chat.id} className="rounded-2xl border border-violet-100 bg-violet-50/40 p-4">
-									<div className="flex flex-wrap items-center justify-between gap-2">
-										<p className="text-sm font-medium text-slate-950">{chat.user}</p>
-										<span className="rounded-full bg-white px-2 py-1 text-xs font-semibold text-violet-700 ring-1 ring-violet-100">{chat.messages} messages</span>
-									</div>
-									<p className="mt-3 text-sm text-slate-700">User: “{chat.lastMessage}”</p>
-									{chat.lastResponse !== "-" ? <p className="mt-2 text-sm text-slate-500">Zoe: “{chat.lastResponse}”</p> : null}
-									<p className="mt-3 text-xs text-slate-400">{chat.responses} responses • {chat.searchesTriggered} searches triggered</p>
-								</div>
-							))}
-							{!tables.zoeConversations.length ? <p className="text-sm text-slate-400">No Zoe chats yet.</p> : null}
-						</div>
-					</div>
-				</section>
-
-				<section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-					<h2 className="text-base font-semibold text-slate-950">Recent searches</h2>
-					<p className="mt-1 text-sm text-slate-500">Routes, trip shape, cabin, source, price, and verdict.</p>
-					<div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-						{tables.recentSearches.map((search) => (
-							<div key={search.id} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-								<p className="text-sm font-semibold text-slate-950">{search.route}</p>
-								<p className="mt-2 text-sm text-slate-500">{search.trip} • {search.cabin} • {search.travelers} traveler(s)</p>
-								<p className="mt-3 text-xs text-slate-400">{search.price} • {search.verdict} • {search.source} • {search.time}</p>
-							</div>
-						))}
-						{!tables.recentSearches.length ? <p className="text-sm text-slate-400">No searches yet.</p> : null}
-					</div>
-				</section>
-
-				<section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-					<h2 className="text-base font-semibold text-slate-950">Useful timeline</h2>
-					<p className="mt-1 text-sm text-slate-500">Only meaningful product events: page visits, time spent, Zoe, searches, verdicts, feedback, and important errors.</p>
-					<div className="mt-5 space-y-3">
-						{tables.timeline.slice(0, 80).map((item) => (
-							<div key={item.id} className="flex gap-3 rounded-2xl border border-slate-100 p-4">
-								<div className={`mt-1 h-3 w-3 flex-none rounded-full ring-4 ${timelineTone(item.kind)}`} />
-								<div className="min-w-0 flex-1">
-									<div className="flex flex-wrap items-center justify-between gap-2">
-										<p className="font-medium text-slate-950">{item.title}</p>
-										<p className="text-xs text-slate-400">{item.time}</p>
-									</div>
-									<p className="mt-1 break-words text-sm text-slate-500">{item.detail}</p>
-									<p className="mt-2 text-xs text-slate-400">{item.user} • {item.page}</p>
-								</div>
-							</div>
-						))}
-						{!tables.timeline.length ? <p className="text-sm text-slate-400">No useful events yet.</p> : null}
-					</div>
-				</section>
+				<AskAnalyticsPanel filters={filters} />
 
 				<div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-800">
-					Tracking on admin pages is disabled. This dashboard intentionally hides tab visibility, auth-refresh spam, form focus spam, scroll milestones, raw coordinates, and raw request metadata.
+					Tracking on admin pages is disabled. Deep dives like full user journeys, Zoe prompt details, recent searches, and drop-off explanations now live in the Analytics Copilot.
 				</div>
 			</main>
 		</div>
