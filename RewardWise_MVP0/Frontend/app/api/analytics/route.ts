@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-type IncomingAnalyticsEvent = Record<string, any>;
+type IncomingAnalyticsEvent = Record<string, unknown>;
 
 const ALLOWED_TOP_LEVEL_FIELDS = new Set([
 	"user_id",
@@ -131,9 +131,17 @@ function sanitizeMetadata(value: unknown, depth = 0): unknown {
 	return String(value);
 }
 
-function toEventArray(body: any) {
-	const rawEvents = Array.isArray(body) ? body : Array.isArray(body?.events) ? body.events : [body];
-	return rawEvents.filter((event) => event && typeof event === "object").slice(0, 50);
+function toEventArray(body: unknown): IncomingAnalyticsEvent[] {
+	const bodyRecord = body && typeof body === "object" ? (body as Record<string, unknown>) : null;
+	const rawEvents: unknown[] = Array.isArray(body)
+		? body
+		: Array.isArray(bodyRecord?.events)
+			? bodyRecord.events
+			: [body];
+
+	return rawEvents
+		.filter((event): event is IncomingAnalyticsEvent => Boolean(event) && typeof event === "object" && !Array.isArray(event))
+		.slice(0, 50);
 }
 
 function cleanEvent(event: IncomingAnalyticsEvent, request: Request, user: { id: string; email?: string | null } | null) {
