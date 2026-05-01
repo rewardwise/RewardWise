@@ -81,6 +81,21 @@ function maxValue(rows: CountRow[]) {
 	return Math.max(...rows.map((row) => row.value), 1);
 }
 
+function sortCountRows(rows: CountRow[]) {
+	return [...rows].sort((a, b) => {
+		if (b.value !== a.value) return b.value - a.value;
+		return a.name.localeCompare(b.name);
+	});
+}
+
+function sortPageDetails(pages: PageInsight[]) {
+	return [...pages].sort((a, b) => {
+		if (b.visits !== a.visits) return b.visits - a.visits;
+		if (b.totalMinutes !== a.totalMinutes) return b.totalMinutes - a.totalMinutes;
+		return a.page.localeCompare(b.page);
+	});
+}
+
 function StatCard({ label, value, detail }: { label: string; value: string | number; detail: string }) {
 	return (
 		<div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -128,13 +143,14 @@ function CountList({
 	label: string;
 	valueFormatter?: (value: number) => string;
 }) {
-	const largest = maxValue(rows);
+	const sortedRows = sortCountRows(rows);
+	const largest = maxValue(sortedRows);
 
-	if (!rows.length) return <EmptyState />;
+	if (!sortedRows.length) return <EmptyState />;
 
 	return (
 		<>
-			{rows.map((row, index) => (
+			{sortedRows.map((row, index) => (
 				<div key={`${row.name}-${index}`} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
 					<div className="flex items-start justify-between gap-3">
 						<div className="min-w-0">
@@ -158,11 +174,13 @@ function CountList({
 }
 
 function PageDetailList({ pages }: { pages: PageInsight[] }) {
-	if (!pages.length) return <EmptyState label="No page visits yet." />;
+	const sortedPages = sortPageDetails(pages);
+
+	if (!sortedPages.length) return <EmptyState label="No page visits yet." />;
 
 	return (
 		<>
-			{pages.map((page) => (
+			{sortedPages.map((page) => (
 				<div key={page.page} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
 					<div className="flex items-start justify-between gap-3">
 						<p className="min-w-0 break-words text-sm font-semibold text-slate-950">{page.page}</p>
@@ -233,7 +251,7 @@ function AskAnalyticsPanel({ filters }: { filters: Props["filters"] }) {
 						Current scope: <span className="font-medium text-slate-800">{scopeLabel}</span> over the last {filters.days} days.
 					</p>
 				</div>
-				<span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">read-only analytics_events access</span>
+				<span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">Powered by NVIDIA Llama 3.3 70B</span>
 			</div>
 
 			<div className="mt-5 flex flex-wrap gap-2">
@@ -311,6 +329,8 @@ export default function AnalyticsChartsDashboard({ error, filters, stats, option
 			<main className="mx-auto max-w-7xl space-y-6 px-5 py-6">
 				{error ? <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">Analytics query error: {error}</div> : null}
 
+				<AskAnalyticsPanel filters={filters} />
+
 				<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
 					<StatCard label="Users / sessions" value={`${stats.activeUsers} / ${stats.sessions}`} detail="Active testers and sessions in this filter" />
 					<StatCard label="Pages visited" value={stats.pageViews} detail={`${humanDuration(stats.avgPageSeconds)} avg time per page`} />
@@ -369,12 +389,6 @@ export default function AnalyticsChartsDashboard({ error, filters, stats, option
 					<ScrollCard title="Verdicts viewed" subtitle="Recommendations testers actually saw. Scroll if more verdict types are captured.">
 						<CountList rows={charts.verdicts} label="verdict views" valueFormatter={(value) => `${value} views`} />
 					</ScrollCard>
-				</div>
-
-				<AskAnalyticsPanel filters={filters} />
-
-				<div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-800">
-					Tracking on admin pages is disabled. Deep dives like full user journeys, Zoe prompt details, recent searches, and drop-off explanations now live in the Analytics Copilot.
 				</div>
 			</main>
 		</div>

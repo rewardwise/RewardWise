@@ -40,6 +40,36 @@ export default function ProfilePage() {
 	const [notificationSettings, setNotificationSettings] = useState(
 		defaultNotificationSettings,
 	);
+	const [canViewAnalytics, setCanViewAnalytics] = useState(false);
+
+	useEffect(() => {
+		let cancelled = false;
+
+		if (!user?.id) {
+			setCanViewAnalytics(false);
+			return;
+		}
+
+		(async () => {
+			try {
+				const res = await fetch("/api/admin/analytics/access", {
+					cache: "no-store",
+				});
+				const data = (await res.json()) as { canViewAnalytics?: boolean };
+
+				if (!cancelled) {
+					setCanViewAnalytics(Boolean(data.canViewAnalytics));
+				}
+			} catch (error) {
+				console.warn("Could not check analytics admin access", error);
+				if (!cancelled) setCanViewAnalytics(false);
+			}
+		})();
+
+		return () => {
+			cancelled = true;
+		};
+	}, [user?.id]);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -189,6 +219,36 @@ export default function ProfilePage() {
 						Manage Subscription
 					</button>
 					</div>
+
+					{canViewAnalytics && (
+						<div className="bg-emerald-500/10 backdrop-blur rounded-xl p-5 border border-emerald-400/30">
+							<div className="flex items-start gap-4">
+								<div className="w-11 h-11 bg-emerald-400/15 rounded-xl flex items-center justify-center shrink-0">
+									<BarChart3 className="w-5 h-5 text-emerald-300" />
+								</div>
+
+								<div className="flex-1">
+									<p className="text-xs uppercase tracking-[0.2em] text-emerald-200/80 font-semibold mb-1">
+										Admin only
+									</p>
+									<h2 className="text-white text-lg font-semibold">
+										Product Analytics
+									</h2>
+									<p className="text-gray-300 text-sm mt-1">
+										Review tester behavior, page usage, route demand, Zoe usage,
+										and ask the analytics copilot questions.
+									</p>
+
+									<button
+										onClick={() => router.push("/admin/analytics")}
+										className="mt-4 w-full sm:w-auto bg-emerald-400 hover:bg-emerald-300 text-slate-950 px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+									>
+										Open Analytics Dashboard
+									</button>
+								</div>
+							</div>
+						</div>
+					)}
 
 					{/* TOOLS GRID */}
 					<div className="bg-gray-900/90 backdrop-blur rounded-xl p-6">
