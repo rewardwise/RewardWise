@@ -29,7 +29,7 @@ export default function AboutPage() {
 
 					<div className="rounded-2xl overflow-hidden mb-10 shadow-2xl">
 						<img
-							src="https://images.unsplash.com/photo-1511895426328-dc8714191300?w=1200&q=80"
+							src="/about-family-travel.jpg"
 							alt="Happy family traveling together"
 							className="w-full h-64 sm:h-80 object-cover"
 						/>
