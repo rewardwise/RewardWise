@@ -552,7 +552,7 @@ def prompt_for_missing(state: dict[str, Any], slot: str) -> str:
     elif slot == "travelers":
         q = "How many travelers should I price?"
     elif slot == "cabin":
-        q = "Which cabin should I price: economy, premium economy, business, or first?"
+        q = "Which cabin should I price: economy, business, or first?"
     elif slot == "return_date":
         q = "When are you coming back?"
     else:

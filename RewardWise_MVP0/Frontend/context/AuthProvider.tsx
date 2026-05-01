@@ -12,6 +12,7 @@ import {
 } from "react";
 import { Session, User } from "@supabase/supabase-js";
 import { createClient } from "@/utils/supabase/client";
+import { trackAnalyticsEvent } from "@/utils/analytics/client";
 
 type AuthContextType = {
 	user: User | null;
@@ -96,6 +97,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 		const { data: listener } = supabase.auth.onAuthStateChange(
 			(_event, session) => {
+				trackAnalyticsEvent("auth_state_changed", {
+					event_type: "auth",
+					metadata: { event: _event, has_session: Boolean(session) },
+				});
 				setSession(session);
 				setUser(session?.user ?? null);
 				setLoading(false);
@@ -120,6 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	}, [user, checkPortfolio]);
 
 	const signUpWithEmail = async (email: string, password: string) => {
+		const startedAt = Date.now();
 		const { error } = await supabase.auth.signUp({
 			email,
 			password,
@@ -128,19 +134,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 			},
 		});
 
+		trackAnalyticsEvent(error ? "auth_signup_failed" : "auth_signup_submitted", {
+			event_type: "auth",
+			latency_ms: Date.now() - startedAt,
+			metadata: { method: "email", error_message: error?.message || null },
+		});
+
 		return { error };
 	};
 
 	const signInWithEmail = async (email: string, password: string) => {
+		const startedAt = Date.now();
 		const { error } = await supabase.auth.signInWithPassword({
 			email,
 			password,
+		});
+
+		trackAnalyticsEvent(error ? "auth_login_failed" : "auth_login_completed", {
+			event_type: "auth",
+			latency_ms: Date.now() - startedAt,
+			metadata: { method: "email", error_message: error?.message || null },
 		});
 
 		return { error };
 	};
 
 	const signInWithGoogle = async () => {
+		trackAnalyticsEvent("auth_google_started", {
+			event_type: "auth",
+			metadata: { method: "google" },
+		});
 		await supabase.auth.signInWithOAuth({
 			provider: "google",
 			options: {
@@ -150,7 +173,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	};
 
 	const signOut = async () => {
+		trackAnalyticsEvent("auth_logout_started", { event_type: "auth" });
 		await supabase.auth.signOut();
+		trackAnalyticsEvent("auth_logout_completed", { event_type: "auth" });
 		setHasCards(null);
 		setSubscription("free");
 	};

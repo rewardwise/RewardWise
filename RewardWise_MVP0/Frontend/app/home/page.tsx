@@ -12,6 +12,7 @@ import VerdictCard, { VerdictCardSkeleton } from "@/components/VerdictCard";
 import AirportSearch from "@/components/AirportSearch";
 import ZoeChat from "@/components/zoe/ZoeChat";
 import type { Message } from "@/components/zoe/ZoeChat";
+import { trackAnalyticsEvent } from "@/utils/analytics/client";
 import {
 	Calendar,
 	Plane,
@@ -250,7 +251,33 @@ export default function HomePage() {
 	// so we skip frontend validation to avoid the stale-closure false-positive.
 	const zoeTriggerRef = useRef(false);
 
+	const currentSearchAnalyticsPayload = (triggerSource: string) => ({
+		search_origin: origin || null,
+		search_destination: destination || null,
+		search_depart_date: departDate || null,
+		search_return_date: tripType === "roundtrip" ? returnDate || null : null,
+		search_trip_type: tripType,
+		search_cabin: cabin,
+		search_travelers: travelers,
+		search_trigger_source: triggerSource,
+		metadata: {
+			origin,
+			destination,
+			departDate,
+			returnDate: tripType === "roundtrip" ? returnDate : null,
+			tripType,
+			cabin,
+			travelers,
+			hasWallet,
+			userProgramCount: userPrograms?.length ?? 0,
+		},
+	});
+
 	const handleFillSearch = (data: any) => {
+		trackAnalyticsEvent("zoe_filled_search_form", {
+			event_type: "zoe",
+			metadata: { ...data },
+		});
 		if (data.origin) setOrigin(data.origin);
 		if (data.destination) setDestination(data.destination);
 		if (data.cabin) setCabin(data.cabin);
@@ -263,6 +290,7 @@ export default function HomePage() {
 	// Stable reference — ZoeChat holds this without re-renders causing issues.
 	// Always delegates to runSearchRef.current which is kept fresh below.
 	const handleTriggerSearch = useCallback(() => {
+		trackAnalyticsEvent("zoe_triggered_search", { event_type: "zoe" });
 		zoeTriggerRef.current = true;
 		runSearchRef.current();
 	}, []);
@@ -277,20 +305,48 @@ export default function HomePage() {
 
 	const runSearch = async () => {
 		const isZoeTrigger = zoeTriggerRef.current;
+		const triggerSource = isZoeTrigger ? "zoe" : "manual";
+		const searchStartedAt = Date.now();
 		zoeTriggerRef.current = false; // reset immediately
+
+		trackAnalyticsEvent("search_started", {
+			event_type: "search",
+			...currentSearchAnalyticsPayload(triggerSource),
+		});
 
 		// Skip validation for Zoe-triggered searches — backend already confirmed
 		// all fields are present. Skipping avoids the stale-closure false-positive
 		// where returnDate looks empty even though it was just set.
 		if (!isZoeTrigger) {
 			if (!origin || !destination || !departDate) {
-				setSearchError(
-					"Please fill in origin, destination, and departure date.",
-				);
+				const message = "Please fill in origin, destination, and departure date.";
+				setSearchError(message);
+				trackAnalyticsEvent("search_validation_failed", {
+					event_type: "search",
+					...currentSearchAnalyticsPayload(triggerSource),
+					search_success: false,
+					search_error_message: message,
+					metadata: {
+						...currentSearchAnalyticsPayload(triggerSource).metadata,
+						missing_fields: [
+							!origin ? "origin" : null,
+							!destination ? "destination" : null,
+							!departDate ? "departDate" : null,
+						].filter(Boolean),
+					},
+				});
 				return;
 			}
 			if (tripType === "roundtrip" && !returnDate) {
-				setSearchError("Please select a return date for round trips.");
+				const message = "Please select a return date for round trips.";
+				setSearchError(message);
+				trackAnalyticsEvent("search_validation_failed", {
+					event_type: "search",
+					...currentSearchAnalyticsPayload(triggerSource),
+					search_success: false,
+					search_error_message: message,
+					metadata: { ...currentSearchAnalyticsPayload(triggerSource).metadata, missing_fields: ["returnDate"] },
+				});
 				return;
 			}
 		}
@@ -299,6 +355,11 @@ export default function HomePage() {
 		setResults(null);
 		setSearching(true);
 		setSearchCount(searchCount + 1);
+
+		trackAnalyticsEvent("search_submitted", {
+			event_type: "search",
+			...currentSearchAnalyticsPayload(triggerSource),
+		});
 
 		try {
 			const params = new URLSearchParams({
@@ -334,9 +395,44 @@ export default function HomePage() {
 				throw new Error(message);
 			}
 
-			setResults(await res.json());
+			const data = await res.json();
+			setResults(data);
+			trackAnalyticsEvent("search_completed", {
+				event_type: "search",
+				...currentSearchAnalyticsPayload(triggerSource),
+				search_id: data.search_id || null,
+				verdict_id: data.verdict_id || null,
+				search_success: true,
+				latency_ms: Date.now() - searchStartedAt,
+				search_provider: "backend",
+				verdict_recommendation: data.verdict?.recommendation || data.verdict?.verdict || null,
+				verdict_confidence: data.verdict?.confidence || null,
+				cash_price: data.cash_price || null,
+				award_points: data.verdict?.winner?.points || data.verdict?.metrics?.points_cost || null,
+				award_fees: data.verdict?.winner?.taxes || data.verdict?.metrics?.taxes || null,
+				cents_per_point: data.verdict?.winner?.cpp || data.verdict?.metrics?.cpp || null,
+				historical_price_label: data.price_level || null,
+				metadata: {
+					...currentSearchAnalyticsPayload(triggerSource).metadata,
+					flight_count: data.flights?.length ?? 0,
+					award_option_count: data.award_options?.length ?? 0,
+					return_award_option_count: data.return_award_options?.length ?? 0,
+					typical_price_range: data.typical_price_range || null,
+					data_quality: data.verdict?.data_quality || null,
+				},
+			});
 		} catch (err: any) {
-			setSearchError(err.message || "Something went wrong. Try again.");
+			const message = err.message || "Something went wrong. Try again.";
+			setSearchError(message);
+			trackAnalyticsEvent("search_failed", {
+				event_type: "search",
+				...currentSearchAnalyticsPayload(triggerSource),
+				search_success: false,
+				search_error_message: message,
+				latency_ms: Date.now() - searchStartedAt,
+				error_message: message,
+				metadata: { ...currentSearchAnalyticsPayload(triggerSource).metadata, error_name: err?.name || null },
+			});
 		} finally {
 			setSearching(false);
 		}
@@ -347,8 +443,36 @@ export default function HomePage() {
 
 	const numTravelers = results?.travelers ?? travelers;
 
+	useEffect(() => {
+		if (!results?.verdict) return;
+		trackAnalyticsEvent("verdict_viewed", {
+			event_type: "verdict",
+			search_id: results.search_id || null,
+			verdict_id: results.verdict_id || null,
+			search_origin: results.origin,
+			search_destination: results.destination,
+			search_depart_date: results.date,
+			search_return_date: results.return_date,
+			search_trip_type: results.is_roundtrip ? "roundtrip" : "oneway",
+			search_cabin: results.cabin,
+			search_travelers: results.travelers,
+			verdict_recommendation: results.verdict.recommendation || results.verdict.verdict,
+			verdict_confidence: results.verdict.confidence,
+			cash_price: results.cash_price,
+			award_points: results.verdict.winner?.points || results.verdict.metrics?.points_cost || null,
+			award_fees: results.verdict.winner?.taxes || results.verdict.metrics?.taxes || null,
+			cents_per_point: results.verdict.winner?.cpp || results.verdict.metrics?.cpp || null,
+			historical_price_label: results.price_level || null,
+			metadata: {
+				headline: results.verdict.headline || null,
+				data_quality: results.verdict.data_quality || null,
+				missing_sources: results.verdict.missing_sources || [],
+			},
+		});
+	}, [results]);
+
 	return (
-		<div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-cyan-950 relative">
+		<div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-cyan-950 relative overflow-hidden">
 			<TropicalBackground />
 
 			<div className="relative z-10">
