@@ -55,6 +55,7 @@ type SessionPath = { sessionId: string; user: string; startedAt: string; duratio
 type ZoeConversation = { id: string; user: string; startedAt: string; messages: number; responses: number; lastMessage: string; lastResponse: string; searchesTriggered: number };
 type SearchInsight = { id: string; time: string; user: string; route: string; trip: string; cabin: string; travelers: string; verdict: string; price: string; source: string };
 type CountRow = { name: string; value: number };
+type ActiveNowRow = { user: string; page: string; lastSeen: string; secondsAgo: number; sessionId: string; status: string; secondsOnCurrentPage: number; pageStartedAt: string };
 
 export const dynamic = "force-dynamic";
 
@@ -79,6 +80,10 @@ function isPageView(event: AnalyticsEvent) {
 
 function isPageExit(event: AnalyticsEvent) {
 	return lower(event.event_name) === "page_exit" || lower(event.event_name) === "page_duration";
+}
+
+function isPresenceEvent(event: AnalyticsEvent) {
+	return lower(event.event_name) === "active_heartbeat";
 }
 
 function isSearchEvent(event: AnalyticsEvent) {
@@ -118,7 +123,7 @@ function isErrorEvent(event: AnalyticsEvent) {
 }
 
 function isUsefulEvent(event: AnalyticsEvent) {
-	return isPageView(event) || isPageExit(event) || isSearchEvent(event) || isZoeEvent(event) || isVerdictEvent(event) || isFeedbackEvent(event) || isErrorEvent(event);
+	return isPresenceEvent(event) || isPageView(event) || isPageExit(event) || isSearchEvent(event) || isZoeEvent(event) || isVerdictEvent(event) || isFeedbackEvent(event) || isErrorEvent(event);
 }
 
 const PAGE_LABELS: Record<string, string> = {
@@ -340,6 +345,71 @@ function buildZoeConversations(events: AnalyticsEvent[]): ZoeConversation[] {
 		.slice(0, 8);
 }
 
+function activeStatus(event: AnalyticsEvent) {
+	if (isZoeMessage(event) || isZoeResponse(event) || isZoeOpen(event)) return "Using Zoe";
+	if (isSearchSubmitted(event)) return "Searching routes";
+	if (isVerdictEvent(event)) return "Viewing a verdict";
+	if (isPageView(event) || isPresenceEvent(event)) return `Viewing ${humanPage(event.page_path)}`;
+	return "Active";
+}
+
+function samePage(a: string | null | undefined, b: string | null | undefined) {
+	return humanPage(a) === humanPage(b);
+}
+
+function metadataIsoDate(event: AnalyticsEvent, key: string) {
+	const value = event.metadata?.[key];
+	return typeof value === "string" && !Number.isNaN(new Date(value).getTime()) ? value : null;
+}
+
+function buildActiveNow(events: AnalyticsEvent[]): ActiveNowRow[] {
+	const activeWindowMs = 2 * 60 * 1000;
+	const now = Date.now();
+	const groups = new Map<string, AnalyticsEvent[]>();
+
+	for (const event of events) {
+		if (!event.user_email) continue;
+		const key = event.user_id || event.user_email;
+		groups.set(key, [...(groups.get(key) ?? []), event]);
+	}
+
+	return [...groups.values()]
+		.map((userEvents) => {
+			const sorted = [...userEvents].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+			const latestOverall = sorted[0];
+			if (!latestOverall || isPageExit(latestOverall)) return null;
+
+			const latestActive = sorted.find((event) => isPresenceEvent(event) || isPageView(event) || isSearchSubmitted(event) || isZoeEvent(event) || isVerdictEvent(event));
+			if (!latestActive) return null;
+
+			const secondsAgo = Math.max(0, Math.round((now - new Date(latestActive.created_at).getTime()) / 1000));
+			if (secondsAgo * 1000 > activeWindowMs) return null;
+
+			const latestPageView = sorted.find(
+				(event) =>
+					isPageView(event) &&
+					(!latestActive.session_id || event.session_id === latestActive.session_id) &&
+					samePage(event.page_path, latestActive.page_path),
+			);
+			const pageStartedAtIso = metadataIsoDate(latestActive, "current_page_started_at") || latestPageView?.created_at || latestActive.created_at;
+			const pageStartedAtMs = new Date(pageStartedAtIso).getTime();
+			const secondsOnCurrentPage = Math.max(0, Math.round((now - pageStartedAtMs) / 1000));
+
+			return {
+				user: latestActive.user_email || "Unknown user",
+				page: humanPage(latestActive.page_path),
+				lastSeen: formatDateTime(latestActive.created_at),
+				secondsAgo,
+				sessionId: latestActive.session_id || "unknown",
+				status: activeStatus(latestActive),
+				secondsOnCurrentPage,
+				pageStartedAt: formatDateTime(pageStartedAtIso),
+			};
+		})
+		.filter((row): row is ActiveNowRow => Boolean(row))
+		.sort((a, b) => a.secondsAgo - b.secondsAgo);
+}
+
 function groupCount(items: string[], limit = 10): CountRow[] {
 	const map = new Map<string, number>();
 	for (const item of items) map.set(item || "Unknown", (map.get(item || "Unknown") ?? 0) + 1);
@@ -445,6 +515,7 @@ export default async function AnalyticsAdminPage({ searchParams }: { searchParam
 				verdicts: groupCount(verdicts.map((event) => titleCase(event.verdict_recommendation)), 50),
 			}}
 			tables={{
+				activeNow: buildActiveNow(events),
 				pages: pageInsights,
 				sessionPaths: buildSessionPaths(chronological),
 				zoeConversations,

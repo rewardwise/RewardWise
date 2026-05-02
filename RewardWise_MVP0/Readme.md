@@ -1,11 +1,11 @@
 
-# RewardWise
+# MyTravelWallet
 
 **AI-Powered Travel Rewards Optimization Engine**
 
-RewardWise is a deterministic decision engine that evaluates whether a user should pay cash or redeem points for a flight — and identifies the optimal loyalty program and transfer path.
+MyTravelWallet is a deterministic decision engine that evaluates whether a user should pay cash or redeem points for a flight — and identifies the optimal loyalty program and transfer path.
 
-Unlike conversational AI systems, RewardWise is built as a financial optimization system focused on explainability, valuation accuracy, and portfolio efficiency.
+Unlike conversational AI systems, MyTravelWallet is built as a financial optimization system focused on explainability, valuation accuracy, and portfolio efficiency.
 
 
 ## Architecture Overview
@@ -281,14 +281,14 @@ erDiagram
 
 # Deployment
 
-| Layer      | Platform         |
-| ---------- | ---------------- |
-| Frontend   | Vercel           |
-| Backend    | Railway / Render |
-| Database   | Supabase         |
-| Cache      | Redis            |
-| Monitoring | Sentry           |
-| Domain     | rewardwise.ai    |
+| Layer      | Platform             |
+| ---------- | -------------------- |
+| Frontend   | Vercel               |
+| Backend    | Railway / Render     |
+| Database   | Supabase             |
+| Cache      | Redis                |
+| Monitoring | Sentry               |
+| Domain     | mytravelwallet.ai    |
 
 
 # Environment Variables
@@ -309,7 +309,7 @@ erDiagram
 
 
 
-RewardWise is a deterministic optimization engine focused on:
+MyTravelWallet is a deterministic optimization engine focused on:
 
 * Portfolio efficiency
 * Valuation accuracy

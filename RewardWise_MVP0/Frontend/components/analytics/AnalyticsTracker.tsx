@@ -25,6 +25,19 @@ function shouldIgnoreCurrentPage() {
 	return typeof window !== "undefined" && shouldIgnoreAnalyticsPath(window.location.pathname);
 }
 
+function trackActiveHeartbeat(pageStartedAt: number, pagePath: string) {
+	if (shouldIgnoreCurrentPage()) return;
+	trackAnalyticsEvent("active_heartbeat", {
+		event_type: "presence",
+		metadata: {
+			visibility_state: document.visibilityState,
+			current_page_started_at: new Date(pageStartedAt).toISOString(),
+			current_page_duration_ms: Math.max(0, Date.now() - pageStartedAt),
+			current_page_path: pagePath,
+		},
+	});
+}
+
 export default function AnalyticsTracker() {
 	const pathname = usePathname();
 	const searchParams = useSearchParams();
@@ -112,6 +125,18 @@ export default function AnalyticsTracker() {
 			window.removeEventListener("unhandledrejection", onUnhandledRejection);
 		};
 	}, []);
+
+	useEffect(() => {
+		if (shouldIgnoreCurrentPage()) return;
+
+		const interval = window.setInterval(() => {
+			if (document.visibilityState === "visible") {
+			trackActiveHeartbeat(pageStartedAtRef.current, currentPageRef.current || currentPath());
+		}
+		}, 30000);
+
+		return () => window.clearInterval(interval);
+	}, [pathname, searchParams]);
 
 	return null;
 }

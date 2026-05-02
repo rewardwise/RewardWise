@@ -3,7 +3,8 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
 	Area,
 	AreaChart,
@@ -22,6 +23,7 @@ type SessionPath = { sessionId: string; user: string; startedAt: string; duratio
 type ZoeConversation = { id: string; user: string; startedAt: string; messages: number; responses: number; lastMessage: string; lastResponse: string; searchesTriggered: number };
 type SearchInsight = { id: string; time: string; user: string; route: string; trip: string; cabin: string; travelers: string; verdict: string; price: string; source: string };
 type CountRow = { name: string; value: number };
+type ActiveNowRow = { user: string; page: string; lastSeen: string; secondsAgo: number; sessionId: string; status: string; secondsOnCurrentPage: number; pageStartedAt: string };
 
 type Props = {
 	error: string | null;
@@ -50,6 +52,7 @@ type Props = {
 		verdicts: CountRow[];
 	};
 	tables: {
+		activeNow: ActiveNowRow[];
 		pages: PageInsight[];
 		sessionPaths: SessionPath[];
 		zoeConversations: ZoeConversation[];
@@ -70,6 +73,12 @@ function humanDuration(totalSeconds: number) {
 	const seconds = Math.round(totalSeconds % 60);
 	if (minutes < 60) return `${minutes}m ${seconds}s`;
 	return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+function humanLastSeen(secondsAgo: number) {
+	if (secondsAgo < 10) return "just now";
+	if (secondsAgo < 60) return `${secondsAgo}s ago`;
+	return `${Math.floor(secondsAgo / 60)}m ago`;
 }
 
 function pathLabel(path: string[]) {
@@ -208,6 +217,57 @@ function PageDetailList({ pages }: { pages: PageInsight[] }) {
 	);
 }
 
+
+function ActiveNowSection({ activeNow }: { activeNow: ActiveNowRow[] }) {
+	return (
+		<section className="rounded-3xl border border-emerald-200 bg-emerald-50/70 p-5 shadow-sm">
+			<div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+				<div>
+					<div className="flex items-center gap-2">
+						<span className="flex h-2.5 w-2.5 rounded-full bg-emerald-500">
+							<span className="h-2.5 w-2.5 animate-ping rounded-full bg-emerald-400 opacity-75" />
+						</span>
+						<p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">Active now</p>
+					</div>
+					<h2 className="mt-2 text-xl font-semibold text-slate-950">Who is using the app right now</h2>
+					<p className="mt-1 text-sm text-slate-600">Updates automatically as users move between pages. A user is active if we saw them within the last 2 minutes.</p>
+				</div>
+				<span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
+					{activeNow.length} live
+				</span>
+			</div>
+
+			{activeNow.length ? (
+				<div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+					{activeNow.map((user) => (
+						<div key={`${user.user}-${user.sessionId}`} className="rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm">
+							<div className="flex items-start justify-between gap-3">
+								<div className="min-w-0">
+									<p className="truncate text-sm font-semibold text-slate-950">{user.user}</p>
+									<p className="mt-1 text-xs text-slate-500">{user.status}</p>
+								</div>
+								<span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-100">
+									{humanLastSeen(user.secondsAgo)}
+								</span>
+							</div>
+							<div className="mt-4 rounded-xl bg-slate-50 px-3 py-3">
+								<p className="text-sm font-medium text-slate-900">{user.page}</p>
+								<p className="mt-1 text-xs text-slate-500">On this page for {humanDuration(user.secondsOnCurrentPage)}</p>
+							</div>
+							<div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
+								<span>Page opened: {user.pageStartedAt}</span>
+								<span>Last signal: {user.lastSeen}</span>
+							</div>
+						</div>
+					))}
+				</div>
+			) : (
+				<div className="mt-5 rounded-2xl border border-emerald-100 bg-white p-5 text-sm text-slate-500">No active users right now. This will populate when a tester is using the app.</div>
+			)}
+		</section>
+	);
+}
+
 function AskAnalyticsPanel({ filters }: { filters: Props["filters"] }) {
 	const [question, setQuestion] = useState("");
 	const [answer, setAnswer] = useState("");
@@ -296,6 +356,13 @@ function AskAnalyticsPanel({ filters }: { filters: Props["filters"] }) {
 }
 
 export default function AnalyticsChartsDashboard({ error, filters, stats, options, charts, tables }: Props) {
+	const router = useRouter();
+
+	useEffect(() => {
+		const interval = window.setInterval(() => router.refresh(), 15000);
+		return () => window.clearInterval(interval);
+	}, [router]);
+
 	return (
 		<div className="min-h-screen overflow-x-hidden bg-slate-50 text-slate-950">
 			<header className="border-b border-slate-200 bg-white">
@@ -330,6 +397,8 @@ export default function AnalyticsChartsDashboard({ error, filters, stats, option
 				{error ? <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">Analytics query error: {error}</div> : null}
 
 				<AskAnalyticsPanel filters={filters} />
+
+				<ActiveNowSection activeNow={tables.activeNow} />
 
 				<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
 					<StatCard label="Users / sessions" value={`${stats.activeUsers} / ${stats.sessions}`} detail="Active testers and sessions in this filter" />
