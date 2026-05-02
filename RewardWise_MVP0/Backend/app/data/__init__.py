@@ -1,1 +1,1 @@
-"""Data helpers for RewardWise backend."""
+"""Data helpers for MyTravelWallet backend."""
