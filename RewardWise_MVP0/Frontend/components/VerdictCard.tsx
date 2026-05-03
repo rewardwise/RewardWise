@@ -70,10 +70,14 @@ interface Verdict {
 interface CashLeg {
   flight_number?: string;
   airline?: string;
+  airline_logo?: string;
   airplane?: string;
+  travel_class?: string;
   duration?: number;
+  departure_airport?: string;
   departure_iata?: string;
   departure_time?: string;
+  arrival_airport?: string;
   arrival_iata?: string;
   arrival_time?: string;
 }
@@ -81,8 +85,10 @@ interface CashLeg {
 interface CashReturnFlight {
   total_duration?: number;
   stops?: number;
+  departure_airport?: string;
   departure_iata?: string;
   departure_time?: string;
+  arrival_airport?: string;
   arrival_iata?: string;
   arrival_time?: string;
   legs?: CashLeg[];
@@ -92,12 +98,16 @@ interface CashFlight {
   price?: number;
   total_duration?: number;
   stops?: number;
+  departure_airport?: string;
   departure_iata?: string;
   departure_time?: string;
+  arrival_airport?: string;
   arrival_iata?: string;
   arrival_time?: string;
   legs?: CashLeg[];
   return_flight?: CashReturnFlight | null;
+  booking_url?: string | null;
+  vendor?: string | null;
 }
 
 interface TripSegment {
@@ -175,6 +185,27 @@ function fmtDuration(mins?: number) {
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
+
+function fmtMoney(value?: number | null, digits = 0) {
+  if (value == null || Number.isNaN(Number(value))) return "—";
+  return `$${Number(value).toFixed(digits)}`;
+}
+
+function stopText(stops?: number) {
+  if (stops == null) return "Stops unknown";
+  return stops === 0 ? "Nonstop" : `${stops} stop${stops > 1 ? "s" : ""}`;
+}
+
+function segmentAirlines(legs?: CashLeg[]) {
+  const names = Array.from(new Set((legs ?? []).map((leg) => leg.airline).filter(Boolean))) as string[];
+  return names.length > 0 ? names.join(" + ") : "Airline details pending";
+}
+
+function flightNumbers(legs?: CashLeg[]) {
+  const nums = (legs ?? []).map((leg) => leg.flight_number).filter(Boolean);
+  return nums.length > 0 ? nums.join(", ") : "Flight numbers pending";
 }
 
 function fmtProgram(s?: string | null) {
@@ -426,6 +457,15 @@ export default function VerdictCard({
 
   const renderCashLeg = (flight: CashFlight | CashReturnFlight | null, label: string, isReturnLeg = false) => {
     if (!flight) return null;
+    const legs = flight.legs ?? [];
+    const hasSegments = legs.length > 0;
+    const departureCode = (flight as CashFlight).departure_iata || "—";
+    const arrivalCode = (flight as CashFlight).arrival_iata || "—";
+    const departureAirport = (flight as CashFlight).departure_airport;
+    const arrivalAirport = (flight as CashFlight).arrival_airport;
+    const bookingLink = "booking_url" in flight ? flight.booking_url : null;
+    const seller = "vendor" in flight ? flight.vendor : null;
+
     return (
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
         <div className="flex items-start gap-3">
@@ -433,17 +473,86 @@ export default function VerdictCard({
             {isReturnLeg ? <PlaneLanding className="h-4 w-4 text-indigo-300" /> : <PlaneTakeoff className="h-4 w-4 text-indigo-300" />}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="mb-1 text-xs uppercase tracking-[0.14em] text-slate-400">{label}</p>
-            <p className="text-sm font-semibold text-white">
-              {(flight as CashFlight).departure_iata || "—"} → {(flight as CashFlight).arrival_iata || "—"}
-            </p>
-            <p className="mt-1 text-xs text-slate-400">
-              {fmtTime((flight as CashFlight).departure_time)}{fmtTime((flight as CashFlight).arrival_time) ? ` – ${fmtTime((flight as CashFlight).arrival_time)}` : ""}
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="mb-1 text-xs uppercase tracking-[0.14em] text-indigo-300">{label}</p>
+                <p className="text-base font-bold text-white">{departureCode} → {arrivalCode}</p>
+              </div>
+              {"price" in flight && flight.price != null && <p className="text-lg font-extrabold text-emerald-300">{fmtMoney(flight.price, flight.price % 1 === 0 ? 0 : 2)}</p>}
+            </div>
+
+            <p className="mt-1 text-sm text-slate-300">
+              {fmtTime((flight as CashFlight).departure_time) || "Time pending"}
+              {fmtTime((flight as CashFlight).arrival_time) ? ` – ${fmtTime((flight as CashFlight).arrival_time)}` : ""}
               {(flight as CashFlight).total_duration ? ` · ${fmtDuration((flight as CashFlight).total_duration)}` : ""}
-              {(flight as CashFlight).stops !== undefined ? ` · ${flight.stops === 0 ? "Nonstop" : `${flight.stops} stop${flight.stops! > 1 ? "s" : ""}`}` : ""}
+              {` · ${stopText((flight as CashFlight).stops)}`}
             </p>
+
+            {(departureAirport || arrivalAirport) && (
+              <p className="mt-2 text-xs leading-5 text-slate-500">
+                {departureAirport || departureCode} → {arrivalAirport || arrivalCode}
+              </p>
+            )}
+
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <div className="rounded-xl border border-white/8 bg-slate-900/55 px-3 py-2">
+                <p className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Airline</p>
+                <p className="mt-1 text-sm font-semibold text-white">{segmentAirlines(legs)}</p>
+              </div>
+              <div className="rounded-xl border border-white/8 bg-slate-900/55 px-3 py-2">
+                <p className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Flight</p>
+                <p className="mt-1 text-sm font-semibold text-white">{flightNumbers(legs)}</p>
+              </div>
+              {seller && (
+                <div className="rounded-xl border border-white/8 bg-slate-900/55 px-3 py-2 sm:col-span-2">
+                  <p className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Seller</p>
+                  <p className="mt-1 text-sm font-semibold text-white">{seller}</p>
+                </div>
+              )}
+            </div>
+
+            {hasSegments && (
+              <div className="mt-4 space-y-3 border-t border-white/10 pt-4">
+                <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Segment details</p>
+                {legs.map((leg, index) => (
+                  <div key={`${label}-${index}-${leg.flight_number ?? "segment"}`} className="flex gap-3">
+                    <div className="flex flex-col items-center">
+                      <div className="mt-1 h-2.5 w-2.5 rounded-full bg-indigo-300" />
+                      {index < legs.length - 1 && <div className="my-1 w-px flex-1 bg-white/10" />}
+                    </div>
+                    <div className="min-w-0 flex-1 pb-1">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-semibold text-white">
+                            {leg.departure_iata || "—"} → {leg.arrival_iata || "—"}
+                          </p>
+                          <p className="mt-0.5 text-xs text-slate-400">
+                            {fmtTime(leg.departure_time) || "Time pending"}
+                            {fmtTime(leg.arrival_time) ? ` – ${fmtTime(leg.arrival_time)}` : ""}
+                            {leg.duration ? ` · ${fmtDuration(leg.duration)}` : ""}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs font-semibold text-slate-200">{leg.airline || "Airline pending"}</p>
+                          <p className="text-[11px] text-slate-500">
+                            {leg.flight_number ? `Flight ${leg.flight_number}` : "Flight # pending"}
+                            {leg.airplane ? ` · ${leg.airplane}` : ""}
+                            {leg.travel_class ? ` · ${leg.travel_class}` : ""}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {bookingLink && (
+              <a href={bookingLink} target="_blank" rel="noopener noreferrer" className="mt-4 inline-flex items-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-200 hover:bg-emerald-500/15">
+                Open booking option <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            )}
           </div>
-          {"price" in flight && flight.price != null && <p className="font-bold text-amber-300">${flight.price}</p>}
         </div>
       </div>
     );
@@ -603,8 +712,8 @@ export default function VerdictCard({
           <div className="space-y-3">
             {recommendation === "pay_cash" ? (
               <>
-                {renderCashLeg(bestCashFlight, isRoundtrip ? "Outbound" : "Flight")}
-                {isRoundtrip && renderCashLeg(bestCashFlight?.return_flight ?? null, "Return", true)}
+                {renderCashLeg(bestCashFlight, isRoundtrip ? "Best cash option · outbound" : "Best cash option")}
+                {isRoundtrip && renderCashLeg(bestCashFlight?.return_flight ?? null, "Best cash option · return", true)}
               </>
             ) : recommendation === "use_points" ? (
               <>
@@ -621,7 +730,9 @@ export default function VerdictCard({
 
           {bestOutbound && (
             <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-              <p className="mb-2 text-[11px] uppercase tracking-[0.14em] text-slate-400">Best points path</p>
+              <p className="mb-2 text-[11px] uppercase tracking-[0.14em] text-slate-400">
+                {recommendation === "pay_cash" ? "Points comparison" : "Best points path"}
+              </p>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="font-semibold text-white">{fmtProgram(bestOutbound.program)}</p>
@@ -632,9 +743,13 @@ export default function VerdictCard({
                 </div>
                 <p className="text-lg font-bold text-emerald-300">{(bestOutbound.points * travelers).toLocaleString()} pts</p>
               </div>
+              {recommendation === "pay_cash" && cashPrice != null && (
+                <p className="mt-3 rounded-xl border border-emerald-400/15 bg-emerald-500/5 px-3 py-2 text-sm leading-6 text-slate-300">
+                  Cash is the cleaner move here because the cash fare is only {fmtMoney(cashPrice, cashPrice % 1 === 0 ? 0 : 2)}, while the best points option still requires {(bestOutbound.points * travelers).toLocaleString()} points{bestOutbound.taxes != null && bestOutbound.taxes > 0 ? ` plus ${fmtMoney(bestOutbound.taxes, 2)} in taxes` : ""}.
+                </p>
+              )}
             </div>
-          )}
-        </div>
+          )}        </div>
       </div>
     </div>
   );

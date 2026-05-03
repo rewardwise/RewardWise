@@ -1,94 +1,54 @@
-import httpx
 import os
 from typing import Optional
+
 from dotenv import load_dotenv
+
+from app.services.flight_pricing.flightapi_provider import get_flightapi_cash_price
+from app.services.flight_pricing.mock_provider import get_mock_cash_price
+from app.services.flight_pricing.serpapi_provider import get_serpapi_cash_price
 
 load_dotenv()
 
-SERPAPI_BASE_URL = "https://serpapi.com/search"
 
-CABIN_CLASS_MAP = {
-    "economy": 1,
-    "premium_economy": 2,
-    "business": 3,
-    "first": 4,
-}
-
-
-def _parse_legs(flights_list: list) -> list:
-    """Parse a list of SerpAPI leg objects into our standard leg format."""
-    return [
-        {
-            "flight_number":    leg.get("flight_number"),
-            "airline":          leg.get("airline"),
-            "airline_logo":     leg.get("airline_logo"),
-            "airplane":         leg.get("airplane"),
-            "travel_class":     leg.get("travel_class"),
-            "legroom":          leg.get("legroom"),
-            "duration":         leg.get("duration"),          # minutes
-            "departure_airport": leg.get("departure_airport", {}).get("name"),
-            "departure_iata":   leg.get("departure_airport", {}).get("id"),
-            "departure_time":   leg.get("departure_airport", {}).get("time"),
-            "arrival_airport":  leg.get("arrival_airport", {}).get("name"),
-            "arrival_iata":     leg.get("arrival_airport", {}).get("id"),
-            "arrival_time":     leg.get("arrival_airport", {}).get("time"),
-            "overnight":        leg.get("overnight", False),
-            "often_delayed":    leg.get("often_delayed_by_over_30_min", False),
-        }
-        for leg in flights_list
-    ]
-
-
-def _parse_flight(f: dict) -> dict:
+def _provider_order() -> list[str]:
     """
-    Parse a SerpAPI flight object (one round-trip itinerary).
+    Choose cash-price providers in priority order.
 
-    Outbound legs live in f['flights'].
-    Return legs live in f['return_flight']['flights'] (present for round-trips).
+    Default is FlightAPI first because this branch migrates away from SerpAPI.
+    SerpAPI remains as a temporary safety fallback while FlightAPI is tested.
     """
-    outbound_legs_raw = f.get("flights", [])
-    first_leg = outbound_legs_raw[0] if outbound_legs_raw else {}
-    last_leg  = outbound_legs_raw[-1] if outbound_legs_raw else {}
+    primary = (os.getenv("CASH_PRICE_PROVIDER") or "flightapi").strip().lower()
+    fallback = (os.getenv("CASH_PRICE_FALLBACK_PROVIDER") or "serpapi").strip().lower()
 
-    outbound_legs = _parse_legs(outbound_legs_raw)
+    order: list[str] = []
+    for provider in (primary, fallback):
+        if provider and provider not in {"none", "off", "disabled"} and provider not in order:
+            order.append(provider)
+    return order
 
-    # ── Return leg (round-trip only) ──────────────────────────────────────
-    return_flight_raw = f.get("return_flight", {})
-    return_legs_raw   = return_flight_raw.get("flights", [])
-    return_legs       = _parse_legs(return_legs_raw) if return_legs_raw else []
 
-    ret_first = return_legs_raw[0]  if return_legs_raw else {}
-    ret_last  = return_legs_raw[-1] if return_legs_raw else {}
-
-    return_info = None
-    if return_legs:
-        return_info = {
-            "departure_airport": ret_first.get("departure_airport", {}).get("name"),
-            "departure_iata":    ret_first.get("departure_airport", {}).get("id"),
-            "departure_time":    ret_first.get("departure_airport", {}).get("time"),
-            "arrival_airport":   ret_last.get("arrival_airport", {}).get("name"),
-            "arrival_iata":      ret_last.get("arrival_airport", {}).get("id"),
-            "arrival_time":      ret_last.get("arrival_airport", {}).get("time"),
-            "total_duration":    return_flight_raw.get("total_duration"),
-            "stops":             len(return_legs) - 1,
-            "legs":              return_legs,
-        }
+async def _fetch_from_provider(
+    provider: str,
+    origin: str,
+    destination: str,
+    date: str,
+    cabin: str,
+    travelers: int,
+    return_date: Optional[str],
+) -> dict:
+    if provider == "flightapi":
+        return await get_flightapi_cash_price(origin, destination, date, cabin, travelers, return_date)
+    if provider in {"serpapi", "google_flights"}:
+        return await get_serpapi_cash_price(origin, destination, date, cabin, travelers, return_date)
+    if provider in {"mock", "flightapi_mock"}:
+        return await get_mock_cash_price(origin, destination, date, cabin, travelers, return_date)
 
     return {
-        "price":             f.get("price"),
-        "total_duration":    f.get("total_duration"),         # outbound minutes
-        "carbon_emissions":  f.get("carbon_emissions", {}).get("this_flight"),
-        # Outbound
-        "departure_airport": first_leg.get("departure_airport", {}).get("name"),
-        "departure_iata":    first_leg.get("departure_airport", {}).get("id"),
-        "departure_time":    first_leg.get("departure_airport", {}).get("time"),
-        "arrival_airport":   last_leg.get("arrival_airport", {}).get("name"),
-        "arrival_iata":      last_leg.get("arrival_airport", {}).get("id"),
-        "arrival_time":      last_leg.get("arrival_airport", {}).get("time"),
-        "stops":             len(outbound_legs) - 1,
-        "legs":              outbound_legs,
-        # Return (None for one-way)
-        "return_flight":     return_info,
+        "cash_price": None,
+        "currency": "USD",
+        "source": provider,
+        "flights": [],
+        "error": f"Unsupported cash price provider: {provider}",
     }
 
 
@@ -100,63 +60,40 @@ async def get_cash_price(
     travelers: int = 1,
     return_date: Optional[str] = None,
 ) -> dict:
-    api_key = os.getenv("SERPAPI_KEY")
-    if not api_key:
-        return {"cash_price": None, "currency": "USD", "source": "google_flights", "flights": []}
+    """
+    Fetch live cash flight prices through the configured provider.
 
-    is_roundtrip = return_date is not None
+    The return shape intentionally matches the original SerpAPI-powered contract
+    consumed by search/Zoe, so FlightAPI can replace SerpAPI without frontend or
+    verdict-engine changes.
+    """
+    errors: list[str] = []
 
-    params = {
-        "engine":        "google_flights",
-        "departure_id":  origin.upper(),
-        "arrival_id":    destination.upper(),
-        "outbound_date": date,
-        "type":          "1" if is_roundtrip else "2",   # 1=round-trip, 2=one-way
-        "travel_class":  CABIN_CLASS_MAP.get(cabin.lower(), 1),
-        "adults":        travelers,
-        "currency":      "USD",
-        "hl":            "en",
-        "api_key":       api_key,
+    for provider in _provider_order():
+        result = await _fetch_from_provider(
+            provider,
+            origin,
+            destination,
+            date,
+            cabin,
+            travelers,
+            return_date,
+        )
+
+        if result.get("cash_price") is not None:
+            if errors:
+                result["provider_fallback_errors"] = errors
+            if provider != _provider_order()[0]:
+                result["source"] = f"{result.get('source', provider)}_fallback"
+            return result
+
+        error = result.get("error") or f"{provider} returned no cash price"
+        errors.append(f"{provider}: {error}")
+
+    return {
+        "cash_price": None,
+        "currency": "USD",
+        "source": _provider_order()[0] if _provider_order() else "flight_pricing",
+        "flights": [],
+        "error": "; ".join(errors) if errors else "No cash price provider configured",
     }
-    if is_roundtrip:
-        params["return_date"] = return_date
-
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(SERPAPI_BASE_URL, params=params, timeout=15.0)
-            response.raise_for_status()
-            data = response.json()
-
-        best  = data.get("best_flights",  [])
-        other = data.get("other_flights", [])
-        all_flights = best + other
-
-        if not all_flights:
-            return {"cash_price": None, "currency": "USD", "source": "google_flights", "flights": []}
-
-        sorted_flights = sorted(all_flights, key=lambda f: f.get("price", float("inf")))
-        top_flights    = [_parse_flight(f) for f in sorted_flights[:5]]
-        lowest_price   = top_flights[0]["price"] if top_flights else None
-
-        price_insights = data.get("price_insights", {})
-        if not lowest_price and price_insights.get("lowest_price"):
-            lowest_price = price_insights["lowest_price"]
-
-        return {
-            "cash_price":          lowest_price,
-            "currency":            "USD",
-            "source":              "google_flights",
-            "flights":             top_flights,
-            "price_level":         price_insights.get("price_level"),
-            "typical_price_range": price_insights.get("typical_price_range"),
-            "is_roundtrip":        is_roundtrip,
-        }
-
-    except Exception as e:
-        return {
-            "cash_price": None,
-            "currency":   "USD",
-            "source":     "google_flights",
-            "flights":    [],
-            "error":      str(e),
-        }

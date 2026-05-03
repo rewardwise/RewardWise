@@ -1,0 +1,191 @@
+{
+  "itineraries": [
+    {
+      "id": "95565058-2606150700--31722-0-95673321-2606151015",
+      "leg_ids": [
+        "95565058-2606150700--31722-0-95673321-2606151015"
+      ],
+      "pricing_options": [
+        {
+          "id": "mock-nonstop-united",
+          "agent_ids": [
+            "united"
+          ],
+          "price": {
+            "amount": 89.4,
+            "update_status": "current",
+            "last_updated": "2026-05-01T13:24:00",
+            "quote_age": 92
+          },
+          "unpriced_type": "",
+          "items": [
+            {
+              "agent_id": "united",
+              "url": "/transport_deeplink/4.0/US/en-US/USD/united/1/95565058.95673321.2026-06-15/air/flights?mock=true&ticket_price=89.40",
+              "segment_ids": [
+                "95565058-95673321-2606150700-2606151015--31722"
+              ],
+              "price": {
+                "amount": 89.4,
+                "update_status": "current",
+                "last_updated": "2026-05-01T13:24:00",
+                "quote_age": 92
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "95565058-2606150830--32480-1-95673321-2606151345",
+      "leg_ids": [
+        "95565058-2606150830--32480-1-95673321-2606151345"
+      ],
+      "pricing_options": [
+        {
+          "id": "mock-onestop-delta",
+          "agent_ids": [
+            "delta"
+          ],
+          "price": {
+            "amount": 59.9,
+            "update_status": "current",
+            "last_updated": "2026-05-01T13:26:00",
+            "quote_age": 55
+          },
+          "items": [
+            {
+              "agent_id": "delta",
+              "url": "/transport_deeplink/4.0/US/en-US/USD/delta/1/95565058.95673321.2026-06-15/air/flights?mock=true&ticket_price=59.90",
+              "segment_ids": [
+                "95565058-103970259-2606150830-2606151010--32480",
+                "103970259-95673321-2606151130-2606151345--32480"
+              ],
+              "price": {
+                "amount": 59.9,
+                "update_status": "current",
+                "last_updated": "2026-05-01T13:26:00",
+                "quote_age": 55
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "legs": [
+    {
+      "id": "95565058-2606150700--31722-0-95673321-2606151015",
+      "origin_place_id": 95565058,
+      "destination_place_id": 95673321,
+      "departure": "2026-06-15T07:00:00",
+      "arrival": "2026-06-15T10:15:00",
+      "duration": 375,
+      "segment_ids": [
+        "95565058-95673321-2606150700-2606151015--31722"
+      ],
+      "carrier_ids": [
+        -31722
+      ],
+      "stop_ids": []
+    },
+    {
+      "id": "95565058-2606150830--32480-1-95673321-2606151345",
+      "origin_place_id": 95565058,
+      "destination_place_id": 95673321,
+      "departure": "2026-06-15T08:30:00",
+      "arrival": "2026-06-15T13:45:00",
+      "duration": 495,
+      "segment_ids": [
+        "95565058-103970259-2606150830-2606151010--32480",
+        "103970259-95673321-2606151130-2606151345--32480"
+      ],
+      "carrier_ids": [
+        -32480
+      ],
+      "stop_ids": [
+        103970259
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "id": "95565058-95673321-2606150700-2606151015--31722",
+      "origin_place_id": 95565058,
+      "destination_place_id": 95673321,
+      "arrival": "2026-06-15T10:15:00",
+      "departure": "2026-06-15T07:00:00",
+      "duration": 375,
+      "marketing_flight_number": "1234",
+      "marketing_carrier_id": -31722,
+      "operating_carrier_id": -31722,
+      "mode": "flight"
+    },
+    {
+      "id": "95565058-103970259-2606150830-2606151010--32480",
+      "origin_place_id": 95565058,
+      "destination_place_id": 103970259,
+      "arrival": "2026-06-15T10:10:00",
+      "departure": "2026-06-15T08:30:00",
+      "duration": 160,
+      "marketing_flight_number": "882",
+      "marketing_carrier_id": -32480,
+      "operating_carrier_id": -32480,
+      "mode": "flight"
+    },
+    {
+      "id": "103970259-95673321-2606151130-2606151345--32480",
+      "origin_place_id": 103970259,
+      "destination_place_id": 95673321,
+      "arrival": "2026-06-15T13:45:00",
+      "departure": "2026-06-15T11:30:00",
+      "duration": 255,
+      "marketing_flight_number": "1441",
+      "marketing_carrier_id": -32480,
+      "operating_carrier_id": -32480,
+      "mode": "flight"
+    }
+  ],
+  "places": [
+    {
+      "id": 95565058,
+      "name": "Newark Liberty International",
+      "displayCode": "EWR",
+      "type": "Airport"
+    },
+    {
+      "id": 95673321,
+      "name": "Los Angeles International",
+      "displayCode": "LAX",
+      "type": "Airport"
+    },
+    {
+      "id": 103970259,
+      "name": "Hartsfield-Jackson Atlanta",
+      "displayCode": "ATL",
+      "type": "Airport"
+    }
+  ],
+  "carriers": [
+    {
+      "id": -31722,
+      "name": "United",
+      "displayCode": "UA"
+    },
+    {
+      "id": -32480,
+      "name": "Delta",
+      "displayCode": "DL"
+    }
+  ],
+  "agents": [
+    {
+      "id": "united",
+      "name": "United"
+    },
+    {
+      "id": "delta",
+      "name": "Delta"
+    }
+  ]
+}
