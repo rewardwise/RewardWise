@@ -13,17 +13,22 @@ def test_flightapi_oneway_fixture_normalizes_to_existing_cash_price_contract():
 
     assert result["source"] == "flightapi"
     assert result["currency"] == "USD"
-    assert result["cash_price"] == 219.9
+    assert result["cash_price"] == 59.9
     assert result["is_roundtrip"] is False
     assert len(result["flights"]) == 2
 
     cheapest = result["flights"][0]
-    assert cheapest["price"] == 219.9
+    assert cheapest["price"] == 59.9
     assert cheapest["departure_iata"] == "EWR"
     assert cheapest["arrival_iata"] == "LAX"
     assert cheapest["stops"] == 1
     assert cheapest["vendor"] == "Delta"
-    assert cheapest["booking_url"]
+    assert cheapest["booking_url"].startswith("https://www.skyscanner.com/transport_deeplink")
+    assert cheapest["raw_booking_url"].startswith("/transport_deeplink")
+    assert cheapest["price_update_status"] == "current"
+    assert cheapest["price_last_updated"] == "2026-05-01T13:26:00"
+    assert cheapest["quote_age"] == 55
+    assert cheapest["agent_ids"] == ["delta"]
 
 
 def test_flightapi_roundtrip_fixture_normalizes_return_leg():
@@ -31,7 +36,7 @@ def test_flightapi_roundtrip_fixture_normalizes_return_leg():
 
     result = normalize_flightapi_response(raw, is_roundtrip=True, currency="USD")
 
-    assert result["cash_price"] == 123.4
+    assert result["cash_price"] == 79.9
     assert result["is_roundtrip"] is True
 
     flight = result["flights"][0]
@@ -41,3 +46,5 @@ def test_flightapi_roundtrip_fixture_normalizes_return_leg():
     assert flight["return_flight"]["departure_iata"] == "LAX"
     assert flight["return_flight"]["arrival_iata"] == "EWR"
     assert flight["vendor"] == "United"
+    assert flight["booking_url"].startswith("https://www.skyscanner.com/transport_deeplink")
+    assert flight["price_update_status"] == "current"

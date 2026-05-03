@@ -95,6 +95,31 @@ def _duration_minutes(value: Any) -> int | None:
     return None
 
 
+def _normalize_booking_url(url: str | None) -> str | None:
+    if not url:
+        return None
+    if url.startswith("http://") or url.startswith("https://"):
+        return url
+    if url.startswith("/transport_deeplink"):
+        return f"https://www.skyscanner.com{url}"
+    if url.startswith("/"):
+        return f"https://www.skyscanner.com{url}"
+    return url
+
+
+def _as_unique_strings(values: list[Any]) -> list[str]:
+    seen: set[str] = set()
+    results: list[str] = []
+    for value in values:
+        if value is None or value == "":
+            continue
+        text = str(value)
+        if text not in seen:
+            seen.add(text)
+            results.append(text)
+    return results
+
+
 def _normalize_segment(segment_ref: Any, lookups: dict[str, dict[str, dict[str, Any]]]) -> dict[str, Any]:
     segment = _resolve_ref(segment_ref, lookups["segments"])
 
@@ -162,6 +187,9 @@ def _normalize_segment(segment_ref: Any, lookups: dict[str, dict[str, dict[str, 
         "arrival_airport": _get_place_name(destination, _first_present(segment, ["destination", "arrivalAirport", "arrival_airport"])),
         "arrival_iata": _get_place_code(destination, _first_present(segment, ["destination", "arrivalAirport", "arrival_airport"])),
         "arrival_time": _first_present(segment, ["arrivalDateTime", "arrival_date_time", "arrival", "arrivalTime", "arrival_time"]),
+        "marketing_carrier_id": _first_present(segment, ["marketingCarrierId", "marketing_carrier_id"]),
+        "operating_carrier_id": _first_present(segment, ["operatingCarrierId", "operating_carrier_id"]),
+        "mode": _first_present(segment, ["mode"]),
         "overnight": False,
         "often_delayed": False,
     }
@@ -179,6 +207,20 @@ def _normalize_leg(leg_ref: Any, lookups: dict[str, dict[str, dict[str, Any]]]) 
     first = segments[0] if segments else {}
     last = segments[-1] if segments else {}
 
+    explicit_stops = _first_present(leg, ["stopCount", "stop_count", "stops"])
+    stop_count = _duration_minutes(explicit_stops)
+    if stop_count is None:
+        stop_count = max(len(segments) - 1, 0)
+
+    stop_places = []
+    for stop_id in _as_list(_first_present(leg, ["stopIds", "stop_ids"], [])):
+        place = _resolve_ref(stop_id, lookups["places"])
+        stop_places.append({
+            "id": stop_id,
+            "name": _get_place_name(place, str(stop_id)),
+            "iata": _get_place_code(place, str(stop_id)),
+        })
+
     return {
         "departure_airport": first.get("departure_airport"),
         "departure_iata": first.get("departure_iata"),
@@ -187,7 +229,10 @@ def _normalize_leg(leg_ref: Any, lookups: dict[str, dict[str, dict[str, Any]]]) 
         "arrival_iata": last.get("arrival_iata"),
         "arrival_time": last.get("arrival_time") or _first_present(leg, ["arrival", "arrivalDateTime", "arrival_date_time"]),
         "total_duration": _duration_minutes(_first_present(leg, ["durationInMinutes", "duration_in_minutes", "duration", "durationMinutes", "duration_minutes"])),
-        "stops": max(len(segments) - 1, 0),
+        "stops": stop_count,
+        "stop_places": stop_places,
+        "marketing_carrier_ids": _as_unique_strings(_as_list(_first_present(leg, ["marketingCarrierIds", "marketing_carrier_ids", "carrier_ids"], []))),
+        "operating_carrier_ids": _as_unique_strings(_as_list(_first_present(leg, ["operatingCarrierIds", "operating_carrier_ids"], []))),
         "legs": segments,
     }
 
@@ -221,14 +266,52 @@ def _first_agent_name(option: dict[str, Any], agents_lookup: dict[str, dict[str,
     return None
 
 
+def _extract_option_details(option: dict[str, Any], agents_lookup: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    items = [item for item in _as_list(option.get("items")) if isinstance(item, dict)]
+    first_item = items[0] if items else {}
+    fares = [fare for item in items for fare in _as_list(item.get("fares")) if isinstance(fare, dict)]
+
+    raw_booking_url = (
+        _first_present(option, ["deepLink", "deep_link", "bookingUrl", "booking_url"])
+        or _first_item_url(option)
+    )
+
+    agent_ids = _as_list(_first_present(option, ["agentIds", "agent_ids"], []))
+    if not agent_ids and first_item:
+        agent_ids = _as_list(_first_present(first_item, ["agentIds", "agent_ids", "agent_id"], []))
+
+    return {
+        "vendor": _first_agent_name(option, agents_lookup),
+        "agent_ids": _as_unique_strings(agent_ids),
+        "raw_booking_url": raw_booking_url,
+        "booking_url": _normalize_booking_url(raw_booking_url),
+        "pricing_option_id": _first_present(option, ["id", "pricingOptionId", "pricing_option_id"]),
+        "transfer_type": _first_present(option, ["transferType", "transfer_type"]),
+        "score": _first_present(option, ["score"]),
+        "unpriced_type": _first_present(option, ["unpricedType", "unpriced_type"]),
+        "booking_proposition": _first_present(first_item, ["bookingProposition", "booking_proposition"]),
+        "transfer_protection": _first_present(first_item, ["transferProtection", "transfer_protection"]),
+        "max_redirect_age": _first_present(first_item, ["maxRedirectAge", "max_redirect_age"]),
+        "fare_basis_codes": _as_unique_strings([_first_present(fare, ["fareBasisCode", "fare_basis_code"]) for fare in fares]),
+        "booking_codes": _as_unique_strings([_first_present(fare, ["bookingCode", "booking_code"]) for fare in fares]),
+        "fare_families": _as_unique_strings([_first_present(fare, ["fareFamily", "fare_family"]) for fare in fares]),
+        "ticket_attributes": _as_list(first_item.get("ticket_attributes") or first_item.get("ticketAttributes")),
+        "flight_attributes": _as_list(first_item.get("flight_attributes") or first_item.get("flightAttributes")),
+    }
+
+
 def _itinerary_price(
     itinerary: dict[str, Any],
     agents_lookup: dict[str, dict[str, Any]],
-) -> tuple[float | None, str | None, str | None]:
+) -> tuple[float | None, dict[str, Any]]:
     options = _as_list(_first_present(itinerary, ["pricingOptions", "pricing_options", "prices"], []))
     if not options:
         price = _money_to_float(_first_present(itinerary, ["price", "amount", "totalPrice", "total_price"]))
-        return price, None, _first_present(itinerary, ["deepLink", "deep_link", "bookingUrl", "booking_url"])
+        return price, {
+            "vendor": None,
+            "booking_url": _normalize_booking_url(_first_present(itinerary, ["deepLink", "deep_link", "bookingUrl", "booking_url"])),
+            "raw_booking_url": _first_present(itinerary, ["deepLink", "deep_link", "bookingUrl", "booking_url"]),
+        }
 
     best_option = None
     best_price = None
@@ -241,13 +324,16 @@ def _itinerary_price(
             best_option = option
 
     if not best_option:
-        return None, None, None
+        return None, {}
 
-    return (
-        best_price,
-        _first_agent_name(best_option, agents_lookup),
-        _first_present(best_option, ["deepLink", "deep_link", "bookingUrl", "booking_url"]) or _first_item_url(best_option),
-    )
+    price_payload = best_option.get("price") if isinstance(best_option.get("price"), dict) else {}
+    details = _extract_option_details(best_option, agents_lookup)
+    details.update({
+        "price_update_status": _first_present(price_payload, ["update_status", "updateStatus"]),
+        "price_last_updated": _first_present(price_payload, ["last_updated", "lastUpdated"]),
+        "quote_age": _first_present(price_payload, ["quote_age", "quoteAge"]),
+    })
+    return best_price, details
 
 
 def normalize_flightapi_response(data: dict[str, Any], *, is_roundtrip: bool, currency: str = "USD") -> dict:
@@ -279,7 +365,7 @@ def normalize_flightapi_response(data: dict[str, Any], *, is_roundtrip: bool, cu
         if not isinstance(itinerary, dict):
             continue
 
-        price, vendor, booking_url = _itinerary_price(itinerary, lookups["agents"])
+        price, pricing_details = _itinerary_price(itinerary, lookups["agents"])
         if price is None:
             continue
 
@@ -304,8 +390,25 @@ def normalize_flightapi_response(data: dict[str, Any], *, is_roundtrip: bool, cu
                 "stops": outbound.get("stops", 0),
                 "legs": outbound.get("legs", []),
                 "return_flight": inbound,
-                "booking_url": booking_url,
-                "vendor": vendor,
+                "booking_url": pricing_details.get("booking_url"),
+                "raw_booking_url": pricing_details.get("raw_booking_url"),
+                "vendor": pricing_details.get("vendor"),
+                "agent_ids": pricing_details.get("agent_ids", []),
+                "pricing_option_id": pricing_details.get("pricing_option_id"),
+                "transfer_type": pricing_details.get("transfer_type"),
+                "score": pricing_details.get("score"),
+                "unpriced_type": pricing_details.get("unpriced_type"),
+                "booking_proposition": pricing_details.get("booking_proposition"),
+                "transfer_protection": pricing_details.get("transfer_protection"),
+                "max_redirect_age": pricing_details.get("max_redirect_age"),
+                "fare_basis_codes": pricing_details.get("fare_basis_codes", []),
+                "booking_codes": pricing_details.get("booking_codes", []),
+                "fare_families": pricing_details.get("fare_families", []),
+                "ticket_attributes": pricing_details.get("ticket_attributes", []),
+                "flight_attributes": pricing_details.get("flight_attributes", []),
+                "price_update_status": pricing_details.get("price_update_status"),
+                "price_last_updated": pricing_details.get("price_last_updated"),
+                "quote_age": pricing_details.get("quote_age"),
             }
         )
 

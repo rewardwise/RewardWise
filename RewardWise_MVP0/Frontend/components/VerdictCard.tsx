@@ -85,6 +85,7 @@ interface CashLeg {
 interface CashReturnFlight {
   total_duration?: number;
   stops?: number;
+  stop_places?: { id?: string | number; name?: string; iata?: string }[];
   departure_airport?: string;
   departure_iata?: string;
   departure_time?: string;
@@ -98,6 +99,7 @@ interface CashFlight {
   price?: number;
   total_duration?: number;
   stops?: number;
+  stop_places?: { id?: string | number; name?: string; iata?: string }[];
   departure_airport?: string;
   departure_iata?: string;
   departure_time?: string;
@@ -107,7 +109,19 @@ interface CashFlight {
   legs?: CashLeg[];
   return_flight?: CashReturnFlight | null;
   booking_url?: string | null;
+  raw_booking_url?: string | null;
   vendor?: string | null;
+  agent_ids?: string[];
+  pricing_option_id?: string | null;
+  transfer_type?: string | null;
+  score?: number | string | null;
+  booking_proposition?: string | null;
+  fare_basis_codes?: string[];
+  booking_codes?: string[];
+  fare_families?: string[];
+  price_update_status?: string | null;
+  price_last_updated?: string | null;
+  quote_age?: number | string | null;
 }
 
 interface TripSegment {
@@ -191,6 +205,36 @@ function fmtDuration(mins?: number) {
 function fmtMoney(value?: number | null, digits = 0) {
   if (value == null || Number.isNaN(Number(value))) return "—";
   return `$${Number(value).toFixed(digits)}`;
+}
+
+function fmtShortDateTime(value?: string | null) {
+  if (!value) return "—";
+  const safe = value.includes("T") ? value : value.replace(" ", "T");
+  const bare = safe.replace("Z", "").split("+")[0];
+  const parsed = new Date(bare);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+function quoteAgeText(value?: number | string | null) {
+  if (value == null || value === "") return "—";
+  const raw = Number(value);
+  if (Number.isNaN(raw)) return String(value);
+  if (raw < 60) return `${raw} min`;
+  const hours = Math.floor(raw / 60);
+  const mins = raw % 60;
+  return mins ? `${hours}h ${mins}m` : `${hours}h`;
+}
+
+function joinList(values?: string[] | null, fallback = "—") {
+  const clean = (values ?? []).filter(Boolean);
+  return clean.length ? clean.join(", ") : fallback;
 }
 
 function stopText(stops?: number) {
@@ -465,6 +509,30 @@ export default function VerdictCard({
     const arrivalAirport = (flight as CashFlight).arrival_airport;
     const bookingLink = "booking_url" in flight ? flight.booking_url : null;
     const seller = "vendor" in flight ? flight.vendor : null;
+    const stopPlaces = (flight as CashFlight).stop_places ?? [];
+    const fareBasis = "fare_basis_codes" in flight ? joinList(flight.fare_basis_codes) : "—";
+    const bookingCodes = "booking_codes" in flight ? joinList(flight.booking_codes) : "—";
+    const fareFamilies = "fare_families" in flight ? joinList(flight.fare_families) : "—";
+    const lastUpdated = "price_last_updated" in flight ? fmtShortDateTime(flight.price_last_updated) : "—";
+    const quoteAge = "quote_age" in flight ? quoteAgeText(flight.quote_age) : "—";
+    const transferType = "transfer_type" in flight && flight.transfer_type ? flight.transfer_type : "—";
+    const bookingProposition = "booking_proposition" in flight && flight.booking_proposition ? flight.booking_proposition : "—";
+    const providerScore = "score" in flight && flight.score != null ? String(flight.score) : "—";
+
+    const detailTiles = [
+      { label: "Airline", value: segmentAirlines(legs) },
+      { label: "Flight", value: flightNumbers(legs) },
+      { label: "Seller", value: seller || "Seller pending" },
+      { label: "Updated", value: lastUpdated },
+      { label: "Quote age", value: quoteAge },
+      { label: "Stops", value: stopText((flight as CashFlight).stops) },
+      { label: "Fare basis", value: fareBasis },
+      { label: "Booking code", value: bookingCodes },
+      { label: "Fare family", value: fareFamilies },
+      { label: "Transfer", value: transferType },
+      { label: "Booking type", value: bookingProposition },
+      { label: "Provider score", value: providerScore },
+    ];
 
     return (
       <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
@@ -494,21 +562,19 @@ export default function VerdictCard({
               </p>
             )}
 
+            {stopPlaces.length > 0 && (
+              <p className="mt-1 text-xs leading-5 text-slate-500">
+                Layover: {stopPlaces.map((stop) => stop.iata || stop.name).filter(Boolean).join(", ")}
+              </p>
+            )}
+
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              <div className="rounded-xl border border-white/8 bg-slate-900/55 px-3 py-2">
-                <p className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Airline</p>
-                <p className="mt-1 text-sm font-semibold text-white">{segmentAirlines(legs)}</p>
-              </div>
-              <div className="rounded-xl border border-white/8 bg-slate-900/55 px-3 py-2">
-                <p className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Flight</p>
-                <p className="mt-1 text-sm font-semibold text-white">{flightNumbers(legs)}</p>
-              </div>
-              {seller && (
-                <div className="rounded-xl border border-white/8 bg-slate-900/55 px-3 py-2 sm:col-span-2">
-                  <p className="text-[10px] uppercase tracking-[0.12em] text-slate-500">Seller</p>
-                  <p className="mt-1 text-sm font-semibold text-white">{seller}</p>
+              {detailTiles.map((tile) => (
+                <div key={`${label}-${tile.label}`} className="rounded-xl border border-white/8 bg-slate-900/55 px-3 py-2">
+                  <p className="text-[10px] uppercase tracking-[0.12em] text-slate-500">{tile.label}</p>
+                  <p className="mt-1 break-words text-sm font-semibold text-white">{tile.value}</p>
                 </div>
-              )}
+              ))}
             </div>
 
             {hasSegments && (
