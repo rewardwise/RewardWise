@@ -211,12 +211,12 @@ function LandingPageInner() {
 									onClick={scrollToForm}
 									className="inline-flex items-center gap-2 rounded-full bg-[#22C55E] px-5 py-3 text-sm font-semibold text-[#08111F] transition hover:bg-[#16A34A]"
 								>
-									Get Started — It&apos;s Free
+									Get Started
 									<ArrowRight className="h-4 w-4" />
 								</button>
 
 								<div className="inline-flex items-center rounded-full border border-white/14 bg-white/6 px-4 py-3 text-sm text-white/70">
-									No spam. No credit card. Just early access.
+									Early Access has now begun!
 								</div>
 							</div>
 
@@ -371,7 +371,7 @@ function LandingPageInner() {
 												Secure your spot.
 											</h2>
 											<p className="mt-3 text-sm leading-6 text-white/68">
-												Free. No credit card. We&apos;ll reach out as soon as
+												We&apos;ll reach out as soon as
 												you&apos;re ready to explore.
 											</p>
 										</div>
@@ -445,7 +445,7 @@ function LandingPageInner() {
 													</>
 												) : (
 													<>
-														Get Started — It&apos;s Free
+														Get Started
 														<ArrowRight className="h-4 w-4" />
 													</>
 												)}
