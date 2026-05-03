@@ -8,6 +8,7 @@ Outputs:
     app/validators/airport_codes.py
     app/data/airport_metadata.json
     ../Frontend/components/airports.ts
+    ../Frontend/data/airportCoordinates.ts
 """
 
 import argparse
@@ -245,6 +246,65 @@ export function searchAirports(query: string, limit = 6): Airport[] {{
     print(f"  Wrote {out_path}  ({len(airports)} airports)")
 
 
+def write_airport_coordinates_ts(airports: list[dict], out_path: Path) -> None:
+    lines = []
+    for a in airports:
+        if a.get("latitude") is None or a.get("longitude") is None:
+            continue
+
+        code = escape_ts(a["iata"])
+        name = escape_ts(a["name"])
+        city = escape_ts(a["city"])
+        country = escape_ts(a["country_code"])
+        country_code = escape_ts(a["country_code"])
+        continent = escape_ts(a.get("continent", ""))
+        continent_code = escape_ts(a.get("continent_code", ""))
+        latitude = a["latitude"]
+        longitude = a["longitude"]
+
+        lines.append(
+            '  "' + code + '": {\\n'
+            '    iata: "' + code + '",\\n'
+            '    name: "' + name + '",\\n'
+            '    city: "' + city + '",\\n'
+            '    country: "' + country + '",\\n'
+            '    countryCode: "' + country_code + '",\\n'
+            '    continent: "' + continent + '",\\n'
+            '    continentCode: "' + continent_code + '",\\n'
+            '    latitude: ' + str(latitude) + ',\\n'
+            '    longitude: ' + str(longitude) + ',\\n'
+            '  },'
+        )
+
+    content = (
+        '/** @format */\\n\\n'
+        '// Auto-generated from Backend/app/data/airport_metadata.json.\\n'
+        '// Do not edit manually; run Backend/scripts/build_airports.py after updating airport data.\\n\\n'
+        'export type AirportCoordinate = {\\n'
+        '  iata: string;\\n'
+        '  name: string;\\n'
+        '  city: string;\\n'
+        '  country: string;\\n'
+        '  countryCode: string;\\n'
+        '  continent: string;\\n'
+        '  continentCode: string;\\n'
+        '  latitude: number;\\n'
+        '  longitude: number;\\n'
+        '};\\n\\n'
+        'export const AIRPORT_COORDINATES: Record<string, AirportCoordinate> = {\\n'
+        + chr(10).join(lines)
+        + '\\n} as const;\\n\\n'
+        'export function getAirportCoordinate(iata?: string | null): AirportCoordinate | undefined {\\n'
+        '  if (!iata) return undefined;\\n'
+        '  return AIRPORT_COORDINATES[iata.trim().toUpperCase()];\\n'
+        '}\\n'
+    )
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(content, encoding="utf-8")
+    print(f"  Wrote {out_path}  ({len(lines)} airport coordinates)")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Build airport files from OurAirports CSV.")
     parser.add_argument("--csv", required=True, help="Path to OurAirports airports.csv")
@@ -258,6 +318,7 @@ def main():
     codes_out   = backend_root  / "app" / "validators" / "airport_codes.py"
     json_out    = backend_root  / "app" / "data" / "airport_metadata.json"
     ts_out      = frontend_root / "components" / "airports.ts"
+    coords_out  = frontend_root / "data" / "airportCoordinates.ts"
 
     if not csv_path.exists():
         print(f"ERROR: CSV not found: {csv_path}", file=sys.stderr)
@@ -276,6 +337,7 @@ def main():
     write_airport_codes(airports, codes_out)
     write_metadata_json(airports, json_out)
     write_airports_ts(airports, ts_out)
+    write_airport_coordinates_ts(airports, coords_out)
 
     print("Done.")
 
