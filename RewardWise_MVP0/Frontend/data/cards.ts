@@ -61,4 +61,16 @@ export const AVAILABLE_CARDS = [
 		program: "World of Hyatt",
 		logo: "🏨",
 	},
+	{
+		id: "delta_skymiles",
+		name: "Delta SkyMiles",
+		program: "Delta SkyMiles",
+		logo: "✈️",
+	},
+	{
+		id: "united_mileageplus",
+		name: "United MileagePlus",
+		program: "United MileagePlus",
+		logo: "✈️",
+	},
 ];
