@@ -613,7 +613,7 @@ export default function ZoeChat({
 
 	if (!isOpen) {
 		return (
-			<div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
+			<div className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-50 flex flex-col items-end gap-3">
 				{showNudge && (
 					<div className="relative max-w-[252px] rounded-2xl border border-emerald-400/15 bg-slate-900/95 px-4 py-3 shadow-2xl">
 						<p className="text-white text-sm font-semibold">Meet Zoe</p>
@@ -623,14 +623,14 @@ export default function ZoeChat({
 					</div>
 				)}
 				<button
-  type="button"
-  disabled
-  title="Zoe is temporarily unavailable."
-  className="rounded-full border border-slate-700 bg-slate-800/80 px-8 py-4 text-slate-400 shadow-2xl flex items-center gap-3 cursor-not-allowed opacity-70"
->
-  <MessageCircle className="w-7 h-7" />
-  <span className="font-bold text-lg">Zoe temporarily down</span>
-</button>
+					type="button"
+					disabled
+					title="Zoe is temporarily unavailable."
+					className="rounded-full border border-slate-700 bg-slate-800/80 px-5 py-3 sm:px-8 sm:py-4 text-slate-400 shadow-2xl flex items-center gap-3 cursor-not-allowed opacity-70"
+				>
+					<MessageCircle className="w-7 h-7" />
+					<span className="hidden sm:inline font-bold text-base sm:text-lg">Zoe temporarily down</span>
+				</button>
 			</div>
 		);
 	}
@@ -639,8 +639,8 @@ export default function ZoeChat({
 		<div
 			className={`fixed z-50 flex flex-col border border-white/10 bg-slate-950/95 backdrop-blur shadow-2xl transition-all duration-300 ${
 				expanded
-					? "top-1/2 left-1/2 h-[720px] w-[1100px] -translate-x-1/2 -translate-y-1/2 rounded-3xl"
-					: "bottom-6 right-6 h-[560px] w-[390px] rounded-3xl"
+					? "inset-3 sm:inset-auto sm:top-1/2 sm:left-1/2 h-auto sm:h-[min(720px,calc(100dvh-3rem))] w-auto sm:w-[min(1100px,calc(100vw-3rem))] sm:-translate-x-1/2 sm:-translate-y-1/2 rounded-2xl sm:rounded-3xl"
+					: "inset-x-3 bottom-3 sm:inset-x-auto sm:bottom-6 sm:right-6 h-[min(560px,calc(100dvh-1.5rem))] sm:h-[560px] w-auto sm:w-[390px] rounded-2xl sm:rounded-3xl"
 			}`}
 		>
 			<div className="flex items-center justify-between border-b border-white/10 px-4 py-4">
