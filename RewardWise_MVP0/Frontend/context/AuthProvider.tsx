@@ -124,6 +124,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		if (user) checkPortfolio();
 	}, [user, checkPortfolio]);
 
+	useEffect(() => {
+		if (!user) return;
+		const onVis = () => {
+			if (document.visibilityState === "visible") {
+				void checkSubscription(user.id);
+			}
+		};
+		document.addEventListener("visibilitychange", onVis);
+		return () => document.removeEventListener("visibilitychange", onVis);
+	}, [user, checkSubscription]);
+
 	const signUpWithEmail = async (email: string, password: string) => {
 		const startedAt = Date.now();
 		const { error } = await supabase.auth.signUp({

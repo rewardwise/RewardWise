@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useAlerts } from "@/context/AlertContext";
 import { createClient } from "@/utils/supabase/client";
+import { FEEDBACK_SAVE_FAILED, FEEDBACK_SIGN_IN } from "@/utils/user-messages";
 
 const supabase = createClient();
 
@@ -255,7 +256,7 @@ function FeedbackInline({ verdictId }: { verdictId?: string | null }) {
     const userId = userData.user?.id;
     if (!userId) {
       setSaving(false);
-      setError("Please log in again before submitting feedback.");
+      setError(FEEDBACK_SIGN_IN);
       return;
     }
     const payload = {
@@ -269,7 +270,7 @@ function FeedbackInline({ verdictId }: { verdictId?: string | null }) {
     const { error: insertError } = await supabase.from("feedback").insert(payload);
     if (insertError) {
       setSaving(false);
-      setError(insertError.message || "Failed to save feedback.");
+      setError(FEEDBACK_SAVE_FAILED);
       return;
     }
     setSaving(false);
@@ -326,7 +327,7 @@ function FeedbackInline({ verdictId }: { verdictId?: string | null }) {
           {error && <p className="text-xs text-rose-300">{error}</p>}
         </div>
       )}
-      {saved && <p className="mt-3 text-sm text-emerald-300">Thanks — your feedback was saved.</p>}
+      {saved && <p className="mt-3 text-sm text-emerald-300">Thanks - your feedback was saved.</p>}
     </div>
   );
 }
@@ -435,7 +436,7 @@ export default function VerdictCard({
           <div className="min-w-0 flex-1">
             <p className="mb-1 text-xs uppercase tracking-[0.14em] text-slate-400">{label}</p>
             <p className="text-sm font-semibold text-white">
-              {(flight as CashFlight).departure_iata || "—"} → {(flight as CashFlight).arrival_iata || "—"}
+              {(flight as CashFlight).departure_iata || "-"} → {(flight as CashFlight).arrival_iata || "-"}
             </p>
             <p className="mt-1 text-xs text-slate-400">
               {fmtTime((flight as CashFlight).departure_time)}{fmtTime((flight as CashFlight).arrival_time) ? ` – ${fmtTime((flight as CashFlight).arrival_time)}` : ""}

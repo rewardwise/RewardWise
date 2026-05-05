@@ -25,6 +25,12 @@ import {
 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import { trackAnalyticsEvent } from "@/utils/analytics/client";
+import {
+	FEEDBACK_SAVE_FAILED,
+	FEEDBACK_SIGN_IN,
+	ZOE_GENERIC_REPLY,
+	ZOE_NETWORK,
+} from "@/utils/user-messages";
 
 const supabase = createClient();
 
@@ -197,6 +203,7 @@ export default function ZoeChat({
 	const { cards } = useWallet();
 	const [input, setInput] = useState("");
 	const [typing, setTyping] = useState(false);
+	const [waking, setWaking] = useState(false);
 	const [listening, setListening] = useState(false);
 	const [expanded, setExpanded] = useState(false);
 	const [showNudge, setShowNudge] = useState(true);
@@ -235,6 +242,17 @@ export default function ZoeChat({
 
 	useEffect(() => {
 		if (!isOpen) return;
+		const controller = new AbortController();
+		fetch("/api/zoe-warm", {
+			method: "GET",
+			cache: "no-store",
+			signal: controller.signal,
+		}).catch(() => {});
+		return () => controller.abort();
+	}, [isOpen]);
+
+	useEffect(() => {
+		if (!isOpen) return;
 		trackAnalyticsEvent(expanded ? "zoe_expanded" : "zoe_collapsed", {
 			event_type: "zoe",
 			zoe_conversation_id: conversationIdRef.current,
@@ -244,6 +262,15 @@ export default function ZoeChat({
 	useEffect(() => {
 		endRef.current?.scrollIntoView({ behavior: "smooth" });
 	}, [messages, typing]);
+
+	useEffect(() => {
+		if (!typing) {
+			setWaking(false);
+			return;
+		}
+		const timer = setTimeout(() => setWaking(true), 4000);
+		return () => clearTimeout(timer);
+	}, [typing]);
 
 	useEffect(() => {
 		const timer = setTimeout(() => setShowNudge(false), 12000);
@@ -423,6 +450,11 @@ export default function ZoeChat({
 	};
 
 	const applyBackendResponse = (data: any, latencyMs?: number) => {
+		const narrative =
+			(typeof data?.message === "string" && data.message) ||
+			(typeof data?.error === "string" && data.error) ||
+			ZOE_GENERIC_REPLY;
+
 		if (data.params) {
 			const cleanedParams = cleanInternalParams(data.params);
 			trackAnalyticsEvent("zoe_slots_updated", {
@@ -450,7 +482,7 @@ export default function ZoeChat({
 		trackAnalyticsEvent("zoe_response_received", {
 			event_type: "zoe",
 			zoe_conversation_id: conversationIdRef.current,
-			zoe_assistant_response: data.message || null,
+			zoe_assistant_response: narrative,
 			zoe_success: !data.error,
 			zoe_error_message: data.error || null,
 			search_id: data.search_id || data.search_data?.search_id || null,
@@ -469,7 +501,7 @@ export default function ZoeChat({
 			...prev,
 			{
 				role: "assistant",
-				content: data.message || "Something went wrong.",
+				content: narrative,
 				suggestions: data.suggestions || null,
 				verdict: data.data || null,
 				searchId: data.search_id || data.search_data?.search_id || null,
@@ -518,6 +550,42 @@ export default function ZoeChat({
 				}),
 			});
 			const data = await res.json();
+			if (res.status === 402 && data?.message) {
+				setMessages((prev) => [
+					...prev,
+					{ role: "assistant", content: String(data.message) },
+				]);
+				trackAnalyticsEvent("zoe_error", {
+					event_type: "zoe",
+					zoe_message_id: messageId,
+					zoe_conversation_id: conversationIdRef.current,
+					zoe_user_message: text.trim(),
+					zoe_success: false,
+					zoe_error_message: String(data.message),
+					latency_ms: Date.now() - startedAt,
+				});
+				return;
+			}
+			if (!res.ok) {
+				const errorText =
+					(typeof data?.message === "string" && data.message) ||
+					(typeof data?.error === "string" && data.error) ||
+					ZOE_GENERIC_REPLY;
+				setMessages((prev) => [
+					...prev,
+					{ role: "assistant", content: errorText },
+				]);
+				trackAnalyticsEvent("zoe_error", {
+					event_type: "zoe",
+					zoe_message_id: messageId,
+					zoe_conversation_id: conversationIdRef.current,
+					zoe_user_message: text.trim(),
+					zoe_success: false,
+					zoe_error_message: errorText,
+					latency_ms: Date.now() - startedAt,
+				});
+				return;
+			}
 			applyBackendResponse(data, Date.now() - startedAt);
 		} catch (error: any) {
 			trackAnalyticsEvent("zoe_error", {
@@ -529,7 +597,7 @@ export default function ZoeChat({
 				zoe_error_message: error?.message || "Network error",
 				latency_ms: Date.now() - startedAt,
 			});
-			setMessages((prev) => [...prev, { role: "assistant", content: "Network error. Please try again." }]);
+			setMessages((prev) => [...prev, { role: "assistant", content: ZOE_NETWORK }]);
 		} finally {
 			setTyping(false);
 		}
@@ -548,7 +616,7 @@ export default function ZoeChat({
 		if (!userId) {
 			setFeedbackState((prev) => ({
 				...prev,
-				[index]: { ...prev[index], saving: false, error: "Please log in again before submitting feedback." },
+				[index]: { ...prev[index], saving: false, error: FEEDBACK_SIGN_IN },
 			}));
 			return;
 		}
@@ -581,7 +649,7 @@ export default function ZoeChat({
 			});
 			setFeedbackState((prev) => ({
 				...prev,
-				[index]: { ...prev[index], saving: false, error: error.message || "Failed to save feedback." },
+				[index]: { ...prev[index], saving: false, error: FEEDBACK_SAVE_FAILED },
 			}));
 			return;
 		}
@@ -613,23 +681,21 @@ export default function ZoeChat({
 
 	if (!isOpen) {
 		return (
-			<div className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-50 flex flex-col items-end gap-3">
+			<div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
 				{showNudge && (
 					<div className="relative max-w-[252px] rounded-2xl border border-emerald-400/15 bg-slate-900/95 px-4 py-3 shadow-2xl">
 						<p className="text-white text-sm font-semibold">Meet Zoe</p>
 						<p className="mt-1 text-xs leading-5 text-slate-400">
-							Zoe is temporarily unavailable while we polish the assistant. Flight search still works normally.
+							A compact travel co-pilot for clear points-vs-cash calls, follow-up moves, and quick voice help.
 						</p>
 					</div>
 				)}
 				<button
-					type="button"
-					disabled
-					title="Zoe is temporarily unavailable."
-					className="rounded-full border border-slate-700 bg-slate-800/80 px-5 py-3 sm:px-8 sm:py-4 text-slate-400 shadow-2xl flex items-center gap-3 cursor-not-allowed opacity-70"
+					onClick={() => setIsOpen(true)}
+					className="rounded-full bg-gradient-to-r from-blue-500 to-emerald-500 px-8 py-4 text-white shadow-2xl transition-all hover:scale-[1.02] flex items-center gap-3"
 				>
 					<MessageCircle className="w-7 h-7" />
-					<span className="hidden sm:inline font-bold text-base sm:text-lg">Zoe temporarily down</span>
+					<span className="font-bold text-lg">Ask Zoe ✨</span>
 				</button>
 			</div>
 		);
@@ -639,8 +705,8 @@ export default function ZoeChat({
 		<div
 			className={`fixed z-50 flex flex-col border border-white/10 bg-slate-950/95 backdrop-blur shadow-2xl transition-all duration-300 ${
 				expanded
-					? "inset-3 sm:inset-auto sm:top-1/2 sm:left-1/2 h-auto sm:h-[min(720px,calc(100dvh-3rem))] w-auto sm:w-[min(1100px,calc(100vw-3rem))] sm:-translate-x-1/2 sm:-translate-y-1/2 rounded-2xl sm:rounded-3xl"
-					: "inset-x-3 bottom-3 sm:inset-x-auto sm:bottom-6 sm:right-6 h-[min(560px,calc(100dvh-1.5rem))] sm:h-[560px] w-auto sm:w-[390px] rounded-2xl sm:rounded-3xl"
+					? "top-1/2 left-1/2 h-[720px] w-[1100px] -translate-x-1/2 -translate-y-1/2 rounded-3xl"
+					: "bottom-6 right-6 h-[560px] w-[390px] rounded-3xl"
 			}`}
 		>
 			<div className="flex items-center justify-between border-b border-white/10 px-4 py-4">
@@ -768,7 +834,7 @@ export default function ZoeChat({
 											</div>
 										)}
 
-										{feedback.saved && <p className="mt-3 text-sm text-emerald-300">Thanks — your feedback was saved.</p>}
+										{feedback.saved && <p className="mt-3 text-sm text-emerald-300">Thanks - your feedback was saved.</p>}
 
 										{secondarySuggestions.length > 0 && (
 											<div className="mt-3 flex flex-wrap gap-2">
@@ -857,8 +923,14 @@ export default function ZoeChat({
 
 					{typing && (
 						<div className="flex justify-start">
-							<div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
+							<div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
 								<Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+								{waking && (
+									<div className="text-xs leading-5 text-slate-300">
+										<p className="font-medium text-slate-200">Zoe is waking up...</p>
+										<p className="text-slate-400">First reply after a quiet period can take a little longer. Future replies should be faster.</p>
+									</div>
+								)}
 							</div>
 						</div>
 					)}
