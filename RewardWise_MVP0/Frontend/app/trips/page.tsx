@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import TropicalBackground from "@/components/TropicalBackground";
+import WatchlistSection from "@/components/WatchlistSection";
 import { useAuth } from "@/context/AuthProvider";
 import { createClient } from "@/utils/supabase/client";
 
@@ -530,6 +531,8 @@ export default function TripsPage() {
 							})}
 						</div>
 					)}
+
+					<WatchlistSection />
 				</main>
 			</div>
 		</div>
