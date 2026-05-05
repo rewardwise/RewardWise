@@ -129,7 +129,7 @@ export default function TopNav() {
 												onClick={() => {
 													markNotificationRead(notif.id);
 													setShowAlerts(false);
-													router.push("/circle");
+													router.push("/trips");
 												}}
 												className={`w-full text-left px-4 py-3 hover:bg-gray-800 border-b border-gray-800 ${
 													!notif.read ? "bg-emerald-500/5" : ""
