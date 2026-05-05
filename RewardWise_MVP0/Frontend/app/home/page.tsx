@@ -537,8 +537,12 @@ export default function HomePage() {
 					</div>
 
 					{/* SEARCH ROW 2 */}
-					<div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-						{tripType === "roundtrip" ? (
+					<div
+						className={`grid grid-cols-1 ${
+							tripType === "roundtrip" ? "sm:grid-cols-3" : "sm:grid-cols-2"
+						} gap-3 mb-4`}
+					>
+						{tripType === "roundtrip" && (
 							<div>
 								<label className="block text-emerald-400 text-xs mb-1 flex items-center gap-1">
 									<Calendar className="w-3 h-3" /> RETURN
@@ -551,8 +555,6 @@ export default function HomePage() {
 									className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm [color-scheme:dark]"
 								/>
 							</div>
-						) : (
-							<div />
 						)}
 						<div>
 							<label className="block text-emerald-400 text-xs mb-1 flex items-center gap-1">
