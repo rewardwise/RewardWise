@@ -24,6 +24,12 @@ import {
 	ArrowRight,
 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
+import {
+	FEEDBACK_SAVE_FAILED,
+	FEEDBACK_SIGN_IN,
+	ZOE_GENERIC_REPLY,
+	ZOE_NETWORK,
+} from "@/utils/user-messages";
 
 const supabase = createClient();
 
@@ -192,6 +198,7 @@ export default function ZoeChat({
 	const { cards } = useWallet();
 	const [input, setInput] = useState("");
 	const [typing, setTyping] = useState(false);
+	const [waking, setWaking] = useState(false);
 	const [listening, setListening] = useState(false);
 	const [expanded, setExpanded] = useState(false);
 	const [showNudge, setShowNudge] = useState(true);
@@ -213,8 +220,33 @@ export default function ZoeChat({
 	}, [isOpen]);
 
 	useEffect(() => {
+		if (!isOpen) return;
+		// Fire-and-forget warm-up so Render is awake by the time the user
+		// finishes typing their first message. Ignore failures silently.
+		const controller = new AbortController();
+		fetch("/api/zoe-warm", {
+			method: "GET",
+			cache: "no-store",
+			signal: controller.signal,
+		}).catch(() => {});
+		return () => controller.abort();
+	}, [isOpen]);
+
+	useEffect(() => {
 		endRef.current?.scrollIntoView({ behavior: "smooth" });
 	}, [messages, typing]);
+
+	useEffect(() => {
+		if (!typing) {
+			setWaking(false);
+			return;
+		}
+		// If a reply takes more than ~4s, the backend is likely cold-starting
+		// from Render's free-tier sleep. Surface a friendlier message so the
+		// user knows what's happening instead of staring at a silent spinner.
+		const t = setTimeout(() => setWaking(true), 4000);
+		return () => clearTimeout(t);
+	}, [typing]);
 
 	useEffect(() => {
 		const timer = setTimeout(() => setShowNudge(false), 12000);
@@ -366,6 +398,10 @@ export default function ZoeChat({
 	};
 
 	const applyBackendResponse = (data: any) => {
+		const narrative =
+			(typeof data?.message === "string" && data.message) ||
+			(typeof data?.error === "string" && data.error) ||
+			ZOE_GENERIC_REPLY;
 		if (data.params) {
 			const cleanedParams = cleanInternalParams(data.params);
 			setSelected((prev) => ({ ...prev, ...cleanedParams }));
@@ -383,7 +419,7 @@ export default function ZoeChat({
 			...prev,
 			{
 				role: "assistant",
-				content: data.message || "Something went wrong.",
+				content: narrative,
 				suggestions: data.suggestions || null,
 				verdict: data.data || null,
 				searchId: data.search_id || data.search_data?.search_id || null,
@@ -417,9 +453,30 @@ export default function ZoeChat({
 				}),
 			});
 			const data = await res.json();
+			if (res.status === 402 && data?.message) {
+				setMessages((prev) => [
+					...prev,
+					{
+						role: "assistant",
+						content: String(data.message),
+					},
+				]);
+				return;
+			}
+			if (!res.ok) {
+				const text =
+					(typeof data?.message === "string" && data.message) ||
+					(typeof data?.error === "string" && data.error) ||
+					ZOE_GENERIC_REPLY;
+				setMessages((prev) => [
+					...prev,
+					{ role: "assistant", content: text },
+				]);
+				return;
+			}
 			applyBackendResponse(data);
 		} catch {
-			setMessages((prev) => [...prev, { role: "assistant", content: "Network error. Please try again." }]);
+			setMessages((prev) => [...prev, { role: "assistant", content: ZOE_NETWORK }]);
 		} finally {
 			setTyping(false);
 		}
@@ -438,7 +495,7 @@ export default function ZoeChat({
 		if (!userId) {
 			setFeedbackState((prev) => ({
 				...prev,
-				[index]: { ...prev[index], saving: false, error: "Please log in again before submitting feedback." },
+				[index]: { ...prev[index], saving: false, error: FEEDBACK_SIGN_IN },
 			}));
 			return;
 		}
@@ -454,7 +511,7 @@ export default function ZoeChat({
 		if (error) {
 			setFeedbackState((prev) => ({
 				...prev,
-				[index]: { ...prev[index], saving: false, error: error.message || "Failed to save feedback." },
+				[index]: { ...prev[index], saving: false, error: FEEDBACK_SAVE_FAILED },
 			}));
 			return;
 		}
@@ -631,7 +688,7 @@ export default function ZoeChat({
 											</div>
 										)}
 
-										{feedback.saved && <p className="mt-3 text-sm text-emerald-300">Thanks — your feedback was saved.</p>}
+										{feedback.saved && <p className="mt-3 text-sm text-emerald-300">Thanks - your feedback was saved.</p>}
 
 										{secondarySuggestions.length > 0 && (
 											<div className="mt-3 flex flex-wrap gap-2">
@@ -720,8 +777,14 @@ export default function ZoeChat({
 
 					{typing && (
 						<div className="flex justify-start">
-							<div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
+							<div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 flex items-center gap-3">
 								<Loader2 className="h-4 w-4 animate-spin text-slate-400" />
+								{waking && (
+									<div className="text-xs leading-5 text-slate-300">
+										<p className="font-medium text-slate-200">Zoe is waking up…</p>
+										<p className="text-slate-400">First reply after a quiet period takes ~20s. Future replies are instant.</p>
+									</div>
+								)}
 							</div>
 						</div>
 					)}

@@ -6,6 +6,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle, Eye, EyeOff, Loader2, Lock, Plane } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
+import { RESET_PASSWORD_FAILED } from "@/utils/user-messages";
 
 export default function ResetPasswordPage() {
 	const router = useRouter();
@@ -40,7 +41,7 @@ export default function ResetPasswordPage() {
 		setLoading(false);
 
 		if (updateError) {
-			setError(updateError.message);
+			setError(RESET_PASSWORD_FAILED);
 			return;
 		}
 

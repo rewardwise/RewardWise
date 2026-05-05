@@ -18,8 +18,13 @@ import {
 	Crown,
 	Star,
 	LogOut,
+	Clock3,
 } from "lucide-react";
 import TropicalBackground from "@/components/TropicalBackground";
+import {
+	DELETE_ACCOUNT_FAILED,
+	DELETE_NOT_SIGNED_IN,
+} from "@/utils/user-messages";
 
 export default function ProfilePage() {
 	const router = useRouter();
@@ -40,12 +45,56 @@ export default function ProfilePage() {
 	const [notificationSettings, setNotificationSettings] = useState(
 		defaultNotificationSettings,
 	);
+	const [dayPassExpiresAt, setDayPassExpiresAt] = useState<number | null>(null);
+	const [timeNow, setTimeNow] = useState(Date.now());
+
+	useEffect(() => {
+		if (!user?.id) return;
+		let cancelled = false;
+		void supabase
+			.from("profiles")
+			.select("day_pass_expires_at")
+			.eq("user_id", user.id)
+			.maybeSingle()
+			.then(({ data }) => {
+				if (cancelled) return;
+				const expiry = data?.day_pass_expires_at
+					? new Date(data.day_pass_expires_at).getTime()
+					: 0;
+				setDayPassExpiresAt(expiry > 0 ? expiry : null);
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [user?.id]);
+
+	useEffect(() => {
+		const timer = setInterval(() => setTimeNow(Date.now()), 30_000);
+		return () => clearInterval(timer);
+	}, []);
+
+	const dayPassTimeLeft = (() => {
+		if (!dayPassExpiresAt) return null;
+		const msLeft = dayPassExpiresAt - timeNow;
+		if (msLeft <= 0) return null;
+		const totalMinutes = Math.ceil(msLeft / 60_000);
+		const hours = Math.floor(totalMinutes / 60);
+		const minutes = totalMinutes % 60;
+		return `${hours}h ${minutes}m`;
+	})();
+
+	const hasActiveDayPass = Boolean(dayPassTimeLeft);
+	const planLabel =
+		subscription === "pro"
+			? "Monthly Plan"
+			: hasActiveDayPass
+				? `Day Pass Active (${dayPassTimeLeft} left)`
+				: "Free Plan";
 
 	useEffect(() => {
 		let cancelled = false;
 		(async () => {
 			try {
-				// 1) local cache for instant paint
 				const raw = localStorage.getItem(settingsStorageKey);
 				if (raw) {
 					const parsed = JSON.parse(raw) as Partial<
@@ -56,7 +105,6 @@ export default function ProfilePage() {
 					}
 				}
 
-				// 2) cross-device source of truth from Supabase auth metadata
 				if (user?.id) {
 					const { data, error } = await supabase.auth.getUser();
 					if (error) throw error;
@@ -153,7 +201,6 @@ export default function ProfilePage() {
 					Profile
 				</h1>
 				<div className="space-y-4">
-					{/* USER INFO */}
 					<div className="bg-gray-900/90 backdrop-blur rounded-xl p-6">
 						<div className="flex items-center gap-4 mb-4">
 							<div className="w-14 h-14 bg-emerald-500/20 rounded-full flex items-center justify-center">
@@ -164,15 +211,26 @@ export default function ProfilePage() {
 								<p className="text-white font-semibold">
 									{user?.email || "User"}
 								</p>
-
-								<p className="text-gray-400 text-sm capitalize">
-									{subscription || "Free"} Plan
-								</p>
+								{hasActiveDayPass && subscription !== "pro" ? (
+									<div className="mt-1.5 min-w-[260px]">
+										<div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/40 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-200">
+											<Clock3 className="w-3.5 h-3.5" />
+											Day Pass Active
+											<span className="text-emerald-100/90">({dayPassTimeLeft} left)</span>
+										</div>
+									</div>
+								) : (
+									<p className="text-gray-400 text-sm capitalize">{planLabel}</p>
+								)}
 							</div>
 						</div>
 
 					<button
 						onClick={async () => {
+							if (subscription !== "pro") {
+								router.push("/subscribe");
+								return;
+							}
 							const res = await fetch("/api/payments/portal", {
 								method: "POST",
 								headers: { "Content-Type": "application/json" },
@@ -186,11 +244,14 @@ export default function ProfilePage() {
 						}}
 						className="w-full bg-gray-800/50 hover:bg-gray-800 text-emerald-400 py-2.5 rounded-lg text-sm font-medium border border-gray-700"
 					>
-						Manage Subscription
+						{subscription === "pro"
+							? "Manage Monthly Subscription"
+							: hasActiveDayPass
+								? "View Plans"
+								: "Subscribe"}
 					</button>
 					</div>
 
-					{/* TOOLS GRID */}
 					<div className="bg-gray-900/90 backdrop-blur rounded-xl p-6">
 						<h2 className="text-lg font-semibold text-white mb-4">Tools</h2>
 
@@ -211,7 +272,6 @@ export default function ProfilePage() {
 						</div>
 					</div>
 
-					{/* SETTINGS */}
 					<div className="bg-gray-900/90 backdrop-blur rounded-xl p-6">
 						<h2 className="text-lg font-semibold text-white mb-4">Settings</h2>
 
@@ -281,7 +341,6 @@ export default function ProfilePage() {
 						</div>
 					</div>
 
-					{/* LOGOUT */}
 					<button
 						onClick={async () => {
 							await signOut();
@@ -304,16 +363,23 @@ export default function ProfilePage() {
 							} = await supabase.auth.getSession();
 
 							if (!session) {
-								alert("Not authenticated");
+								alert(DELETE_NOT_SIGNED_IN);
 								return;
 							}
 
-							await fetch("/api/delete-account", {
+							const delRes = await fetch("/api/delete-account", {
 								method: "DELETE",
 								headers: {
 									Authorization: `Bearer ${session.access_token}`,
 								},
 							});
+							const delData = (await delRes.json().catch(() => ({}))) as {
+								error?: string;
+							};
+							if (!delRes.ok) {
+								alert(delData.error || DELETE_ACCOUNT_FAILED);
+								return;
+							}
 
 							await signOut();
 							router.replace("/");

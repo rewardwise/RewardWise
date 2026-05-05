@@ -182,7 +182,7 @@ export default function AirportSearch({
                   style={{ color: i === highlighted ? "#fff" : "#cbd5e1" }}
                 >
                   {airport.city}
-                  {airport.name ? ` — ${airport.name}` : ""}
+                  {airport.name ? ` - ${airport.name}` : ""}
                 </p>
               </div>
 

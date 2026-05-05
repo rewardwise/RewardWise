@@ -15,6 +15,10 @@ import {
 	Plane,
 } from "lucide-react";
 import { FcGoogle } from "react-icons/fc";
+import {
+	LOGIN_GOOGLE_FAIL,
+	mapSupabaseSignInError,
+} from "@/utils/user-messages";
 
 function LoginPageInner() {
 	const router = useRouter();
@@ -76,7 +80,7 @@ function LoginPageInner() {
 
 		if (error) {
 			setErrors({
-				general: error.message || "Unable to sign in. Please try again.",
+				general: mapSupabaseSignInError(error.message),
 			});
 			setSubmittingEmail(false);
 			return;
@@ -92,7 +96,7 @@ function LoginPageInner() {
 			await signInWithGoogle();
 		} catch {
 			setErrors({
-				general: "Unable to continue with Google. Please try again.",
+				general: LOGIN_GOOGLE_FAIL,
 			});
 			setSubmittingGoogle(false);
 		}

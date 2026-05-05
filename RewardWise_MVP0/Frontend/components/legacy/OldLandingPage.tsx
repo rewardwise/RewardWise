@@ -236,7 +236,7 @@ export default function LandingPage() {
                                 </p>
                             </div>
 
-                            {/* How it works — compact strip */}
+                            {/* How it works - compact strip */}
                             <div className="grid grid-cols-3 gap-3 mb-8 max-w-2xl mx-auto">
                                 <div className="text-center bg-gray-900/50 backdrop-blur rounded-lg p-3">
                                     <div className="w-8 h-8 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-2">
@@ -279,13 +279,13 @@ export default function LandingPage() {
                                 </div>
                             </div>
 
-                            {/* Search wizard — only in delayed-signup (Flow 1B) variant */}
+                            {/* Search wizard - only in delayed-signup (Flow 1B) variant */}
                             {showInlineSearch ? (
                                 <div className="bg-gray-900/90 backdrop-blur rounded-xl p-6 shadow-2xl mb-8">
                                     <div className="flex items-center gap-2 mb-4">
                                         <Sparkles className="w-5 h-5 text-emerald-400" />
                                         <span className="text-white font-semibold">
-                                            Try it free — no signup needed
+                                            Try it free - no signup needed
                                         </span>
                                     </div>
                                     {/* Step 1: Programs */}
@@ -331,8 +331,8 @@ export default function LandingPage() {
                                         </div>
                                     </div>
 
-                                    {/* Step 2: Balances — only show for selected programs */}
-                                    {/* Step 2: Balances — only show for selected programs */}
+                                    {/* Step 2: Balances - only show for selected programs */}
+                                    {/* Step 2: Balances - only show for selected programs */}
                                     {selectedPrograms.length > 0 && (
                                         <div className="mb-6">
                                             <h2 className="text-white font-semibold mb-1">
@@ -474,15 +474,15 @@ export default function LandingPage() {
                                     </button>
                                 </div>
                             ) : (
-                                /* Flow 1A: Signup-first variant — signup CTA is primary, but search funnel still available */
+                                /* Flow 1A: Signup-first variant - signup CTA is primary, but search funnel still available */
                                 <>
-                                    {/* Primary CTA — signup first */}
+                                    {/* Primary CTA - signup first */}
                                     <div className="text-center mb-6">
                                         <button
                                             onClick={() => router.push("/signup")}
                                             className="bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-4 px-10 rounded-full inline-flex items-center gap-2 shadow-lg text-lg"
                                         >
-                                            Get Started — It's Free
+                                            Get Started - It's Free
                                             <ArrowRight className="w-5 h-5" />
                                         </button>
 
@@ -506,13 +506,13 @@ export default function LandingPage() {
                                         <span>$2.4M saved</span>
                                     </div>
 
-                                    {/* Secondary path — try a search first */}
+                                    {/* Secondary path - try a search first */}
                                     <div className="border-t border-gray-700/50 pt-6">
                                         <button
                                             onClick={() => setShowTrySearch((prev) => !prev)}
                                             className="flex items-center gap-2 mx-auto text-gray-400 hover:text-white text-sm transition-colors"
                                         >
-                                            <Search className="w-4 h-4" /> Or try a search first — no
+                                            <Search className="w-4 h-4" /> Or try a search first - no
                                             signup needed{" "}
                                             <ChevronDown
                                                 className={`w-4 h-4 transition-transform ${showTrySearch ? "rotate-180" : ""}`}
@@ -523,7 +523,7 @@ export default function LandingPage() {
                                                 <div className="flex items-center gap-2 mb-4">
                                                     <Sparkles className="w-5 h-5 text-emerald-400" />
                                                     <span className="text-white font-semibold text-sm">
-                                                        Quick search — see your savings instantly
+                                                        Quick search - see your savings instantly
                                                     </span>
                                                 </div>
                                                 <div className="grid grid-cols-2 gap-3 mb-4">
@@ -600,7 +600,7 @@ export default function LandingPage() {
                                         onClick={() => router.push("/signup")}
                                         className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 px-8 rounded-full inline-flex items-center gap-2 shadow-lg"
                                     >
-                                        Get Started — It's Free
+                                        Get Started - It's Free
                                         <ArrowRight className="w-5 h-5" />
                                     </button>
                                 </div>

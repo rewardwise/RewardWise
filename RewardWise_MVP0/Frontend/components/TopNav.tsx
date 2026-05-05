@@ -2,9 +2,10 @@
 
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { useAlerts } from "@/context/AlertContext";
+import { createClient } from "@/utils/supabase/client";
 
 import {
 	Plane,
@@ -24,26 +25,77 @@ export default function TopNav() {
 	const router = useRouter();
 	const pathname = usePathname();
 	const { notifications, unreadCount, markNotificationRead, markAllRead } = useAlerts();
+	const supabase = useMemo(() => createClient(), []);
 
 	const [showAlerts, setShowAlerts] = useState(false);
+	const [dayPassExpiresAt, setDayPassExpiresAt] = useState<number | null>(null);
+	const [timeNow, setTimeNow] = useState(Date.now());
 
-	// Static alerts (system-level) — always shown at the bottom
+	useEffect(() => {
+		let cancelled = false;
+		void (async () => {
+			const {
+				data: { user },
+			} = await supabase.auth.getUser();
+			if (!user || cancelled) return;
+			const { data } = await supabase
+				.from("profiles")
+				.select("day_pass_expires_at")
+				.eq("user_id", user.id)
+				.maybeSingle();
+			if (cancelled) return;
+			const expiry = data?.day_pass_expires_at
+				? new Date(data.day_pass_expires_at).getTime()
+				: 0;
+			setDayPassExpiresAt(expiry > 0 ? expiry : null);
+		})();
+		return () => {
+			cancelled = true;
+		};
+	}, [supabase]);
+
+	useEffect(() => {
+		const timer = setInterval(() => setTimeNow(Date.now()), 30_000);
+		return () => clearInterval(timer);
+	}, []);
+
+	const dayPassTimeLeft = useMemo(() => {
+		if (!dayPassExpiresAt) return null;
+		const msLeft = dayPassExpiresAt - timeNow;
+		if (msLeft <= 0) return null;
+		const totalMinutes = Math.ceil(msLeft / 60_000);
+		const hours = Math.floor(totalMinutes / 60);
+		const minutes = totalMinutes % 60;
+		return `${hours}h ${minutes}m`;
+	}, [dayPassExpiresAt, timeNow]);
+
 	const staticAlerts = [
-	{
-		id: "static-1",
-		icon: AlertTriangle,
-		title: "Beta access is limited",
-		desc: "Only approved testers can use Zoe during this preview.",
-		page: "/home",
-	},
-	{
-		id: "static-2",
-		icon: Gift,
-		title: "Feedback helps improve Zoe",
-		desc: "After a verdict, use the History page to rate the answer.",
-		page: "/history",
-	},
-];
+		...(dayPassTimeLeft
+			? [
+					{
+						id: "static-day-pass",
+						icon: Gift,
+						title: "Day pass active",
+						desc: `Expires in ${dayPassTimeLeft}.`,
+						page: "/subscribe",
+					},
+				]
+			: []),
+		{
+			id: "static-1",
+			icon: AlertTriangle,
+			title: "Beta access is limited",
+			desc: "Only approved testers can use Zoe during this preview.",
+			page: "/home",
+		},
+		{
+			id: "static-2",
+			icon: Gift,
+			title: "Feedback helps improve Zoe",
+			desc: "After a verdict, use the History page to rate the answer.",
+			page: "/history",
+		},
+	];
 
 	const totalCount = unreadCount + staticAlerts.length;
 
@@ -59,7 +111,6 @@ export default function TopNav() {
 	return (
 		<nav className="bg-gray-900/95 backdrop-blur border-b border-gray-700 sticky top-0 z-40">
 			<div className="flex items-center justify-between max-w-5xl mx-auto px-4">
-				{/* Logo */}
 				<div
 					className="flex items-center gap-2 py-3 cursor-pointer"
 					onClick={() => router.push("/home")}
@@ -68,7 +119,6 @@ export default function TopNav() {
 					<span className="font-bold text-white">MyTravelWallet</span>
 				</div>
 
-				{/* Tabs */}
 				<div className="flex items-center gap-1">
 					{tabs.map((tab) => {
 						const active = pathname.startsWith(tab.page);
@@ -89,7 +139,6 @@ export default function TopNav() {
 						);
 					})}
 
-					{/* Alerts */}
 					<div className="relative">
 						<button
 							onClick={() => setShowAlerts(!showAlerts)}
@@ -120,7 +169,6 @@ export default function TopNav() {
 									)}
 								</div>
 
-								{/* User-created alerts (from watchlist) */}
 								{notifications.length > 0 && (
 									<>
 										{notifications.map((notif) => (
@@ -152,14 +200,12 @@ export default function TopNav() {
 									</>
 								)}
 
-								{/* Divider if both types exist */}
 								{notifications.length > 0 && (
 									<div className="px-4 py-2 border-b border-gray-700">
 										<span className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">System Alerts</span>
 									</div>
 								)}
 
-								{/* Static alerts */}
 								{staticAlerts.map((alert) => (
 									<button
 										key={alert.id}

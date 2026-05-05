@@ -203,7 +203,7 @@ function LandingPageInner() {
 							<p className="mt-6 max-w-xl text-base leading-7 text-white/72 sm:text-lg">
 								MyTravelWallet reads your full rewards wallet across cards,
 								airlines, and hotels, then tells you the smartest move in
-								seconds — use points, pay cash, or save them for later.
+								seconds - use points, pay cash, or save them for later.
 							</p>
 
 							<div className="mt-8 flex flex-wrap gap-3">
@@ -211,7 +211,7 @@ function LandingPageInner() {
 									onClick={scrollToForm}
 									className="inline-flex items-center gap-2 rounded-full bg-[#22C55E] px-5 py-3 text-sm font-semibold text-[#08111F] transition hover:bg-[#16A34A]"
 								>
-									Get Started — It&apos;s Free
+									Get Started - It&apos;s Free
 									<ArrowRight className="h-4 w-4" />
 								</button>
 
@@ -267,7 +267,7 @@ function LandingPageInner() {
 									</div>
 									<div>
 										<div className="text-sm font-semibold text-[#86EFAC]">
-											Use your miles — save about $1,400
+											Use your miles - save about $1,400
 										</div>
 										<div className="mt-1 text-xs text-[#bbf7d0]/70">
 											1.8¢/pt is above your 1.0¢ floor, so the points booking is
@@ -445,7 +445,7 @@ function LandingPageInner() {
 													</>
 												) : (
 													<>
-														Get Started — It&apos;s Free
+														Get Started - It&apos;s Free
 														<ArrowRight className="h-4 w-4" />
 													</>
 												)}
