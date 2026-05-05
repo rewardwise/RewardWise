@@ -618,17 +618,19 @@ export default function ZoeChat({
 					<div className="relative max-w-[252px] rounded-2xl border border-emerald-400/15 bg-slate-900/95 px-4 py-3 shadow-2xl">
 						<p className="text-white text-sm font-semibold">Meet Zoe</p>
 						<p className="mt-1 text-xs leading-5 text-slate-400">
-							A compact travel co-pilot for clear points-vs-cash calls, follow-up moves, and quick voice help.
+							Zoe is temporarily unavailable while we polish the assistant. Flight search still works normally.
 						</p>
 					</div>
 				)}
 				<button
-					onClick={() => setIsOpen(true)}
-					className="rounded-full bg-gradient-to-r from-blue-500 to-emerald-500 px-8 py-4 text-white shadow-2xl transition-all hover:scale-[1.02] flex items-center gap-3"
-				>
-					<MessageCircle className="w-7 h-7" />
-					<span className="font-bold text-lg">Ask Zoe ✨</span>
-				</button>
+  type="button"
+  disabled
+  title="Zoe is temporarily unavailable."
+  className="rounded-full border border-slate-700 bg-slate-800/80 px-8 py-4 text-slate-400 shadow-2xl flex items-center gap-3 cursor-not-allowed opacity-70"
+>
+  <MessageCircle className="w-7 h-7" />
+  <span className="font-bold text-lg">Zoe temporarily down</span>
+</button>
 			</div>
 		);
 	}
