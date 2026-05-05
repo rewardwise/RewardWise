@@ -168,8 +168,8 @@ export default function ProfilePage() {
 		},
 		{
 			icon: Star,
-			label: "Trip Feedback",
-			desc: "Rate your trips",
+			label: "Past searches",
+			desc: "Review your prior verdicts",
 			page: "/history",
 			color: "pink",
 		},
