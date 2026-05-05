@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
 from app.services.llm import generate_json
@@ -16,85 +15,108 @@ def _safe_json(value: Any) -> str:
 
 
 def _history_text(history: list[dict[str, Any]]) -> str:
-    lines = []
-    for msg in history[-8:]:
+    lines: list[str] = []
+    # Last 5 turns — enough context without bloating the prompt.
+    for msg in history[-5:]:
         role = msg.get("role", "user")
-        content = msg.get("content") or ""
+        content = str(msg.get("content") or "").strip()
         if content:
-            lines.append(f"{role}: {content}")
+            lines.append(f"{role}: {content[:400]}")
     return "\n".join(lines)
 
 
-def _regex_route_hints(text: str) -> dict[str, Any]:
-    raw = str(text or "").strip()
-    low = raw.lower()
-    out: dict[str, Any] = {"updates": {}, "airport_text": {}, "clear_fields": [], "intent": "trip", "notes": ""}
+def _clean_suggestions(raw: Any) -> list[dict[str, str]]:
+    if not isinstance(raw, list):
+        return []
+    out: list[dict[str, str]] = []
+    for item in raw[:3]:
+        if not isinstance(item, dict):
+            continue
+        label = str(item.get("label") or "").strip()[:32]
+        query = str(item.get("query") or "").strip()[:120]
+        emoji = str(item.get("emoji") or "💬").strip()[:4]
+        if label and query:
+            out.append({"emoji": emoji, "label": label, "query": query})
+    return out
 
-    # from X to Y, stopping before date/cabin clauses.
-    m = re.search(r"\bfrom\s+(.+?)\s+to\s+(.+?)(?:\s+(?:on|in|for|next|tomorrow|one way|round trip|roundtrip|business|economy|first|premium)\b|[?.!]|$)", raw, re.I)
-    if m:
-        out["airport_text"]["origin"] = m.group(1).strip()
-        out["airport_text"]["destination"] = m.group(2).strip()
-        return out
 
-    # I want to go/fly/travel to X. Capture destination only.
-    m = re.search(r"\b(?:i\s+)?(?:want|wanna|would like|need|trying)\s+to\s+(?:go|fly|travel)\s+to\s+(.+?)(?:\s+(?:on|in|for|next|tomorrow|one way|round trip|roundtrip|business|economy|first|premium)\b|[?.!]|$)", raw, re.I)
-    if m:
-        out["airport_text"]["destination"] = m.group(1).strip()
-        return out
-
-    m = re.search(r"\b(?:fly|flight|trip)\s+to\s+(.+?)(?:\s+(?:on|in|for|next|tomorrow|one way|round trip|roundtrip|business|economy|first|premium)\b|[?.!]|$)", raw, re.I)
-    if m:
-        out["airport_text"]["destination"] = m.group(1).strip()
-        return out
-
-    return {}
+def _normalize_result(result: Any) -> dict[str, Any]:
+    if not isinstance(result, dict):
+        return {}
+    result.setdefault("intent", "trip")
+    result.setdefault("updates", {})
+    result.setdefault("airport_text", {})
+    result.setdefault("clear_fields", [])
+    result["message"] = str(result.get("message") or "").strip()
+    result["suggestions"] = _clean_suggestions(result.get("suggestions"))
+    return result
 
 
 async def reconcile_turn(text: str, state: dict[str, Any], history: list[dict[str, Any]]) -> dict[str, Any]:
-    """Return JSON deltas only. Code validates and applies these deltas."""
-    route = _regex_route_hints(text)
-    if route:
-        return route
+    """Single NVIDIA call per turn: extract state deltas AND write Zoe's reply.
 
-    system_prompt = f"""You are Zoe's trip-state interpreter. Today is {today().isoformat()}.
+    One call. Two jobs:
+    1. Structured state delta (updates, airport_text, intent, clear_fields)
+    2. Zoe's next conversational message — used directly, no second call.
 
-Return JSON deltas only. Do not decide the verdict. Do not restate the full state.
+    Backend owns validation, airport resolution, search trigger, and verdict.
+    """
+    visible_state = {k: v for k, v in state.items() if not str(k).startswith("__")}
+    meta = state.get("__zoe_meta") or {}
 
-Fields needed later by code: origin airport, destination airport, departure date, trip type, travelers, cabin, return date if round trip.
+    system_prompt = f"""You are Zoe, MyTravelWallet's conversational flight assistant. Today is {today().isoformat()}.
 
-Rules:
-- Preserve confirmed fields unless the user clearly changes them.
-- If the user gives a city/country/airport phrase, put it under airport_text.origin or airport_text.destination, not updates.origin/destination, unless it is a 3-letter airport code or a specific airport name you are highly sure of.
-- If the user says "from X to Y", return airport_text.origin = X and airport_text.destination = Y.
-- If the user says "go to/fly to/travel to X", return airport_text.destination = X.
-- If the user changes a field, put only that field in updates/airport_text.
-- Do not output reset unless the user literally asks to start over/new search/another route.
+You have TWO jobs this turn — both in one JSON response:
+1. Extract only what changed in the user's message as a structured delta.
+2. Write Zoe's next reply — warm, concise, like a smart travel friend texting you.
+
+RULES:
+- Never invent airport codes, live prices, award availability, or verdicts. The backend handles all of that.
+- Keep confirmed state intact unless the user clearly changes something.
+- Airport city names go in airport_text — backend resolves to IATA. Only put a code in airport_text if you're 100% sure.
+- Natural date phrases are fine (tomorrow, next Friday, next weekend, June 15, a week earlier) — backend normalizes them.
 - Do not turn yes/no/ok/sure into airport/date/cabin/traveler values.
-- Natural dates are allowed in updates.date or updates.return_date as the user's text; code will normalize them.
-- For return phrases like "two days after I leave" or "next to next weekend", use updates.return_date with that natural text.
+- Only set intent=reset if the user explicitly says "start over", "new search", "new trip", or similar.
+- If the user has NO destination or trip in mind yet ("I'm not sure", "help me decide", "I don't know where to go"), set intent=exploring. Chat naturally, ask a light question about vibe/budget/region. Do NOT jump to collecting fields.
+- If the user asks a general travel/points question AND there is zero active trip state, set intent=general_question and answer in message.
+- If there IS active trip state (any field filled), keep intent=trip and stay trip-focused.
+- intent=trip means the user HAS given or is actively giving trip details. Do NOT set intent=trip when updates and airport_text are both empty.
+- message must be under 60 words, one question max. Never say field names like "origin", "tripType", "cabin".
+- If all required fields appear present after your updates, leave message empty — backend will trigger search.
+- Good tone: "Got it — Newark to Miami next Friday. One-way or round trip?" Bad tone: "Please provide trip type."
 
-Return valid JSON with this shape:
+INTENT GUIDE:
+- "I want to fly from Newark to Miami next Friday" → intent=trip, fill airport_text + updates.date
+- "i don't have a trip yet, help me" → intent=exploring, message asks a light vibe/destination question
+- "should I use points or cash?" (no state) → intent=general_question, answer directly
+- "start over" → intent=reset
+
+CURRENT TRIP STATE:
+{_safe_json(visible_state)}
+
+SESSION META (hidden from user):
+last_requested_slot: {meta.get('last_requested_slot')}
+conversation_mode: {meta.get('conversation_mode', 'collecting')}
+origin_hint: {meta.get('origin_hint')}
+destination_hint: {meta.get('destination_hint')}
+
+Return ONLY valid JSON — no markdown, no preamble:
 {{
-  "intent": "trip" | "general_question" | "reset",
+  "intent": "trip" | "general_question" | "exploring" | "reset",
   "updates": {{"date": null, "tripType": null, "travelers": null, "cabin": null, "return_date": null}},
   "airport_text": {{"origin": null, "destination": null}},
   "clear_fields": [],
-  "notes": "short private note"
+  "message": "Zoe's reply here, or empty string if backend should search now",
+  "suggestions": [{{"emoji": "✈️", "label": "short label", "query": "user-style reply"}}],
+  "notes": "private reasoning"
 }}"""
 
-    user_prompt = f"""CURRENT STATE:
-{_safe_json({k: v for k, v in state.items() if not str(k).startswith('__')})}
-
-META:
-{_safe_json(state.get('__zoe_meta') or {})}
-
-RECENT CHAT:
+    user_prompt = f"""RECENT CHAT:
 {_history_text(history)}
 
-LATEST USER MESSAGE:
-{text}
+USER: {text}
 
-Return JSON deltas only."""
-    result = await generate_json(system_prompt, user_prompt, temperature=0.0)
-    return result if isinstance(result, dict) else {}
+JSON only:"""
+
+    result = await generate_json(system_prompt, user_prompt, temperature=0.3)
+    return _normalize_result(result)

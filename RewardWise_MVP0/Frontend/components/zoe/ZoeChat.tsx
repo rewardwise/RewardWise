@@ -124,6 +124,7 @@ const WELCOME_SUGGESTIONS: DestSuggestion[] = [
 	{ emoji: "💬", label: "Ask points vs cash", query: "Should I use points or pay cash for a trip?" },
 ];
 
+
 function getVerdictExplanation(verdict?: VerdictPayload | null, fallback?: string) {
 	const candidate = cleanVerdictText(verdict?.explanation || verdict?.headline || fallback || "");
 	const label = getVerdictLabel(verdict).toLowerCase();
@@ -204,7 +205,6 @@ export default function ZoeChat({
 	const [feedbackState, setFeedbackState] = useState<Record<number, { rating?: 1 | 5; open?: boolean; comment?: string; saved?: boolean; saving?: boolean; error?: string }>>({});
 	const [messageFeedback, setMessageFeedback] = useState<Record<number, "up" | "down">>({});
 	const [selected, setSelected] = useState<Record<string, any>>({});
-
 	const inputRef = useRef<HTMLInputElement>(null);
 	const endRef = useRef<HTMLDivElement>(null);
 	const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -600,37 +600,57 @@ export default function ZoeChat({
 	};
 
 	useEffect(() => {
-	if (isOpen && messages.length === 0) {
-		setMessages([
-			{
-				role: "assistant",
-				content: WELCOME_MESSAGE,
-				suggestions: WELCOME_SUGGESTIONS,
-			},
-		]);
-	}
-}, [isOpen, messages.length, setMessages]);
+		if (isOpen && messages.length === 0) {
+			setMessages([
+				{
+					role: "assistant",
+					content: WELCOME_MESSAGE,
+					suggestions: WELCOME_SUGGESTIONS,
+				},
+			]);
+		}
+	}, [isOpen, messages.length, setMessages]);
 
 	if (!isOpen) {
 		return (
 			<div className="fixed bottom-20 right-4 sm:bottom-6 sm:right-6 z-50 flex flex-col items-end gap-3">
-				{showNudge && (
-					<div className="relative max-w-[252px] rounded-2xl border border-emerald-400/15 bg-slate-900/95 px-4 py-3 shadow-2xl">
-						<p className="text-white text-sm font-semibold">Meet Zoe</p>
-						<p className="mt-1 text-xs leading-5 text-slate-400">
-							Zoe is temporarily unavailable while we polish the assistant. Flight search still works normally.
-						</p>
-					</div>
-				)}
+				{/*
+					OPTION 1: Zoe enabled / normal Ask Zoe button.
+					Leave this block uncommented when you want internal testers to use Zoe.
+				*/}
 				<button
 					type="button"
-					disabled
-					title="Zoe is temporarily unavailable."
-					className="rounded-full border border-slate-700 bg-slate-800/80 px-5 py-3 sm:px-8 sm:py-4 text-slate-400 shadow-2xl flex items-center gap-3 cursor-not-allowed opacity-70"
+					title="Ask Zoe"
+					onClick={() => setIsOpen(true)}
+					className="rounded-full border border-emerald-400/20 bg-emerald-500 px-5 py-3 sm:px-8 sm:py-4 text-white shadow-2xl flex items-center gap-3 hover:bg-emerald-600"
 				>
 					<MessageCircle className="w-7 h-7" />
-					<span className="hidden sm:inline font-bold text-base sm:text-lg">Zoe temporarily down</span>
+					<span className="hidden sm:inline font-bold text-base sm:text-lg">Ask Zoe</span>
 				</button>
+
+				{/*
+					OPTION 2: Zoe disabled / temporarily down button.
+					To disable Zoe again, comment out OPTION 1 above and uncomment this block.
+
+					{showNudge && (
+						<div className="relative max-w-[252px] rounded-2xl border border-emerald-400/15 bg-slate-900/95 px-4 py-3 shadow-2xl">
+							<p className="text-white text-sm font-semibold">Meet Zoe</p>
+							<p className="mt-1 text-xs leading-5 text-slate-400">
+								Zoe is temporarily unavailable while we polish the assistant. Flight search still works normally.
+							</p>
+						</div>
+					)}
+
+					<button
+						type="button"
+						disabled
+						title="Zoe is temporarily unavailable."
+						className="rounded-full border border-slate-700 bg-slate-800/80 px-5 py-3 sm:px-8 sm:py-4 text-slate-400 shadow-2xl flex items-center gap-3 cursor-not-allowed opacity-70"
+					>
+						<MessageCircle className="w-7 h-7" />
+						<span className="hidden sm:inline font-bold text-base sm:text-lg">Zoe temporarily down</span>
+					</button>
+				*/}
 			</div>
 		);
 	}

@@ -46,10 +46,21 @@ export async function POST(req: Request) {
 				...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
 			},
 			body: JSON.stringify(body),
-			signal: AbortSignal.timeout(30_000),
+			signal: AbortSignal.timeout(90_000),
 		});
 
-		const data = await res.json();
+		const text = await res.text();
+		let data: unknown;
+		try {
+			data = text ? JSON.parse(text) : {};
+		} catch {
+			data = {
+				message: res.ok
+					? "Zoe returned an unreadable response."
+					: "Zoe backend returned an error.",
+				detail: text.slice(0, 500),
+			};
+		}
 		return NextResponse.json(data, { status: res.status });
 	} catch (err) {
 		console.error("Zoe API error:", err);
