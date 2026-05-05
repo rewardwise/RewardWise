@@ -3,12 +3,14 @@
 import { WalletProvider } from "@/context/WalletContext";
 import { AlertProvider } from "@/context/AlertContext";
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AuthProvider } from "@/context/AuthProvider";
 import { SearchFillProvider } from "@/context/SearchFillContext";
 import { ABTestProvider } from "@/context/ABTestContext";
 import NavbarWrapper from "@/components/NavbarWrapper";
 import PaymentNotificationBanner from "@/components/PaymentNotificationBanner";
+import AnalyticsTracker from "@/components/analytics/AnalyticsTracker";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -43,6 +45,9 @@ export default function RootLayout({
 						<AlertProvider>
 							<ABTestProvider>
 								<SearchFillProvider>
+									<Suspense fallback={null}>
+										<AnalyticsTracker />
+									</Suspense>
 									<NavbarWrapper />
 									<PaymentNotificationBanner />
 									{children}

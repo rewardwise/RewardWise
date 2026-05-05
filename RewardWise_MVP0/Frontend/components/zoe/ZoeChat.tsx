@@ -24,6 +24,7 @@ import {
 	ArrowRight,
 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
+import { trackAnalyticsEvent } from "@/utils/analytics/client";
 import {
 	FEEDBACK_SAVE_FAILED,
 	FEEDBACK_SIGN_IN,
@@ -32,6 +33,10 @@ import {
 } from "@/utils/user-messages";
 
 const supabase = createClient();
+
+function createZoeId(prefix: string) {
+	return `${prefix}_${typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2)}`;
+}
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
 	const { data } = await supabase.auth.getSession();
@@ -211,18 +216,32 @@ export default function ZoeChat({
 	const endRef = useRef<HTMLDivElement>(null);
 	const recognitionRef = useRef<SpeechRecognition | null>(null);
 	const pressingRef = useRef(false);
+	const conversationIdRef = useRef(createZoeId("zoe_conv"));
+	const openStartedAtRef = useRef<number | null>(null);
 
 	useEffect(() => {
 		if (isOpen) {
+			openStartedAtRef.current = Date.now();
+			trackAnalyticsEvent("zoe_opened", {
+				event_type: "zoe",
+				zoe_conversation_id: conversationIdRef.current,
+				metadata: { message_count: messages.length },
+			});
 			setShowNudge(false);
 			inputRef.current?.focus();
+		} else if (openStartedAtRef.current) {
+			trackAnalyticsEvent("zoe_closed", {
+				event_type: "zoe",
+				zoe_conversation_id: conversationIdRef.current,
+				duration_ms: Date.now() - openStartedAtRef.current,
+				metadata: { message_count: messages.length },
+			});
+			openStartedAtRef.current = null;
 		}
 	}, [isOpen]);
 
 	useEffect(() => {
 		if (!isOpen) return;
-		// Fire-and-forget warm-up so Render is awake by the time the user
-		// finishes typing their first message. Ignore failures silently.
 		const controller = new AbortController();
 		fetch("/api/zoe-warm", {
 			method: "GET",
@@ -233,6 +252,14 @@ export default function ZoeChat({
 	}, [isOpen]);
 
 	useEffect(() => {
+		if (!isOpen) return;
+		trackAnalyticsEvent(expanded ? "zoe_expanded" : "zoe_collapsed", {
+			event_type: "zoe",
+			zoe_conversation_id: conversationIdRef.current,
+		});
+	}, [expanded, isOpen]);
+
+	useEffect(() => {
 		endRef.current?.scrollIntoView({ behavior: "smooth" });
 	}, [messages, typing]);
 
@@ -241,11 +268,8 @@ export default function ZoeChat({
 			setWaking(false);
 			return;
 		}
-		// If a reply takes more than ~4s, the backend is likely cold-starting
-		// from Render's free-tier sleep. Surface a friendlier message so the
-		// user knows what's happening instead of staring at a silent spinner.
-		const t = setTimeout(() => setWaking(true), 4000);
-		return () => clearTimeout(t);
+		const timer = setTimeout(() => setWaking(true), 4000);
+		return () => clearTimeout(timer);
 	}, [typing]);
 
 	useEffect(() => {
@@ -280,9 +304,17 @@ export default function ZoeChat({
 
 	const startListening = () => {
 		if (typing || listening) return;
+		trackAnalyticsEvent("zoe_voice_started", {
+			event_type: "zoe",
+			zoe_conversation_id: conversationIdRef.current,
+		});
 		try {
 			const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
 			if (!SpeechRecognitionAPI) {
+				trackAnalyticsEvent("zoe_voice_unavailable", {
+					event_type: "zoe",
+					zoe_conversation_id: conversationIdRef.current,
+				});
 				setMessages((prev) => [...prev, { role: "assistant", content: "Speech recognition is not available in this browser. Please type instead." }]);
 				return;
 			}
@@ -299,6 +331,11 @@ export default function ZoeChat({
 				setInput(transcript);
 			};
 			recognition.onerror = (event) => {
+				trackAnalyticsEvent("zoe_voice_error", {
+					event_type: "zoe",
+					zoe_conversation_id: conversationIdRef.current,
+					zoe_error_message: event.error,
+				});
 				setListening(false);
 				pressingRef.current = false;
 				if (event.error === "not-allowed") {
@@ -319,7 +356,12 @@ export default function ZoeChat({
 			recognitionRef.current = recognition;
 			recognition.start();
 			setListening(true);
-		} catch {
+		} catch (error: any) {
+			trackAnalyticsEvent("zoe_voice_error", {
+				event_type: "zoe",
+				zoe_conversation_id: conversationIdRef.current,
+				zoe_error_message: error?.message || "Speech recognition is not supported",
+			});
 			setListening(false);
 			pressingRef.current = false;
 			setMessages((prev) => [...prev, { role: "assistant", content: "Speech recognition is not supported on this device. Please type instead." }]);
@@ -327,6 +369,11 @@ export default function ZoeChat({
 	};
 
 	const stopListening = () => {
+		trackAnalyticsEvent("zoe_voice_stopped", {
+			event_type: "zoe",
+			zoe_conversation_id: conversationIdRef.current,
+			metadata: { transcript_length: input.length },
+		});
 		pressingRef.current = false;
 		recognitionRef.current?.stop();
 		setListening(false);
@@ -370,6 +417,11 @@ export default function ZoeChat({
 	};
 
 	const speakMessage = (index: number, message: Message) => {
+		trackAnalyticsEvent(speakingIndex === index ? "zoe_speech_stopped" : "zoe_speech_started", {
+			event_type: "zoe",
+			zoe_conversation_id: conversationIdRef.current,
+			metadata: { index, role: message.role, has_verdict: Boolean(message.verdict) },
+		});
 		if (!speakingAvailable) return;
 		if (speakingIndex === index) {
 			window.speechSynthesis.cancel();
@@ -397,13 +449,25 @@ export default function ZoeChat({
 		window.speechSynthesis.speak(utterance);
 	};
 
-	const applyBackendResponse = (data: any) => {
+	const applyBackendResponse = (data: any, latencyMs?: number) => {
 		const narrative =
 			(typeof data?.message === "string" && data.message) ||
 			(typeof data?.error === "string" && data.error) ||
 			ZOE_GENERIC_REPLY;
+
 		if (data.params) {
 			const cleanedParams = cleanInternalParams(data.params);
+			trackAnalyticsEvent("zoe_slots_updated", {
+				event_type: "zoe",
+				zoe_conversation_id: conversationIdRef.current,
+				zoe_detected_origin: cleanedParams.origin || null,
+				zoe_detected_destination: cleanedParams.destination || null,
+				zoe_detected_depart_date: cleanedParams.date || null,
+				zoe_detected_return_date: cleanedParams.return_date || null,
+				zoe_detected_cabin: cleanedParams.cabin || null,
+				zoe_detected_trip_type: cleanedParams.tripType || null,
+				metadata: { params: cleanedParams },
+			});
 			setSelected((prev) => ({ ...prev, ...cleanedParams }));
 
 			// Keep the home/search form clean. Intermediate Zoe state can include
@@ -414,6 +478,24 @@ export default function ZoeChat({
 				onFillSearch?.(cleanedParams);
 			}
 		}
+
+		trackAnalyticsEvent("zoe_response_received", {
+			event_type: "zoe",
+			zoe_conversation_id: conversationIdRef.current,
+			zoe_assistant_response: narrative,
+			zoe_success: !data.error,
+			zoe_error_message: data.error || null,
+			search_id: data.search_id || data.search_data?.search_id || null,
+			verdict_id: data.verdict_id || data.search_data?.verdict_id || null,
+			latency_ms: latencyMs || null,
+			verdict_recommendation: data.data?.recommendation || data.data?.verdict || null,
+			verdict_confidence: data.data?.confidence || null,
+			metadata: {
+				type: data.type || null,
+				suggestion_count: data.suggestions?.length ?? 0,
+				params: data.params || null,
+			},
+		});
 
 		setMessages((prev) => [
 			...prev,
@@ -428,12 +510,27 @@ export default function ZoeChat({
 		]);
 
 		if (data.type === "search_result") {
+			trackAnalyticsEvent("zoe_search_result_ready", {
+				event_type: "zoe",
+				zoe_conversation_id: conversationIdRef.current,
+				search_id: data.search_id || data.search_data?.search_id || null,
+				verdict_id: data.verdict_id || data.search_data?.verdict_id || null,
+			});
 			setTimeout(() => onTriggerSearch?.(), 60);
 		}
 	};
 
 	const sendText = async (text: string) => {
 		if (typing || !text.trim()) return;
+		const messageId = createZoeId("zoe_msg");
+		const startedAt = Date.now();
+		trackAnalyticsEvent("zoe_message_sent", {
+			event_type: "zoe",
+			zoe_message_id: messageId,
+			zoe_conversation_id: conversationIdRef.current,
+			zoe_user_message: text.trim(),
+			metadata: { slots_before: selected, history_length: messages.length },
+		});
 		setMessages((prev) => [...prev, { role: "user", content: text.trim() }]);
 		setInput("");
 		setTyping(true);
@@ -456,26 +553,50 @@ export default function ZoeChat({
 			if (res.status === 402 && data?.message) {
 				setMessages((prev) => [
 					...prev,
-					{
-						role: "assistant",
-						content: String(data.message),
-					},
+					{ role: "assistant", content: String(data.message) },
 				]);
+				trackAnalyticsEvent("zoe_error", {
+					event_type: "zoe",
+					zoe_message_id: messageId,
+					zoe_conversation_id: conversationIdRef.current,
+					zoe_user_message: text.trim(),
+					zoe_success: false,
+					zoe_error_message: String(data.message),
+					latency_ms: Date.now() - startedAt,
+				});
 				return;
 			}
 			if (!res.ok) {
-				const text =
+				const errorText =
 					(typeof data?.message === "string" && data.message) ||
 					(typeof data?.error === "string" && data.error) ||
 					ZOE_GENERIC_REPLY;
 				setMessages((prev) => [
 					...prev,
-					{ role: "assistant", content: text },
+					{ role: "assistant", content: errorText },
 				]);
+				trackAnalyticsEvent("zoe_error", {
+					event_type: "zoe",
+					zoe_message_id: messageId,
+					zoe_conversation_id: conversationIdRef.current,
+					zoe_user_message: text.trim(),
+					zoe_success: false,
+					zoe_error_message: errorText,
+					latency_ms: Date.now() - startedAt,
+				});
 				return;
 			}
-			applyBackendResponse(data);
-		} catch {
+			applyBackendResponse(data, Date.now() - startedAt);
+		} catch (error: any) {
+			trackAnalyticsEvent("zoe_error", {
+				event_type: "zoe",
+				zoe_message_id: messageId,
+				zoe_conversation_id: conversationIdRef.current,
+				zoe_user_message: text.trim(),
+				zoe_success: false,
+				zoe_error_message: error?.message || "Network error",
+				latency_ms: Date.now() - startedAt,
+			});
 			setMessages((prev) => [...prev, { role: "assistant", content: ZOE_NETWORK }]);
 		} finally {
 			setTyping(false);
@@ -499,6 +620,15 @@ export default function ZoeChat({
 			}));
 			return;
 		}
+		trackAnalyticsEvent("zoe_feedback_started", {
+			event_type: "feedback",
+			zoe_conversation_id: conversationIdRef.current,
+			verdict_id: message.verdictId,
+			feedback_rating: String(state.rating),
+			feedback_text: state.comment?.trim() || null,
+			feedback_context: "zoe_verdict",
+		});
+
 		const payload = {
 			verdict_id: message.verdictId,
 			user_id: userId,
@@ -509,12 +639,28 @@ export default function ZoeChat({
 		};
 		const { error } = await supabase.from("feedback").insert(payload);
 		if (error) {
+			trackAnalyticsEvent("zoe_feedback_failed", {
+				event_type: "feedback",
+				zoe_conversation_id: conversationIdRef.current,
+				verdict_id: message.verdictId,
+				feedback_rating: String(state.rating),
+				feedback_text: state.comment?.trim() || null,
+				error_message: error.message || "Failed to save feedback.",
+			});
 			setFeedbackState((prev) => ({
 				...prev,
 				[index]: { ...prev[index], saving: false, error: FEEDBACK_SAVE_FAILED },
 			}));
 			return;
 		}
+		trackAnalyticsEvent("zoe_feedback_submitted", {
+			event_type: "feedback",
+			zoe_conversation_id: conversationIdRef.current,
+			verdict_id: message.verdictId,
+			feedback_rating: String(state.rating),
+			feedback_text: state.comment?.trim() || null,
+			feedback_context: "zoe_verdict",
+		});
 		setFeedbackState((prev) => ({
 			...prev,
 			[index]: { ...prev[index], saving: false, saved: true, open: false },
@@ -777,12 +923,12 @@ export default function ZoeChat({
 
 					{typing && (
 						<div className="flex justify-start">
-							<div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 flex items-center gap-3">
+							<div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
 								<Loader2 className="h-4 w-4 animate-spin text-slate-400" />
 								{waking && (
 									<div className="text-xs leading-5 text-slate-300">
-										<p className="font-medium text-slate-200">Zoe is waking up…</p>
-										<p className="text-slate-400">First reply after a quiet period takes ~20s. Future replies are instant.</p>
+										<p className="font-medium text-slate-200">Zoe is waking up...</p>
+										<p className="text-slate-400">First reply after a quiet period can take a little longer. Future replies should be faster.</p>
 									</div>
 								)}
 							</div>

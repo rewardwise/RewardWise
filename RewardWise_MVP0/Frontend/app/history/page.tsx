@@ -24,6 +24,10 @@ type Trip = {
 	id: string;
 	verdictId: string | null;
 	recommendation: "use_points" | "pay_cash" | "wait" | null;
+	summary: string | null;
+	calculatedCpp: number | null;
+	cashPriceUsed: number | null;
+	pointsCostUsed: number | null;
 	origin: string;
 	destination: string;
 	date: string;
@@ -33,6 +37,15 @@ type Trip = {
 	cabin: string;
 	passengers: number;
 	createdAt: string;
+};
+
+type VerdictRow = {
+	id: string;
+	recommendation: "use_points" | "pay_cash" | "wait";
+	summary: string | null;
+	calculated_cpp: number | null;
+	cash_price_used: number | null;
+	points_cost_used: number | null;
 };
 
 type SearchRow = {
@@ -45,10 +58,7 @@ type SearchRow = {
 	cabin: string | null;
 	trip_type: "roundtrip" | "oneway";
 	created_at: string;
-	verdicts?:
-		| { id: string; recommendation: "use_points" | "pay_cash" | "wait" }[]
-		| { id: string; recommendation: "use_points" | "pay_cash" | "wait" }
-		| null;
+	verdicts?: VerdictRow[] | VerdictRow | null;
 };
 
 function formatMonthYear(dateStr: string) {
@@ -145,7 +155,7 @@ export default function HistoryPage() {
 			const { data, error } = await supabase
 				.from("searches")
 				.select(
-					"id, origin, destination, departure_date, return_date, passengers, cabin, trip_type, created_at, verdicts(id,recommendation)",
+					"id, origin, destination, departure_date, return_date, passengers, cabin, trip_type, created_at, verdicts(id,recommendation,summary,calculated_cpp,cash_price_used,points_cost_used)",
 				)
 				.eq("user_id", user.id)
 				.order("created_at", { ascending: false });
@@ -158,24 +168,29 @@ export default function HistoryPage() {
 			}
 
 			const mapped: Trip[] =
-				(data as SearchRow[] | null)?.map((row) => ({
-					id: row.id,
-					verdictId: Array.isArray(row.verdicts)
-						? (row.verdicts[0]?.id ?? null)
-						: (row.verdicts?.id ?? null),
-					recommendation: Array.isArray(row.verdicts)
-						? (row.verdicts[0]?.recommendation ?? null)
-						: (row.verdicts?.recommendation ?? null),
-					origin: row.origin,
-					destination: row.destination,
-					date: formatMonthYear(row.departure_date),
-					departureDate: row.departure_date,
-					returnDate: row.return_date,
-					tripType: row.trip_type === "oneway" ? "oneway" : "roundtrip",
-					cabin: cabinLabel(row.cabin),
-					passengers: row.passengers,
-					createdAt: row.created_at,
-				})) ?? [];
+				(data as SearchRow[] | null)?.map((row) => {
+					const verdict: VerdictRow | null = Array.isArray(row.verdicts)
+						? (row.verdicts[0] ?? null)
+						: (row.verdicts ?? null);
+					return {
+						id: row.id,
+						verdictId: verdict?.id ?? null,
+						recommendation: verdict?.recommendation ?? null,
+						summary: verdict?.summary ?? null,
+						calculatedCpp: verdict?.calculated_cpp ?? null,
+						cashPriceUsed: verdict?.cash_price_used ?? null,
+						pointsCostUsed: verdict?.points_cost_used ?? null,
+						origin: row.origin,
+						destination: row.destination,
+						date: formatMonthYear(row.departure_date),
+						departureDate: row.departure_date,
+						returnDate: row.return_date,
+						tripType: row.trip_type === "oneway" ? "oneway" : "roundtrip",
+						cabin: cabinLabel(row.cabin),
+						passengers: row.passengers,
+						createdAt: row.created_at,
+					};
+				}) ?? [];
 
 			setTrips(mapped);
 			setLoadingTrips(false);
@@ -288,9 +303,9 @@ export default function HistoryPage() {
 							</div>
 
 							<div>
-								<h1 className="text-3xl font-bold text-white">Trip Feedback</h1>
+								<h1 className="text-3xl font-bold text-white">Past searches</h1>
 								<p className="text-sm text-gray-200 sm:text-base">
-									Review your recent searches and help Zoe improve future verdicts.
+									Review your prior verdicts and help Zoe improve future ones.
 								</p>
 							</div>
 						</div>
@@ -548,7 +563,7 @@ export default function HistoryPage() {
 								onClick={() => setSelectedTrip(null)}
 								className="mb-4 flex items-center gap-2 text-sm text-gray-400 hover:text-white"
 							>
-								<ArrowLeft className="h-4 w-4" /> Back to History
+								<ArrowLeft className="h-4 w-4" /> Back to past searches
 							</button>
 
 							<div className="mb-6 rounded-xl border border-white/10 bg-white/[0.03] p-4">
@@ -563,6 +578,10 @@ export default function HistoryPage() {
 												? ` • Return ${formatDateNice(selectedTrip.returnDate)}`
 												: " • One way"}
 										</p>
+										<p className="mt-1 text-xs text-gray-500">
+											{selectedTrip.cabin} • {selectedTrip.passengers} traveler
+											{selectedTrip.passengers > 1 ? "s" : ""}
+										</p>
 									</div>
 
 									<span
@@ -573,6 +592,75 @@ export default function HistoryPage() {
 										{verdictLabel(selectedTrip.recommendation)}
 									</span>
 								</div>
+							</div>
+
+							{/* Read-only past-verdict summary */}
+							<div className="mb-6 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+								<div className="mb-3 flex items-center gap-2">
+									<p className="text-xs font-semibold uppercase tracking-[0.16em] text-gray-500">
+										Verdict at the time of search
+									</p>
+									<span className="text-xs text-gray-600">
+										{formatDateNice(selectedTrip.createdAt)}
+									</span>
+								</div>
+
+								{selectedTrip.recommendation === null &&
+								selectedTrip.summary === null &&
+								selectedTrip.calculatedCpp === null &&
+								selectedTrip.cashPriceUsed === null &&
+								selectedTrip.pointsCostUsed === null ? (
+									<p className="text-sm text-gray-400">
+										No verdict was saved for this search.
+									</p>
+								) : (
+									<>
+										<div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+											{selectedTrip.pointsCostUsed != null && (
+												<div className="rounded-lg bg-gray-950/50 p-3">
+													<p className="text-[10px] uppercase tracking-wider text-gray-500">
+														Points
+													</p>
+													<p className="mt-1 text-sm font-semibold text-white">
+														{selectedTrip.pointsCostUsed.toLocaleString()} pts
+													</p>
+												</div>
+											)}
+
+											{selectedTrip.cashPriceUsed != null && (
+												<div className="rounded-lg bg-gray-950/50 p-3">
+													<p className="text-[10px] uppercase tracking-wider text-gray-500">
+														Cash price
+													</p>
+													<p className="mt-1 text-sm font-semibold text-white">
+														${selectedTrip.cashPriceUsed.toLocaleString()}
+													</p>
+												</div>
+											)}
+
+											{selectedTrip.calculatedCpp != null && (
+												<div className="rounded-lg bg-gray-950/50 p-3">
+													<p className="text-[10px] uppercase tracking-wider text-gray-500">
+														CPP
+													</p>
+													<p className="mt-1 text-sm font-semibold text-white">
+														{selectedTrip.calculatedCpp.toFixed(2)}¢
+													</p>
+												</div>
+											)}
+										</div>
+
+										{selectedTrip.summary && (
+											<p className="mt-3 text-sm leading-relaxed text-gray-300">
+												{selectedTrip.summary}
+											</p>
+										)}
+
+										<p className="mt-3 text-xs text-gray-500">
+											Showing the saved verdict. Live availability and pricing may have changed.
+										</p>
+									</>
+								)}
 							</div>
 
 							<div className="space-y-6">

@@ -9,7 +9,7 @@ from app.api.validators import limiter
 
 
 # ✅ CREATE APP ONLY ONCE
-app = FastAPI(title="RewardWise Backend")
+app = FastAPI(title="MyTravelWallet Backend")
 
 # Rate limiting
 app.state.limiter = limiter

@@ -3,12 +3,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useAuth } from "@/context/AuthProvider";
-import TopNav from "@/components/TopNav";
-import { createClient } from "@/utils/supabase/client";
 import { useEffect, useMemo, useRef, useState } from "react";
-
-const supabase = createClient();
 import {
 	User,
 	Wallet,
@@ -20,11 +15,16 @@ import {
 	LogOut,
 	Clock3,
 } from "lucide-react";
+
 import TropicalBackground from "@/components/TropicalBackground";
+import { useAuth } from "@/context/AuthProvider";
+import { createClient } from "@/utils/supabase/client";
 import {
 	DELETE_ACCOUNT_FAILED,
 	DELETE_NOT_SIGNED_IN,
 } from "@/utils/user-messages";
+
+const supabase = createClient();
 
 export default function ProfilePage() {
 	const router = useRouter();
@@ -47,10 +47,17 @@ export default function ProfilePage() {
 	);
 	const [dayPassExpiresAt, setDayPassExpiresAt] = useState<number | null>(null);
 	const [timeNow, setTimeNow] = useState(Date.now());
+	const [canViewAnalytics, setCanViewAnalytics] = useState(false);
 
 	useEffect(() => {
-		if (!user?.id) return;
+		if (!user?.id) {
+			setCanViewAnalytics(false);
+			setDayPassExpiresAt(null);
+			return;
+		}
+
 		let cancelled = false;
+
 		void supabase
 			.from("profiles")
 			.select("day_pass_expires_at")
@@ -63,6 +70,23 @@ export default function ProfilePage() {
 					: 0;
 				setDayPassExpiresAt(expiry > 0 ? expiry : null);
 			});
+
+		(async () => {
+			try {
+				const res = await fetch("/api/admin/analytics/access", {
+					cache: "no-store",
+				});
+				const data = (await res.json()) as { canViewAnalytics?: boolean };
+
+				if (!cancelled) {
+					setCanViewAnalytics(Boolean(data.canViewAnalytics));
+				}
+			} catch (error) {
+				console.warn("Could not check analytics admin access", error);
+				if (!cancelled) setCanViewAnalytics(false);
+			}
+		})();
+
 		return () => {
 			cancelled = true;
 		};
@@ -186,8 +210,8 @@ export default function ProfilePage() {
 		},
 		{
 			icon: Star,
-			label: "Trip Feedback",
-			desc: "Rate your trips",
+			label: "Past searches",
+			desc: "Review your prior verdicts",
 			page: "/history",
 			color: "pink",
 		},
@@ -200,6 +224,7 @@ export default function ProfilePage() {
 				<h1 className="text-3xl font-bold text-white mb-6 drop-shadow-lg">
 					Profile
 				</h1>
+
 				<div className="space-y-4">
 					<div className="bg-gray-900/90 backdrop-blur rounded-xl p-6">
 						<div className="flex items-center gap-4 mb-4">
@@ -216,41 +241,77 @@ export default function ProfilePage() {
 										<div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/40 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-medium text-emerald-200">
 											<Clock3 className="w-3.5 h-3.5" />
 											Day Pass Active
-											<span className="text-emerald-100/90">({dayPassTimeLeft} left)</span>
+											<span className="text-emerald-100/90">
+												({dayPassTimeLeft} left)
+											</span>
 										</div>
 									</div>
 								) : (
-									<p className="text-gray-400 text-sm capitalize">{planLabel}</p>
+									<p className="text-gray-400 text-sm capitalize">
+										{planLabel}
+									</p>
 								)}
 							</div>
 						</div>
 
-					<button
-						onClick={async () => {
-							if (subscription !== "pro") {
-								router.push("/subscribe");
-								return;
-							}
-							const res = await fetch("/api/payments/portal", {
-								method: "POST",
-								headers: { "Content-Type": "application/json" },
-							});
-							const data = await res.json();
-							if (data.url) {
-								window.location.href = data.url;
-							} else {
-								router.push("/subscribe");
-							}
-						}}
-						className="w-full bg-gray-800/50 hover:bg-gray-800 text-emerald-400 py-2.5 rounded-lg text-sm font-medium border border-gray-700"
-					>
-						{subscription === "pro"
-							? "Manage Monthly Subscription"
-							: hasActiveDayPass
-								? "View Plans"
-								: "Subscribe"}
-					</button>
+						<button
+							onClick={async () => {
+								if (subscription !== "pro") {
+									router.push("/subscribe");
+									return;
+								}
+
+								const res = await fetch("/api/payments/portal", {
+									method: "POST",
+									headers: { "Content-Type": "application/json" },
+								});
+								const data = await res.json();
+
+								if (data.url) {
+									window.location.href = data.url;
+								} else {
+									router.push("/subscribe");
+								}
+							}}
+							className="w-full bg-gray-800/50 hover:bg-gray-800 text-emerald-400 py-2.5 rounded-lg text-sm font-medium border border-gray-700"
+						>
+							{subscription === "pro"
+								? "Manage Monthly Subscription"
+								: hasActiveDayPass
+									? "View Plans"
+									: "Subscribe"}
+						</button>
 					</div>
+
+					{canViewAnalytics && (
+						<div className="bg-emerald-500/10 backdrop-blur rounded-xl p-5 border border-emerald-400/30">
+							<div className="flex items-start gap-4">
+								<div className="w-11 h-11 bg-emerald-400/15 rounded-xl flex items-center justify-center shrink-0">
+									<BarChart3 className="w-5 h-5 text-emerald-300" />
+								</div>
+
+								<div className="flex-1">
+									<p className="text-xs uppercase tracking-[0.2em] text-emerald-200/80 font-semibold mb-1">
+										Admin only
+									</p>
+									<h2 className="text-white text-lg font-semibold">
+										Product Analytics
+									</h2>
+									<p className="text-gray-300 text-sm mt-1">
+										Review tester behavior, page usage, route demand, Zoe usage,
+										and ask the analytics copilot questions.
+									</p>
+
+									<button
+										onClick={() => router.push("/admin/analytics")}
+										className="mt-4 w-full sm:w-auto bg-emerald-400 hover:bg-emerald-300 text-slate-950 px-4 py-2.5 rounded-lg text-sm font-semibold transition-colors"
+									>
+										Open Analytics Dashboard
+									</button>
+								</div>
+							</div>
+						</div>
+					)}
 
 					<div className="bg-gray-900/90 backdrop-blur rounded-xl p-6">
 						<h2 className="text-lg font-semibold text-white mb-4">Tools</h2>
@@ -292,6 +353,7 @@ export default function ProfilePage() {
 									className="w-5 h-5 rounded bg-gray-700 border-gray-600 text-emerald-500"
 								/>
 							</div>
+
 							<div className="flex items-center justify-between">
 								<span className="text-gray-300 text-sm">
 									Weekly portfolio summary
@@ -308,6 +370,7 @@ export default function ProfilePage() {
 									className="w-5 h-5 rounded bg-gray-700 border-gray-600 text-emerald-500"
 								/>
 							</div>
+
 							<div className="flex items-center justify-between">
 								<span className="text-gray-300 text-sm">Deal alerts</span>
 								<input
@@ -322,6 +385,7 @@ export default function ProfilePage() {
 									className="w-5 h-5 rounded bg-gray-700 border-gray-600 text-emerald-500"
 								/>
 							</div>
+
 							<div className="flex items-center justify-between">
 								<span className="text-gray-300 text-sm">
 									Points expiry warnings
@@ -351,12 +415,14 @@ export default function ProfilePage() {
 						<LogOut className="w-5 h-5" />
 						Log Out
 					</button>
+
 					<button
 						onClick={async () => {
 							if (
 								!confirm("This will permanently delete your account. Continue?")
-							)
+							) {
 								return;
+							}
 
 							const {
 								data: { session },
@@ -376,6 +442,7 @@ export default function ProfilePage() {
 							const delData = (await delRes.json().catch(() => ({}))) as {
 								error?: string;
 							};
+
 							if (!delRes.ok) {
 								alert(delData.error || DELETE_ACCOUNT_FAILED);
 								return;
