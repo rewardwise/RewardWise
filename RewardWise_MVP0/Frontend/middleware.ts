@@ -12,7 +12,14 @@ const publicRoutes = [
 	"/reset-password",
 ];
 
-const subscriptionFreeRoutes = ["/subscribe", "/profile"];
+/** Routes reachable without an active Zoe subscription (paywall / purchase flows). */
+const subscriptionFreeRoutes = [
+	"/subscribe",
+	"/profile",
+	"/home",
+	"/concierge",
+	"/wallet-setup",
+];
 
 function isPublicRoute(pathname: string) {
 	return publicRoutes.some((route) => {
@@ -34,7 +41,7 @@ function copyCookies(from: NextResponse, to: NextResponse) {
 }
 
 export async function middleware(request: NextRequest) {
-	let supabaseResponse = NextResponse.next({ request });
+	const supabaseResponse = NextResponse.next({ request });
 
 	const supabase = createServerClient(
 		process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -86,13 +93,29 @@ export async function middleware(request: NextRequest) {
 	}
 
 	if (user && !isPublic && !isSubscriptionFreeRoute(pathname)) {
-		const { data } = await supabase
+		const { data: sub } = await supabase
 			.from("subscriptions")
 			.select("status")
 			.eq("user_id", user.id)
-			.single();
+			.maybeSingle();
 
-		if (!data || data.status === "canceled") {
+		const { data: profile } = await supabase
+			.from("profiles")
+			.select("day_pass_expires_at")
+			.eq("user_id", user.id)
+			.maybeSingle();
+
+		const dayPassExpiryMs = profile?.day_pass_expires_at
+			? new Date(profile.day_pass_expires_at).getTime()
+			: 0;
+		const hasActiveDayPass = dayPassExpiryMs > Date.now();
+
+		// Access is granted by either active monthly subscription OR active day pass.
+		if (hasActiveDayPass) {
+			return supabaseResponse;
+		}
+
+		if (!sub || sub.status === "canceled") {
 			const url = request.nextUrl.clone();
 			url.pathname = "/subscribe";
 			url.search = "";
@@ -101,7 +124,7 @@ export async function middleware(request: NextRequest) {
 			return redirectResponse;
 		}
 
-		if (data.status === "past_due") {
+		if (sub.status === "past_due") {
 			const url = request.nextUrl.clone();
 			url.pathname = "/subscribe";
 			url.search = "";

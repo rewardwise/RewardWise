@@ -1,6 +1,6 @@
 /** @format */
 "use client";
-import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from "react";
+import { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { useAuth } from "@/context/AuthProvider";
 
@@ -35,7 +35,7 @@ interface AlertContextType {
   unreadCount: number;
   loading: boolean;
   addToWatchlist: (item: Omit<WatchlistItem, "id" | "createdAt">) => void;
-  removeFromWatchlist: (id: string) => void;
+  removeFromWatchlist: (id: string) => Promise<void>;
   isWatching: (origin: string, destination: string, departDate: string) => boolean;
   markNotificationRead: (id: string) => void;
   markAllRead: () => void;
@@ -90,7 +90,7 @@ function normalizeWatchlistItem(item: any): WatchlistItem {
 }
 
 export function AlertProvider({ children }: { children: ReactNode }) {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const { user } = useAuth();
   const [watchlist, setWatchlist] = useState<WatchlistItem[]>([]);
   const [notifications, setNotifications] = useState<AlertNotification[]>([]);
@@ -328,13 +328,50 @@ export function AlertProvider({ children }: { children: ReactNode }) {
     }
   }, [supabase, user]);
 
-  const removeFromWatchlist = useCallback((id: string) => {
+  const removeFromWatchlist = useCallback(async (id: string) => {
+    const previousWatchlist = watchlist;
+    const previousNotifications = notifications;
+
+    // Optimistically remove the route and any related notification from the UI.
     setWatchlist((prev) => prev.filter((w) => w.id !== id));
-    if (user) {
-      void supabase.from("watchlist").delete().eq("id", id).eq("user_id", user.id);
-      setNotifications((prev) => prev.filter((n) => n.watchlistId !== id));
+    setNotifications((prev) => prev.filter((n) => n.watchlistId !== id));
+
+    // Guest users persist through localStorage via the existing effects above.
+    if (!user) return;
+
+    const { error: notificationDeleteError } = await supabase
+      .from("notifications")
+      .delete()
+      .eq("watchlist_id", id)
+      .eq("user_id", user.id);
+
+    if (notificationDeleteError) {
+      console.error(
+        "[alerts] notifications delete failed:",
+        notificationDeleteError.message,
+        notificationDeleteError
+      );
+      setWatchlist(previousWatchlist);
+      setNotifications(previousNotifications);
+      return;
     }
-  }, [supabase, user]);
+
+    const { error: watchlistDeleteError } = await supabase
+      .from("watchlist")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", user.id);
+
+    if (watchlistDeleteError) {
+      console.error(
+        "[alerts] watchlist delete failed:",
+        watchlistDeleteError.message,
+        watchlistDeleteError
+      );
+      setWatchlist(previousWatchlist);
+      setNotifications(previousNotifications);
+    }
+  }, [notifications, supabase, user, watchlist]);
 
   const isWatching = useCallback(
     (origin: string, destination: string, departDate: string) => {

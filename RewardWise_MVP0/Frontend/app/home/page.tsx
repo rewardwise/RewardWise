@@ -12,7 +12,6 @@ import VerdictCard from "@/components/VerdictCard";
 import SearchLoadingExperience from "@/components/SearchLoadingExperience";
 import AirportSearch from "@/components/AirportSearch";
 import ZoeChat from "@/components/zoe/ZoeChat";
-import type { Message } from "@/components/zoe/ZoeChat";
 import { trackAnalyticsEvent } from "@/utils/analytics/client";
 import {
 	Calendar,
@@ -237,7 +236,7 @@ export default function HomePage() {
 	useABTest();
 
 	const [isChatOpen, setIsChatOpen] = useState(false);
-	const [chatMessages, setChatMessages] = useState<Message[]>([]);
+	const [verdictContext, setVerdictContext] = useState<string | null>(null);
 
 	const [origin, setOrigin] = useState("");
 	const [destination, setDestination] = useState("");
@@ -279,6 +278,16 @@ export default function HomePage() {
 			userProgramCount: userPrograms?.length ?? 0,
 		},
 	});
+
+	const handleAskZoeAboutVerdict = (context: string) => {
+		// Reset to null first so the useEffect in ZoeChat always fires,
+		// even if the same verdict is clicked twice.
+		setVerdictContext(null);
+		setTimeout(() => {
+			setVerdictContext(context);
+			setIsChatOpen(true);
+		}, 0);
+	};
 
 	const handleFillSearch = (data: any) => {
 		trackAnalyticsEvent("zoe_filled_search_form", {
@@ -548,8 +557,12 @@ export default function HomePage() {
 					</div>
 
 					{/* SEARCH ROW 2 */}
-					<div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-						{tripType === "roundtrip" ? (
+					<div
+						className={`grid grid-cols-1 ${
+							tripType === "roundtrip" ? "sm:grid-cols-3" : "sm:grid-cols-2"
+						} gap-3 mb-4`}
+					>
+						{tripType === "roundtrip" && (
 							<div>
 								<label className="block text-emerald-400 text-xs mb-1 flex items-center gap-1">
 									<Calendar className="w-3 h-3" /> RETURN
@@ -562,8 +575,6 @@ export default function HomePage() {
 									className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm [color-scheme:dark]"
 								/>
 							</div>
-						) : (
-							<div />
 						)}
 						<div>
 							<label className="block text-emerald-400 text-xs mb-1 flex items-center gap-1">
@@ -633,6 +644,7 @@ export default function HomePage() {
 								/>
 							) : results?.verdict ? (
 								<VerdictCard
+									onAskZoe={handleAskZoeAboutVerdict}
 									verdict={results.verdict}
 									cashPrice={results.cash_price}
 									origin={results.origin}
@@ -671,11 +683,7 @@ export default function HomePage() {
 						isOpen={isChatOpen}
 						setIsOpen={setIsChatOpen}
 						onFillSearch={handleFillSearch}
-						onTriggerSearch={handleTriggerSearch}
-						currentPage="home"
-						messages={chatMessages}
-						setMessages={setChatMessages}
-						isAuthenticated={true}
+						verdictContext={verdictContext}
 					/>
 				</main>
 			</div>

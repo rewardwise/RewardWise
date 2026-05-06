@@ -1,11 +1,13 @@
 /** @format */
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   Bell,
   Check,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ChevronUp,
   ExternalLink,
   PlaneLanding,
@@ -170,6 +172,7 @@ interface VerdictCardProps {
   flights?: CashFlight[];
   userPrograms?: string[];
   verdictId?: string | null;
+  onAskZoe?: (context: string) => void;
 }
 
 function formatDate(d: string) {
@@ -417,11 +420,17 @@ export default function VerdictCard({
   flights = [],
   userPrograms = [],
   verdictId,
+  onAskZoe,
 }: VerdictCardProps) {
   const { addToWatchlist, isWatching } = useAlerts();
   const [justAdded, setJustAdded] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [reasoningOpen, setReasoningOpen] = useState(true);
+  const [inlineAnswer, setInlineAnswer] = useState<{ question: string; answer: string } | null>(null);
+  const [slide, setSlide] = useState(0); // 0 = verdict, 1 = details
+  const touchStartX = useRef<number | null>(null);
+  const touchEndX = useRef<number | null>(null);
+  const [inlineLoading, setInlineLoading] = useState<string | null>(null); // which question is loading
   const [flightDetailsOpen, setFlightDetailsOpen] = useState(false);
   const alreadyWatching = isWatching(origin, destination, departDate);
 
@@ -459,6 +468,46 @@ export default function VerdictCard({
     "Show alternatives",
     "What if I’m flush with miles?",
   ];
+
+  const askInline = async (question: string) => {
+    if (inlineLoading) return;
+    setInlineLoading(question);
+    setInlineAnswer(null);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      const context = [
+        `Verdict for ${origin} → ${destination}, ${(cabin || "economy").replace(/_/g, " ")}, ${travelers} traveler${travelers !== 1 ? "s" : ""}.`,
+        `Verdict: ${verdict.verdict_label ?? (verdict.pay_cash ? "Pay Cash" : "Use Points")}.`,
+        verdict.metrics?.cash_price != null ? `Cash fare: $${Math.round(verdict.metrics.cash_price)}.` : null,
+        verdict.winner?.points && verdict.winner?.program
+          ? `Best award: ${verdict.winner.points.toLocaleString()} points via ${verdict.winner.program.replace(/_/g, " ")}.`
+          : null,
+        verdict.winner?.cpp != null ? `Value: ${verdict.winner.cpp.toFixed(2)} cents per point.` : null,
+        `Confidence: ${verdict.confidence}.`,
+        verdict.confidence_reason ?? null,
+        verdict.explanation ?? null,
+      ].filter(Boolean).join(" ");
+
+      const res = await fetch("/api/zoe", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          message: `Given this search result: ${context} Answer this question in 2-3 sentences max, no fluff: ${question}`,
+          history: [],
+        }),
+      });
+      const data = await res.json();
+      setInlineAnswer({ question, answer: data.message || "Couldn't get an answer right now." });
+    } catch {
+      setInlineAnswer({ question, answer: "Something went wrong — try again." });
+    } finally {
+      setInlineLoading(null);
+    }
+  };
 
   const readout = useMemo(() => {
     const pieces = [
@@ -685,195 +734,479 @@ export default function VerdictCard({
     );
   };
 
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+  };
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    touchEndX.current = e.changedTouches[0].clientX;
+    const diff = (touchStartX.current ?? 0) - (touchEndX.current ?? 0);
+    if (Math.abs(diff) > 50) setSlide(diff > 0 ? 1 : 0);
+  };
+
   return (
-    <div className="space-y-4">
-      <div className="rounded-3xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl md:p-8">
-        <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
-          <div className="min-w-0">
-            <p className="text-[13px] font-semibold uppercase tracking-[0.22em] text-slate-400">The Verdict</p>
-            <div className="mt-8 flex flex-wrap items-baseline gap-x-4 gap-y-2">
-              <h2 className="text-4xl font-extrabold tracking-tight text-white md:text-5xl">{recommendationLabel}</h2>
-              {displayCashPrice != null && (
-                <span className="text-4xl font-extrabold tracking-tight text-emerald-400 md:text-5xl">
-                  {fmtMoney(displayCashPrice, displayCashPrice % 1 === 0 ? 0 : 2)}
-                </span>
-              )}
-            </div>
-            <p className="mt-5 max-w-4xl text-lg font-medium leading-8 text-slate-300 md:text-xl">
-              {mainExplanation}
-            </p>
-          </div>
+    <div
+      className="relative overflow-hidden"
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
+      {/* ── Slide track ── */}
+      <div
+        className="flex items-stretch transition-transform duration-300 ease-in-out"
+        style={{ transform: `translateX(-${slide * 100}%)` }}
+      >
 
-          <div className="flex shrink-0 flex-wrap items-center gap-2 md:justify-end">
-            <span className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-bold capitalize ${confidenceTone(confidence)}`}>
-              <span className={`h-2 w-2 rounded-full ${confidenceDot(confidence)}`} />
-              {confidence} confidence
-            </span>
-            {verdict.data_quality && verdict.data_quality !== "full" && (
-              <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-200">
-                Partial data
-              </span>
-            )}
-          </div>
-        </div>
+        {/* ════════════════════════════════════════
+            SLIDE 1 — Verdict
+        ════════════════════════════════════════ */}
+        <div className="min-w-full flex flex-col">
+          <div className="flex-1 rounded-3xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl md:p-8">
 
-        {reasoningOpen && (
-          <div className="mt-8 rounded-2xl bg-white/[0.04] p-5 md:p-6">
-            <div className="grid gap-5 md:grid-cols-3">
-              <div>
-                <p className="text-sm font-semibold text-slate-400">Cash fare</p>
-                <p className="mt-2 text-2xl font-bold text-white">{fmtMoney(displayCashPrice, displayCashPrice != null && displayCashPrice % 1 !== 0 ? 2 : 0)}</p>
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-slate-400">Best award</p>
-                <p className="mt-2 text-2xl font-bold text-white">
-                  {hasAward ? `${Number(displayPoints).toLocaleString()} pts` : "—"}
-                  {displayTaxes != null && displayTaxes > 0 && <span className="text-base font-semibold text-slate-300"> + {fmtMoney(displayTaxes, 0)}</span>}
-                </p>
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-slate-400">Value preserved</p>
-                <p className="mt-2 text-2xl font-bold text-emerald-400">
-                  {displaySavings != null ? `~${fmtMoney(displaySavings, 0)}` : "—"}
-                </p>
-              </div>
-            </div>
-
-            <p className="mt-5 text-base leading-7 text-slate-300">{reasoningCopy}</p>
-
-            <div className="mt-5 flex flex-wrap gap-3">
-              {quickQuestions.map((question) => (
-                <button
-                  key={question}
-                  type="button"
-                  className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-semibold text-slate-300 hover:bg-white/[0.08]"
-                >
-                  {question}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {verdict.next_step?.label && (
-          <div className="mt-5 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-4">
-            <p className="mb-1 text-[11px] uppercase tracking-[0.14em] text-emerald-300">Next step</p>
-            <p className="font-semibold text-white">{verdict.next_step.label}</p>
-            {verdict.next_step.prompt && <p className="mt-1 text-sm text-slate-300">Try asking: “{verdict.next_step.prompt}”</p>}
-          </div>
-        )}
-
-        {verdict.missing_sources && verdict.missing_sources.length > 0 && (
-          <div className="mt-5 rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4">
-            <p className="text-[11px] uppercase tracking-[0.14em] text-amber-200">Missing data</p>
-            <p className="mt-1 text-sm leading-6 text-slate-200">
-              Zoe could not fully verify: {verdict.missing_sources.map((item) => item.replace(/_/g, " ")).join(", ")}.
-            </p>
-          </div>
-        )}
-
-        <div className="mt-8 border-t border-white/10 pt-5">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <button
-              type="button"
-              onClick={() => setReasoningOpen((value) => !value)}
-              className="inline-flex items-center gap-2 text-base font-semibold text-slate-300 hover:text-white"
-            >
-              {reasoningOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-              {reasoningOpen ? "Hide reasoning" : "See how Zoe decided"}
-            </button>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <button onClick={speak} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-medium text-slate-200 hover:bg-white/[0.06]">
-                {speaking ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />} {speaking ? "Stop" : "Listen"}
-              </button>
-              {bookingUrl ? (
-                <a href={bookingUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-xl bg-emerald-400 px-5 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-300">
-                  Book / verify <ExternalLink className="h-4 w-4" />
-                </a>
-              ) : (
-                <a href={googleFlightsUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-xl bg-emerald-400 px-5 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-300">
-                  Search fares <Search className="h-4 w-4" />
-                </a>
-              )}
-              <button
-                onClick={handleSetAlert}
-                disabled={alreadyWatching || justAdded}
-                className="flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold disabled:opacity-60"
-                style={{
-                  borderColor: "rgba(251,191,36,0.25)",
-                  background: "rgba(251,191,36,0.08)",
-                  color: "#fbbf24",
-                }}
-              >
-                {alreadyWatching || justAdded ? <Check className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
-                {alreadyWatching || justAdded ? "Alert set" : "Set alert"}
-              </button>
-              <button
-                type="button"
-                className="inline-flex items-center gap-2 rounded-xl bg-emerald-400 px-5 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-300"
-              >
-                Ask Zoe <Sparkles className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {verdict.booking_note && <p className="mt-4 text-xs text-slate-500">{verdict.booking_note}</p>}
-        <FeedbackInline verdictId={verdictId} />
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-        <div className="rounded-3xl border border-white/10 bg-slate-950/80 p-5 shadow-xl md:p-6">
-          <p className="mb-2 text-[11px] uppercase tracking-[0.16em] text-indigo-300">Trip summary</p>
-          <h3 className="text-2xl font-bold text-white">{origin} → {destination}</h3>
-          <p className="mt-1 text-sm text-slate-400">
-            {formatDate(departDate)}{returnDate ? ` → ${formatDate(returnDate)}` : ""} · {travelers} traveler{travelers !== 1 ? "s" : ""} · {(cabin || "economy").replace(/_/g, " ")}
-          </p>
-          {userPrograms.length > 0 && <p className="mt-3 text-xs leading-5 text-slate-500">Wallet programs considered: {userPrograms.join(", ")}</p>}
-        </div>
-
-        <div className="space-y-4 rounded-3xl border border-white/10 bg-slate-950/80 p-5 shadow-xl md:p-6">
-          {recommendation === "pay_cash" ? (
-            <>
-              {renderCashLeg(bestCashFlight, isRoundtrip ? "Best cash option · outbound" : "Best cash option")}
-              {isRoundtrip && renderCashLeg(bestCashFlight?.return_flight ?? null, "Best cash option · return", true)}
-            </>
-          ) : recommendation === "use_points" ? (
-            <>
-              {renderAwardLeg(bestOutbound ?? null, isRoundtrip ? "Outbound award" : "Award option")}
-              {isRoundtrip && renderAwardLeg(bestReturn ?? null, "Return award", true)}
-            </>
-          ) : (
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-              <p className="mb-1 font-semibold text-white">This one needs a second look</p>
-              <p className="text-sm text-slate-300">The current data is not decisive enough yet, so the safest move is to compare another nearby date or cabin before booking.</p>
-            </div>
-          )}
-
-          {bestOutbound && (
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-              <p className="mb-2 text-[11px] uppercase tracking-[0.14em] text-slate-400">
-                {recommendation === "pay_cash" ? "Points comparison" : "Best points path"}
-              </p>
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="font-semibold text-white">{fmtProgram(bestOutbound.program)}</p>
-                  <p className="text-sm text-slate-400">
-                    {bestOutbound.direct ? "Nonstop" : `${bestOutbound.remaining_seats ? `${bestOutbound.remaining_seats} seat${bestOutbound.remaining_seats !== 1 ? "s" : ""} left` : "Award space found"}`}
-                    {bestOutbound.taxes != null && bestOutbound.taxes > 0 ? ` · $${Number(bestOutbound.taxes).toFixed(2)} taxes` : ""}
-                  </p>
+            {/* Header */}
+            <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+              <div className="min-w-0">
+                <p className="text-[13px] font-semibold uppercase tracking-[0.22em] text-slate-400">The Verdict</p>
+                <div className="mt-8 flex flex-wrap items-baseline gap-x-4 gap-y-2">
+                  <h2 className="text-4xl font-extrabold tracking-tight text-white md:text-5xl">{recommendationLabel}</h2>
+                  {displayCashPrice != null && (
+                    <span className="text-4xl font-extrabold tracking-tight text-emerald-400 md:text-5xl">
+                      {fmtMoney(displayCashPrice, displayCashPrice % 1 === 0 ? 0 : 2)}
+                    </span>
+                  )}
                 </div>
-                <p className="text-lg font-bold text-emerald-300">{(bestOutbound.points * travelers).toLocaleString()} pts</p>
-              </div>
-              {recommendation === "pay_cash" && cashPrice != null && (
-                <p className="mt-3 rounded-xl border border-emerald-400/15 bg-emerald-500/5 px-3 py-2 text-sm leading-6 text-slate-300">
-                  Cash is the cleaner move here because the cash fare is only {fmtMoney(cashPrice, cashPrice % 1 === 0 ? 0 : 2)}, while the best points option still requires {(bestOutbound.points * travelers).toLocaleString()} points{bestOutbound.taxes != null && bestOutbound.taxes > 0 ? ` plus ${fmtMoney(bestOutbound.taxes, 2)} in taxes` : ""}.
+                <p className="mt-5 max-w-4xl text-lg font-medium leading-8 text-slate-300 md:text-xl">
+                  {mainExplanation}
                 </p>
+              </div>
+              <div className="flex shrink-0 flex-wrap items-center gap-2 md:justify-end">
+                <span className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-bold capitalize ${confidenceTone(confidence)}`}>
+                  <span className={`h-2 w-2 rounded-full ${confidenceDot(confidence)}`} />
+                  {confidence} confidence
+                </span>
+                {verdict.data_quality && verdict.data_quality !== "full" && (
+                  <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-200">
+                    Partial data
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Reasoning panel */}
+            {reasoningOpen && (
+              <div className="mt-8 rounded-2xl bg-white/[0.04] p-5 md:p-6">
+                <div className="grid gap-5 md:grid-cols-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-400">Cash fare</p>
+                    <p className="mt-2 text-2xl font-bold text-white">{fmtMoney(displayCashPrice, displayCashPrice != null && displayCashPrice % 1 !== 0 ? 2 : 0)}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-400">Best award</p>
+                    <p className="mt-2 text-2xl font-bold text-white">
+                      {hasAward ? `${Number(displayPoints).toLocaleString()} pts` : "—"}
+                      {displayTaxes != null && displayTaxes > 0 && <span className="text-base font-semibold text-slate-300"> + {fmtMoney(displayTaxes, 0)}</span>}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-400">Value preserved</p>
+                    <p className="mt-2 text-2xl font-bold text-emerald-400">
+                      {displaySavings != null ? `~${fmtMoney(displaySavings, 0)}` : "—"}
+                    </p>
+                  </div>
+                </div>
+
+                <p className="mt-5 text-base leading-7 text-slate-300">{reasoningCopy}</p>
+
+                {/* Quick questions */}
+                <div className="mt-5 flex flex-wrap gap-3">
+                  {quickQuestions.map((question) => (
+                    <button
+                      key={question}
+                      type="button"
+                      onClick={() => void askInline(question)}
+                      disabled={!!inlineLoading}
+                      className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                        inlineAnswer?.question === question
+                          ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-200"
+                          : "border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.08]"
+                      } disabled:opacity-50`}
+                    >
+                      {inlineLoading === question ? (
+                        <span className="flex items-center gap-2">
+                          <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                          </svg>
+                          {question}
+                        </span>
+                      ) : question}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Inline answer */}
+                {inlineAnswer && (
+                  <div className="mt-4 rounded-2xl border border-emerald-400/15 bg-emerald-500/[0.06] px-4 py-3">
+                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-300">{inlineAnswer.question}</p>
+                    <p className="text-sm leading-6 text-slate-200">{inlineAnswer.answer}</p>
+                    <button type="button" onClick={() => setInlineAnswer(null)} className="mt-2 text-xs text-slate-500 hover:text-slate-300">
+                      Dismiss
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Next step */}
+            {verdict.next_step?.label && (
+              <div className="mt-5 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-4">
+                <p className="mb-1 text-[11px] uppercase tracking-[0.14em] text-emerald-300">Next step</p>
+                <p className="font-semibold text-white">{verdict.next_step.label}</p>
+                {verdict.next_step.prompt && <p className="mt-1 text-sm text-slate-300">Try asking: "{verdict.next_step.prompt}"</p>}
+              </div>
+            )}
+
+            {/* Missing data */}
+            {verdict.missing_sources && verdict.missing_sources.length > 0 && (
+              <div className="mt-5 rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4">
+                <p className="text-[11px] uppercase tracking-[0.14em] text-amber-200">Missing data</p>
+                <p className="mt-1 text-sm leading-6 text-slate-200">
+                  Zoe could not fully verify: {verdict.missing_sources.map((item) => item.replace(/_/g, " ")).join(", ")}.
+                </p>
+              </div>
+            )}
+
+            {/* Footer controls */}
+            <div className="mt-8 border-t border-white/10 pt-5">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <button
+                  type="button"
+                  onClick={() => setReasoningOpen((v) => !v)}
+                  className="inline-flex items-center gap-2 text-base font-semibold text-slate-300 hover:text-white"
+                >
+                  {reasoningOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  {reasoningOpen ? "Hide reasoning" : "See how Zoe decided"}
+                </button>
+                <div className="flex flex-wrap items-center gap-3">
+                  <button onClick={speak} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-medium text-slate-200 hover:bg-white/[0.06]">
+                    {speaking ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />} {speaking ? "Stop" : "Listen"}
+                  </button>
+                  {bookingUrl ? (
+                    <a href={bookingUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-xl bg-emerald-400 px-5 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-300">
+                      Book / verify <ExternalLink className="h-4 w-4" />
+                    </a>
+                  ) : (
+                    <a href={googleFlightsUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-xl bg-emerald-400 px-5 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-300">
+                      Search fares <Search className="h-4 w-4" />
+                    </a>
+                  )}
+                  <button
+                    onClick={handleSetAlert}
+                    disabled={alreadyWatching || justAdded}
+                    className="flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold disabled:opacity-60"
+                    style={{ borderColor: "rgba(251,191,36,0.25)", background: "rgba(251,191,36,0.08)", color: "#fbbf24" }}
+                  >
+                    {alreadyWatching || justAdded ? <Check className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
+                    {alreadyWatching || justAdded ? "Alert set" : "Set alert"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!onAskZoe) return;
+                      const cashStr = displayCashPrice != null ? `$${Math.round(displayCashPrice)}` : null;
+                      const ptsStr = displayPoints != null ? `${Number(displayPoints).toLocaleString()} points` : null;
+                      const progStr = winner?.program ? winner.program.replace(/_/g, " ") : null;
+                      const cppStr = winner?.cpp != null ? `${winner.cpp.toFixed(2)} cents per point` : null;
+                      const savingsStr = displaySavings != null ? `saving roughly $${Math.round(displaySavings)}` : null;
+                      const parts = [
+                        `The search returned a verdict for ${origin} → ${destination}`,
+                        `on ${departDate}${returnDate ? ` returning ${returnDate}` : ""}, ${travelers} traveler${travelers !== 1 ? "s" : ""}, ${(cabin || "economy").replace(/_/g, " ")} class.`,
+                        `Verdict: ${recommendationLabel}.`,
+                        cashStr ? `Cash fare: ${cashStr}.` : null,
+                        ptsStr && progStr ? `Best award: ${ptsStr} via ${progStr}.` : null,
+                        cppStr ? `Value: ${cppStr}.` : null,
+                        savingsStr ? `Using points would save ${savingsStr} vs cash.` : null,
+                        `Confidence: ${confidence}.`,
+                        verdict.confidence_reason ?? null,
+                        verdict.explanation ?? null,
+                      ].filter(Boolean).join(" ");
+                      onAskZoe(parts);
+                    }}
+                    className="inline-flex items-center gap-2 rounded-xl bg-emerald-400 px-5 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-300"
+                  >
+                    Ask Zoe <Sparkles className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {verdict.booking_note && <p className="mt-4 text-xs text-slate-500">{verdict.booking_note}</p>}
+            <FeedbackInline verdictId={verdictId} />
+          </div>
+        </div>
+
+        {/* ════════════════════════════════════════
+            SLIDE 2 — Trip details
+        ════════════════════════════════════════ */}
+        <div className="min-w-full flex flex-col">
+          <div className="flex-1 rounded-3xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl md:p-8">
+
+            {/* ── Header row ── */}
+            <div className="mb-6 flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Flight details</p>
+                <div className="mt-1 flex items-center gap-2">
+                  <span className="text-2xl font-extrabold tracking-tight text-white">{origin}</span>
+                  <svg viewBox="0 0 24 24" className="h-5 w-5 text-slate-500" fill="none" stroke="currentColor" strokeWidth="1.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 8.25L21 12m0 0l-3.75 3.75M21 12H3" />
+                  </svg>
+                  <span className="text-2xl font-extrabold tracking-tight text-white">{destination}</span>
+                  {isRoundtrip && (
+                    <>
+                      <svg viewBox="0 0 24 24" className="h-4 w-4 text-slate-600" fill="none" stroke="currentColor" strokeWidth="1.5">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 8.25L21 12m0 0l-3.75 3.75M21 12H3" />
+                      </svg>
+                      <span className="text-2xl font-extrabold tracking-tight text-slate-400">{origin}</span>
+                    </>
+                  )}
+                </div>
+                <p className="mt-1 text-sm text-slate-500">
+                  {formatDate(departDate)}{returnDate ? ` – ${formatDate(returnDate)}` : ""} · {travelers} traveler{travelers !== 1 ? "s" : ""} · <span className="capitalize">{(cabin || "economy").replace(/_/g, " ")}</span>
+                </p>
+              </div>
+              {displayCashPrice != null && (
+                <div className="text-right flex-shrink-0">
+                  <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500">Cash fare</p>
+                  <p className="text-2xl font-extrabold text-white">{fmtMoney(displayCashPrice, displayCashPrice % 1 === 0 ? 0 : 2)}</p>
+                </div>
               )}
             </div>
-          )}
+
+            <div className="space-y-4">
+
+              {/* ── Best cash flight ── */}
+              {bestCashFlight && (
+                <div className="rounded-2xl border border-white/8 bg-white/[0.03] overflow-hidden">
+                  {/* Flight bar */}
+                  <div className="flex items-center justify-between gap-4 px-5 py-4">
+                    <div className="flex items-center gap-3 min-w-0">
+                      {bestCashFlight.legs?.[0]?.airline_logo ? (
+                        <img src={bestCashFlight.legs[0].airline_logo} alt={bestCashFlight.legs[0].airline ?? ""} className="h-8 w-8 rounded-lg object-contain bg-white/5 p-1 flex-shrink-0" />
+                      ) : (
+                        <div className="h-8 w-8 rounded-lg bg-indigo-500/15 border border-indigo-400/20 flex items-center justify-center flex-shrink-0">
+                          <PlaneTakeoff className="h-4 w-4 text-indigo-300" />
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-base font-bold text-white">
+                            {fmtTime(bestCashFlight.departure_time) || "—"}
+                          </span>
+                          <span className="text-slate-600">→</span>
+                          <span className="text-base font-bold text-white">
+                            {fmtTime(bestCashFlight.arrival_time) || "—"}
+                          </span>
+                          <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] text-slate-400">
+                            {stopText(bestCashFlight.stops)}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          {bestCashFlight.departure_iata || bestCashFlight.departure_airport}
+                          {" → "}
+                          {bestCashFlight.arrival_iata || bestCashFlight.arrival_airport}
+                          {bestCashFlight.total_duration ? ` · ${fmtDuration(bestCashFlight.total_duration)}` : ""}
+                          {bestCashFlight.legs?.[0]?.airline ? ` · ${bestCashFlight.legs[0].airline}` : ""}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      {bestCashFlight.price != null && (
+                        <p className="text-xl font-extrabold text-emerald-400">{fmtMoney(bestCashFlight.price, bestCashFlight.price % 1 === 0 ? 0 : 2)}</p>
+                      )}
+                      {bestCashFlight.vendor && (
+                        <p className="text-[11px] text-slate-500 mt-0.5">via {bestCashFlight.vendor}</p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Segment detail — only if we have segments */}
+                  {bestCashFlight.legs && bestCashFlight.legs.length > 0 && (
+                    <div className="border-t border-white/6 px-5 pb-4 pt-3">
+                      <div className="relative space-y-3">
+                        {bestCashFlight.legs.map((leg, idx) => (
+                          <div key={idx} className="flex gap-3">
+                            <div className="flex flex-col items-center pt-1">
+                              <div className="h-2 w-2 rounded-full bg-indigo-400 flex-shrink-0" />
+                              {idx < (bestCashFlight.legs?.length ?? 0) - 1 && (
+                                <div className="mt-1 w-px flex-1 bg-white/10" style={{minHeight: "1.5rem"}} />
+                              )}
+                            </div>
+                            <div className="pb-2 min-w-0 flex-1">
+                              <div className="flex items-start justify-between gap-2 flex-wrap">
+                                <div>
+                                  <p className="text-sm font-semibold text-white">
+                                    {leg.departure_iata || "—"} → {leg.arrival_iata || "—"}
+                                  </p>
+                                  <p className="text-xs text-slate-500 mt-0.5">
+                                    {fmtTime(leg.departure_time) || "—"}
+                                    {fmtTime(leg.arrival_time) ? ` – ${fmtTime(leg.arrival_time)}` : ""}
+                                    {leg.duration ? ` · ${fmtDuration(leg.duration)}` : ""}
+                                  </p>
+                                </div>
+                                <div className="text-right">
+                                  {leg.flight_number && (
+                                    <p className="text-xs font-mono text-slate-400">{leg.flight_number}</p>
+                                  )}
+                                  {leg.airplane && (
+                                    <p className="text-[11px] text-slate-600">{leg.airplane}</p>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Booking CTA */}
+                  {bestCashFlight.booking_url && (
+                    <div className="border-t border-white/6 px-5 py-3">
+                      <a
+                        href={bestCashFlight.booking_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 rounded-xl bg-emerald-500/15 border border-emerald-400/25 px-4 py-2 text-sm font-semibold text-emerald-300 hover:bg-emerald-500/25 transition"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" /> Book this flight
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── Return flight ── */}
+              {isRoundtrip && bestCashFlight?.return_flight && (
+                <div className="rounded-2xl border border-white/8 bg-white/[0.03] overflow-hidden">
+                  <div className="flex items-center justify-between gap-4 px-5 py-4">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="h-8 w-8 rounded-lg bg-indigo-500/10 border border-indigo-400/15 flex items-center justify-center flex-shrink-0">
+                        <PlaneLanding className="h-4 w-4 text-indigo-300" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-indigo-300">Return</span>
+                          <span className="text-base font-bold text-white">
+                            {fmtTime(bestCashFlight.return_flight.departure_time) || "—"}
+                          </span>
+                          <span className="text-slate-600">→</span>
+                          <span className="text-base font-bold text-white">
+                            {fmtTime(bestCashFlight.return_flight.arrival_time) || "—"}
+                          </span>
+                          <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] text-slate-400">
+                            {stopText(bestCashFlight.return_flight.stops)}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          {bestCashFlight.return_flight.departure_iata || bestCashFlight.return_flight.departure_airport}
+                          {" → "}
+                          {bestCashFlight.return_flight.arrival_iata || bestCashFlight.return_flight.arrival_airport}
+                          {bestCashFlight.return_flight.total_duration ? ` · ${fmtDuration(bestCashFlight.return_flight.total_duration)}` : ""}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Points option ── */}
+              {bestOutbound && (
+                <div className={`rounded-2xl overflow-hidden border ${recommendation === "use_points" ? "border-emerald-400/25 bg-emerald-500/[0.06]" : "border-white/8 bg-white/[0.02]"}`}>
+                  <div className="flex items-center justify-between gap-4 px-5 py-4">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`text-[10px] font-bold uppercase tracking-[0.16em] ${recommendation === "use_points" ? "text-emerald-300" : "text-slate-500"}`}>
+                          {recommendation === "use_points" ? "✦ Best award" : "Points comparison"}
+                        </span>
+                      </div>
+                      <p className="text-base font-bold text-white">{fmtProgram(bestOutbound.program)}</p>
+                      <p className="mt-0.5 text-xs text-slate-400">
+                        {bestOutbound.direct ? "Nonstop" : bestOutbound.remaining_seats ? `${bestOutbound.remaining_seats} seat${bestOutbound.remaining_seats !== 1 ? "s" : ""} left` : "Award space available"}
+                        {bestOutbound.airlines ? ` · ${bestOutbound.airlines}` : ""}
+                        {bestOutbound.taxes != null && bestOutbound.taxes > 0 ? ` · +$${Number(bestOutbound.taxes).toFixed(0)} taxes` : " · No fuel surcharges"}
+                      </p>
+                      {bestOutbound.cpp != null && (
+                        <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1">
+                          <span className="text-[11px] font-semibold text-slate-300">{bestOutbound.cpp.toFixed(2)}¢/pt</span>
+                          <span className="text-[11px] text-slate-600">·</span>
+                          <span className={`text-[11px] font-semibold ${bestOutbound.cpp >= 1.8 ? "text-emerald-300" : bestOutbound.cpp >= 1.3 ? "text-amber-300" : "text-slate-400"}`}>
+                            {bestOutbound.cpp >= 1.8 ? "Strong value" : bestOutbound.cpp >= 1.3 ? "Decent value" : "Weak value"}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <p className={`text-xl font-extrabold ${recommendation === "use_points" ? "text-emerald-300" : "text-slate-300"}`}>
+                        {(bestOutbound.points * travelers).toLocaleString()}
+                      </p>
+                      <p className="text-[11px] text-slate-500">pts</p>
+                    </div>
+                  </div>
+                  {recommendation === "pay_cash" && cashPrice != null && (
+                    <div className="border-t border-white/6 px-5 py-3">
+                      <p className="text-xs leading-5 text-slate-500">
+                        At {fmtMoney(cashPrice, 0)} cash, your points are worth more on a premium redemption.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── No data state ── */}
+              {!bestCashFlight && !bestOutbound && (
+                <div className="rounded-2xl border border-white/8 bg-white/[0.02] px-5 py-8 text-center">
+                  <p className="text-sm text-slate-500">No flight details available for this search.</p>
+                </div>
+              )}
+
+            </div>
+          </div>
         </div>
+
+      </div>{/* end slide track */}
+
+      {/* ── Navigation dots + arrows ── */}
+      <div className="mt-4 flex items-center justify-center gap-4">
+        <button
+          type="button"
+          onClick={() => setSlide(0)}
+          disabled={slide === 0}
+          className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-slate-400 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-30 disabled:cursor-default"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+
+        <div className="flex items-center gap-2">
+          {[0, 1].map((i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => setSlide(i)}
+              className={`rounded-full transition-all duration-200 ${
+                slide === i
+                  ? "h-2.5 w-6 bg-emerald-400"
+                  : "h-2 w-2 bg-white/20 hover:bg-white/40"
+              }`}
+            />
+          ))}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setSlide(1)}
+          disabled={slide === 1}
+          className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-slate-400 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-30 disabled:cursor-default"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
       </div>
     </div>
   );
