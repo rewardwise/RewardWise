@@ -1,0 +1,168 @@
+{
+  "search_metadata": {
+    "id": "mock-serpapi-roundtrip-ewr-lax",
+    "status": "Success",
+    "json_endpoint": "https://serpapi.com/searches/mock-serpapi-roundtrip-ewr-lax.json",
+    "created_at": "2026-05-01 13:32:00 UTC",
+    "processed_at": "2026-05-01 13:32:01 UTC",
+    "google_flights_url": "https://www.google.com/travel/flights?hl=en",
+    "total_time_taken": 0.91
+  },
+  "search_parameters": {
+    "engine": "google_flights",
+    "hl": "en",
+    "departure_id": "EWR",
+    "arrival_id": "LAX",
+    "outbound_date": "2026-06-15",
+    "return_date": "2026-06-22",
+    "type": "1",
+    "travel_class": 1,
+    "adults": 1,
+    "currency": "USD"
+  },
+  "best_flights": [
+    {
+      "flights": [
+        {
+          "departure_airport": {
+            "name": "Newark Liberty International Airport",
+            "id": "EWR",
+            "time": "2026-06-15 07:00"
+          },
+          "arrival_airport": {
+            "name": "Los Angeles International Airport",
+            "id": "LAX",
+            "time": "2026-06-15 10:15"
+          },
+          "duration": 375,
+          "airplane": "Boeing 737 MAX 9",
+          "airline": "United",
+          "airline_logo": "https://www.gstatic.com/flights/airline_logos/70px/UA.png",
+          "travel_class": "Economy",
+          "flight_number": "UA 1234",
+          "legroom": "31 in"
+        }
+      ],
+      "return_flight": {
+        "flights": [
+          {
+            "departure_airport": {
+              "name": "Los Angeles International Airport",
+              "id": "LAX",
+              "time": "2026-06-22 13:20"
+            },
+            "arrival_airport": {
+              "name": "Newark Liberty International Airport",
+              "id": "EWR",
+              "time": "2026-06-22 21:45"
+            },
+            "duration": 325,
+            "airplane": "Boeing 757",
+            "airline": "United",
+            "airline_logo": "https://www.gstatic.com/flights/airline_logos/70px/UA.png",
+            "travel_class": "Economy",
+            "flight_number": "UA 567",
+            "legroom": "31 in"
+          }
+        ],
+        "total_duration": 325
+      },
+      "total_duration": 375,
+      "carbon_emissions": {
+        "this_flight": 762000,
+        "typical_for_this_route": 780000,
+        "difference_percent": -2
+      },
+      "price": 218,
+      "type": "Round trip",
+      "airline_logo": "https://www.gstatic.com/flights/airline_logos/70px/UA.png",
+      "booking_token": "mock-serpapi-booking-token-ua"
+    }
+  ],
+  "other_flights": [
+    {
+      "flights": [
+        {
+          "departure_airport": {
+            "name": "Newark Liberty International Airport",
+            "id": "EWR",
+            "time": "2026-06-15 08:30"
+          },
+          "arrival_airport": {
+            "name": "Hartsfield-Jackson Atlanta International Airport",
+            "id": "ATL",
+            "time": "2026-06-15 10:10"
+          },
+          "duration": 160,
+          "airplane": "Airbus A321",
+          "airline": "Delta",
+          "airline_logo": "https://www.gstatic.com/flights/airline_logos/70px/DL.png",
+          "travel_class": "Economy",
+          "flight_number": "DL 882",
+          "legroom": "31 in"
+        },
+        {
+          "departure_airport": {
+            "name": "Hartsfield-Jackson Atlanta International Airport",
+            "id": "ATL",
+            "time": "2026-06-15 11:30"
+          },
+          "arrival_airport": {
+            "name": "Los Angeles International Airport",
+            "id": "LAX",
+            "time": "2026-06-15 13:45"
+          },
+          "duration": 255,
+          "airplane": "Boeing 757",
+          "airline": "Delta",
+          "airline_logo": "https://www.gstatic.com/flights/airline_logos/70px/DL.png",
+          "travel_class": "Economy",
+          "flight_number": "DL 1441",
+          "legroom": "31 in"
+        }
+      ],
+      "return_flight": {
+        "flights": [
+          {
+            "departure_airport": {
+              "name": "Los Angeles International Airport",
+              "id": "LAX",
+              "time": "2026-06-22 09:15"
+            },
+            "arrival_airport": {
+              "name": "Newark Liberty International Airport",
+              "id": "EWR",
+              "time": "2026-06-22 17:30"
+            },
+            "duration": 315,
+            "airplane": "Boeing 767",
+            "airline": "Delta",
+            "airline_logo": "https://www.gstatic.com/flights/airline_logos/70px/DL.png",
+            "travel_class": "Economy",
+            "flight_number": "DL 452",
+            "legroom": "31 in"
+          }
+        ],
+        "total_duration": 315
+      },
+      "total_duration": 495,
+      "carbon_emissions": {
+        "this_flight": 846000,
+        "typical_for_this_route": 780000,
+        "difference_percent": 8
+      },
+      "price": 198,
+      "type": "Round trip",
+      "airline_logo": "https://www.gstatic.com/flights/airline_logos/70px/DL.png",
+      "booking_token": "mock-serpapi-booking-token-dl"
+    }
+  ],
+  "price_insights": {
+    "lowest_price": 198,
+    "price_level": "low",
+    "typical_price_range": [
+      240,
+      420
+    ]
+  }
+}

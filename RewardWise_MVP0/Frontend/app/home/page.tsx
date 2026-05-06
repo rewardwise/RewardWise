@@ -1,18 +1,17 @@
 /** @format */
 "use client";
 
-import React, { Suspense, useState, useEffect, useRef, useCallback } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import TropicalBackground from "@/components/TropicalBackground";
 import { useAuth } from "@/context/AuthProvider";
 import { useWallet } from "@/context/WalletContext";
 import { useSearchFill } from "@/context/SearchFillContext";
 import { useABTest } from "@/context/ABTestContext";
-import VerdictCard, { VerdictCardSkeleton } from "@/components/VerdictCard";
+import VerdictCard from "@/components/VerdictCard";
+import SearchLoadingExperience from "@/components/SearchLoadingExperience";
 import AirportSearch from "@/components/AirportSearch";
 import ZoeChat from "@/components/zoe/ZoeChat";
-import { createClient } from "@/utils/supabase/client";
-import type { Message } from "@/components/zoe/ZoeChat";
 import { trackAnalyticsEvent } from "@/utils/analytics/client";
 import {
 	Calendar,
@@ -23,6 +22,7 @@ import {
 	ArrowRight,
 } from "lucide-react";
 
+// ─── INTERFACES ───────────────────────────────────────────────────────────────
 
 interface FlightLeg {
 	flight_number: string;
@@ -99,8 +99,6 @@ interface Verdict {
 	} | null;
 }
 
-const supabase = createClient();
-
 interface SearchResult {
 	search_id?: string | null;
 	verdict_id?: string | null;
@@ -120,6 +118,13 @@ interface SearchResult {
 	verdict: Verdict;
 }
 
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+
+const MIN_SEARCH_LOADING_MS = 5000;
+
+function sleep(ms: number) {
+	return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
 
 function formatDuration(mins: number) {
 	const h = Math.floor(mins / 60);
@@ -127,6 +132,7 @@ function formatDuration(mins: number) {
 	return `${h}h ${m}m`;
 }
 
+// ─── CASH FLIGHT CARD ─────────────────────────────────────────────────────────
 
 function FlightCard({ flight }: { flight: CashFlight }) {
 	const [expanded, setExpanded] = useState(false);
@@ -220,17 +226,17 @@ function FlightCard({ flight }: { flight: CashFlight }) {
 	);
 }
 
+// ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 
-function HomePageInner() {
+export default function HomePage() {
 	const router = useRouter();
-	const searchParams = useSearchParams();
-	const { searchCount, setSearchCount, session, subscription, user } = useAuth();
+	const { searchCount, setSearchCount, session } = useAuth();
 	const { userPrograms, hasWallet } = useWallet();
 	const { searchFill } = useSearchFill();
 	useABTest();
 
 	const [isChatOpen, setIsChatOpen] = useState(false);
-	const [chatMessages, setChatMessages] = useState<Message[]>([]);
+	const [verdictContext, setVerdictContext] = useState<string | null>(null);
 
 	const [origin, setOrigin] = useState("");
 	const [destination, setDestination] = useState("");
@@ -242,163 +248,13 @@ function HomePageInner() {
 	const [searching, setSearching] = useState(false);
 	const [searchError, setSearchError] = useState("");
 	const [results, setResults] = useState<SearchResult | null>(null);
-	const [hasDayPassAccess, setHasDayPassAccess] = useState(false);
 
-	const checkout = searchParams.get("checkout");
-	const isDayPassSuccess =
-		checkout === "pass_success" ||
-		(checkout === "success" && Boolean(searchParams.get("for_search")));
-
-	useEffect(() => {
-		if (!user?.id) return;
-		void supabase
-			.from("profiles")
-			.select("day_pass_expires_at")
-			.eq("user_id", user.id)
-			.maybeSingle()
-			.then(({ data }) => {
-				const expiry = data?.day_pass_expires_at
-					? new Date(data.day_pass_expires_at).getTime()
-					: 0;
-				setHasDayPassAccess(expiry > Date.now());
-			});
-	}, [user?.id]);
-
-	useEffect(() => {
-		if (typeof window === "undefined") return;
-		const p = new URLSearchParams(window.location.search);
-		const sessionId = p.get("session_id");
-
-		const confirmDayPassFromStripe = async () => {
-			if (!sessionId || !user?.id) return;
-			try {
-				await fetch("/api/payments/confirm-day-pass", {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ sessionId }),
-				});
-			} catch {}
-		};
-
-		if (p.get("checkout") === "pass_success") {
-			void (async () => {
-				await confirmDayPassFromStripe();
-				if (user?.id) {
-					const { data } = await supabase
-						.from("profiles")
-						.select("day_pass_expires_at")
-						.eq("user_id", user.id)
-						.maybeSingle();
-					const expiry = data?.day_pass_expires_at
-						? new Date(data.day_pass_expires_at).getTime()
-						: 0;
-					setHasDayPassAccess(expiry > Date.now());
-				}
-				router.replace("/home");
-			})();
-			return;
-		}
-		if (p.get("checkout") !== "success" || !p.get("for_search")) return;
-		const forSearch = p.get("for_search")!;
-
-		const fromSession = sessionStorage.getItem("zoe_last_search_result");
-		if (fromSession) {
-			try {
-				const parsed = JSON.parse(fromSession) as SearchResult;
-				if (parsed.search_id === forSearch) {
-					void (async () => {
-						await confirmDayPassFromStripe();
-						setResults(parsed);
-						sessionStorage.removeItem("zoe_last_search_result");
-						router.replace("/home");
-					})();
-					return;
-				}
-			} catch {}
-		}
-
-		let cancelled = false;
-		(async () => {
-			await confirmDayPassFromStripe();
-			const { data: verdictRow } = await supabase
-				.from("verdicts")
-				.select("id, details, cash_price_used")
-				.eq("search_id", forSearch)
-				.maybeSingle();
-			const { data: searchRow } = await supabase
-				.from("searches")
-				.select(
-					"id, origin, destination, departure_date, return_date, passengers, cabin, trip_type",
-				)
-				.eq("id", forSearch)
-				.maybeSingle();
-			if (cancelled || !verdictRow?.details || !searchRow) return;
-			const verdictDetails = verdictRow.details as Verdict;
-			setResults({
-				search_id: searchRow.id,
-				verdict_id: verdictRow.id,
-				origin: searchRow.origin,
-				destination: searchRow.destination,
-				date: searchRow.departure_date,
-				return_date: searchRow.return_date,
-				cabin: searchRow.cabin ?? "economy",
-				travelers: searchRow.passengers ?? 1,
-				is_roundtrip: searchRow.trip_type === "roundtrip",
-				cash_price:
-					verdictRow.cash_price_used ??
-					verdictDetails.metrics?.cash_price ??
-					null,
-				price_level: null,
-				typical_price_range: null,
-				flights: [],
-				award_options: [],
-				return_award_options: [],
-				verdict: verdictDetails,
-			});
-			router.replace("/home");
-		})();
-
-		return () => {
-			cancelled = true;
-		};
-	}, [router, user?.id, supabase]);
-
-	useEffect(() => {
-		if (subscription === "pro") return;
-		if (!user?.id) return;
-		void supabase
-			.from("profiles")
-			.select("day_pass_expires_at")
-			.eq("user_id", user.id)
-			.maybeSingle()
-			.then(({ data }) => {
-				const expiry = data?.day_pass_expires_at
-					? new Date(data.day_pass_expires_at).getTime()
-					: 0;
-				setHasDayPassAccess(expiry > Date.now());
-			});
-	}, [subscription, user?.id, results?.search_id]);
-
-	useEffect(() => {
-		if (!results?.verdict || !user?.id) return;
-		if (subscription === "pro" || hasDayPassAccess) return;
-		try {
-			sessionStorage.setItem(
-				"zoe_last_search_result",
-				JSON.stringify(results),
-			);
-		} catch {
-			/* ignore quota / private mode */
-		}
-		const q = new URLSearchParams();
-		q.set("from", "home");
-		if (results.search_id) {
-			q.set("search_id", results.search_id);
-		}
-		router.replace(`/subscribe?${q.toString()}`);
-	}, [results, subscription, hasDayPassAccess, user?.id, router]);
-
+	// ── Zoe trigger refs ──────────────────────────────────────────────────────
+	// runSearchRef always points to the latest runSearch so handleTriggerSearch
+	// (a stable useCallback) never has a stale closure over state.
 	const runSearchRef = useRef<() => Promise<void>>(async () => {});
+	// When Zoe triggers search it has already validated all fields on the backend,
+	// so we skip frontend validation to avoid the stale-closure false-positive.
 	const zoeTriggerRef = useRef(false);
 
 	const currentSearchAnalyticsPayload = (triggerSource: string) => ({
@@ -423,6 +279,16 @@ function HomePageInner() {
 		},
 	});
 
+	const handleAskZoeAboutVerdict = (context: string) => {
+		// Reset to null first so the useEffect in ZoeChat always fires,
+		// even if the same verdict is clicked twice.
+		setVerdictContext(null);
+		setTimeout(() => {
+			setVerdictContext(context);
+			setIsChatOpen(true);
+		}, 0);
+	};
+
 	const handleFillSearch = (data: any) => {
 		trackAnalyticsEvent("zoe_filled_search_form", {
 			event_type: "zoe",
@@ -437,6 +303,8 @@ function HomePageInner() {
 		if ("return_date" in data) setReturnDate(data.return_date || "");
 	};
 
+	// Stable reference — ZoeChat holds this without re-renders causing issues.
+	// Always delegates to runSearchRef.current which is kept fresh below.
 	const handleTriggerSearch = useCallback(() => {
 		trackAnalyticsEvent("zoe_triggered_search", { event_type: "zoe" });
 		zoeTriggerRef.current = true;
@@ -544,6 +412,10 @@ function HomePageInner() {
 			}
 
 			const data = await res.json();
+			const remainingLoadingMs = MIN_SEARCH_LOADING_MS - (Date.now() - searchStartedAt);
+			if (remainingLoadingMs > 0) {
+				await sleep(remainingLoadingMs);
+			}
 			setResults(data);
 			trackAnalyticsEvent("search_completed", {
 				event_type: "search",
@@ -586,6 +458,7 @@ function HomePageInner() {
 		}
 	};
 
+	// Keep runSearchRef pointing at the latest runSearch on every render
 	runSearchRef.current = runSearch;
 
 	const numTravelers = results?.travelers ?? travelers;
@@ -624,26 +497,18 @@ function HomePageInner() {
 
 			<div className="relative z-10">
 				<main className="max-w-5xl mx-auto px-6 py-6">
+					{/* HEADER */}
 					<div className="mb-6">
 						<h1 className="text-2xl font-bold text-white mb-1">
 							Let's optimize your wallet.
 						</h1>
 						<p className="text-gray-400 text-sm">
-							Search a route or ask Zoe - we'll find the best decision for your
+							Search a route or ask Zoe — we'll find the best decision for your
 							rewards.
 						</p>
-						{isDayPassSuccess && hasDayPassAccess && (
-							<div className="mt-3 rounded-xl border border-emerald-400/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100 max-w-xl">
-								<p className="font-semibold text-emerald-200">
-									Day pass activated
-								</p>
-								<p className="mt-1 text-emerald-100/90">
-									You now have access to Verdict Search and Zoe.
-								</p>
-							</div>
-						)}
 					</div>
 
+					{/* TRIP TYPE TOGGLE */}
 					<div className="flex gap-2 mb-3">
 						{(["roundtrip", "oneway"] as const).map((type) => (
 							<button
@@ -663,6 +528,7 @@ function HomePageInner() {
 						))}
 					</div>
 
+					{/* SEARCH ROW 1 */}
 					<div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
 						<AirportSearch
 							label="FROM"
@@ -742,6 +608,7 @@ function HomePageInner() {
 						</div>
 					</div>
 
+					{/* SEARCH BUTTON */}
 					<button
 						onClick={runSearch}
 						disabled={searching}
@@ -764,38 +631,35 @@ function HomePageInner() {
 						</p>
 					)}
 
+					{/* RESULTS */}
 					{(searching || results) && (
 						<div className="mt-2 space-y-4">
 							{searching ? (
-								<VerdictCardSkeleton
+								<SearchLoadingExperience
 									origin={origin}
 									destination={destination}
+									cabin={cabin}
+									travelers={travelers}
+									isRoundtrip={tripType === "roundtrip"}
 								/>
 							) : results?.verdict ? (
-								subscription === "pro" ||
-								hasDayPassAccess ? (
-									<VerdictCard
-										verdict={results.verdict}
-										cashPrice={results.cash_price}
-										origin={results.origin}
-										destination={results.destination}
-										departDate={results.date}
-										returnDate={results.return_date}
-										cabin={results.cabin}
-										travelers={numTravelers}
-										isRoundtrip={results.is_roundtrip}
-										awardOptions={results.award_options}
-										returnAwardOptions={results.return_award_options}
-										flights={results.flights}
-										userPrograms={userPrograms}
-										verdictId={results.verdict_id}
-									/>
-								) : (
-									<div className="flex flex-col items-center justify-center gap-2 py-10 text-gray-400 text-sm">
-										<Loader2 className="w-8 h-8 animate-spin text-emerald-500" />
-										<p>Opening plans…</p>
-									</div>
-								)
+								<VerdictCard
+									onAskZoe={handleAskZoeAboutVerdict}
+									verdict={results.verdict}
+									cashPrice={results.cash_price}
+									origin={results.origin}
+									destination={results.destination}
+									departDate={results.date}
+									returnDate={results.return_date}
+									cabin={results.cabin}
+									travelers={numTravelers}
+									isRoundtrip={results.is_roundtrip}
+									awardOptions={results.award_options}
+									returnAwardOptions={results.return_award_options}
+									flights={results.flights}
+									userPrograms={userPrograms}
+									verdictId={results.verdict_id}
+								/>
 							) : !hasWallet ? (
 								<div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
 									<p className="text-amber-400 text-sm font-semibold mb-1">
@@ -819,29 +683,10 @@ function HomePageInner() {
 						isOpen={isChatOpen}
 						setIsOpen={setIsChatOpen}
 						onFillSearch={handleFillSearch}
-						onTriggerSearch={handleTriggerSearch}
-						currentPage="home"
-						messages={chatMessages}
-						setMessages={setChatMessages}
-						isAuthenticated={true}
+						verdictContext={verdictContext}
 					/>
 				</main>
 			</div>
 		</div>
-	);
-}
-
-export default function HomePage() {
-	return (
-		<Suspense
-			fallback={
-				<div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-cyan-950 flex items-center justify-center text-gray-400 gap-2">
-					<Loader2 className="w-5 h-5 animate-spin" />
-					Loading...
-				</div>
-			}
-		>
-			<HomePageInner />
-		</Suspense>
 	);
 }

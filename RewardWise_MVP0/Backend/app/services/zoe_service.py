@@ -1,309 +1,234 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+import json
+import os
+import re
+from typing import Any, Dict, Optional
 
-from fastapi import HTTPException
+import httpx
 
-from app.api.search import run_search
-from app.program_aliases import PROGRAM_ALIASES  # noqa: F401  reserved for re-enable; kept in sync via RewardWise_MVP0/scripts/check_alias_parity.sh
-from app.rag.flights_retriever import retrieve
-from app.services.airport_resolver import is_airport_options_request, resolve_airport_text
-from app.services.llm import generate_text
-from app.services.zoe_intents import detect_general_question, detect_reset_intent, looks_like_replacement_trip
-from app.services.zoe_reconciler import reconcile_turn
-from app.services.zoe_response import (
-    build_collecting_response,
-    build_reset_response,
-    build_suggestions,
-    build_zoe_verdict_message,
-    welcome_response,
-)
-from app.services.zoe_state import (
-    META_KEY,
-    apply_active_slot_answer,
-    apply_airport_resolution,
-    apply_basic_updates,
-    clean_after_update,
-    extract_travelers,
-    fresh_state,
-    get_meta,
-    handle_airport_options_request,
-    handle_pending_confirmation,
-    next_missing_slot,
-    normalize_cabin,
-    normalize_incoming_state,
-    normalize_trip_type,
-    parse_date_text,
-    prompt_for_missing,
-    public_params,
-    set_last_requested,
-    validate_ready_state,
-    validation_message,
-)
+from app.db.client import get_db_client
+from app.program_aliases import PROGRAM_ALIASES  # noqa: F401
 
+NVIDIA_BASE_URL = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
+MODEL_NAME = os.getenv("NVIDIA_MODEL", "meta/llama-3.3-70b-instruct")
+TIMEOUT = float(os.getenv("NVIDIA_TIMEOUT_SECONDS", "45"))
+MAX_TOKENS = int(os.getenv("NVIDIA_MAX_TOKENS", "700"))
 
-def _format_wallet_context(wallet: list) -> str:
-    if not wallet:
-        return "User has no wallet data."
-    lines = []
-    for card in wallet:
-        program = card.get("program") or card.get("name")
-        points = int(card.get("points") or card.get("balance") or 0)
-        if program and points:
-            lines.append(f"{program}: {points:,} points")
-    return "\n".join(lines) if lines else "User has no points yet."
+SYSTEM_PROMPT = """You are Zoe, a sharp, warm, and deeply knowledgeable travel assistant for MyTravelWallet — a platform that helps travelers decide whether to use points or pay cash for flights.
 
+You have extensive knowledge of:
+- World airports, their cities, hubs, and which airlines operate there
+- Airline alliances, frequent flyer programs, and which credit card points transfer to which airline programs
+- Transfer partners and ratios (e.g. Chase UR → United at 1:1, Amex MR → Air France at 1:1, Capital One → Turkish at 2:1.5)
+- General award pricing sweet spots and strategies
+- Travel tips, visa requirements, best times to visit destinations, local culture, activities, food, and hidden gems
+- Points and miles strategy (when to use points vs cash, what CPP thresholds matter, positioning for future trips)
 
-async def _retrieve_context(query: str) -> str:
-    results = await retrieve(query, top_k=3)
-    if not results:
-        return "No relevant knowledge found."
-    return "\n".join([f"{r.title}\n{r.snippet}" for r in results])
+The user's profile and wallet data will be injected at the start of each conversation. Use this to personalize your answers — reference their specific cards and balances when relevant, and their past searches to understand their travel patterns.
 
+How to behave:
+- Be friendly, confident, and helpful. Like a knowledgeable travel friend, not a customer service bot.
+- Lead with the answer. If someone asks about Croatia, talk about Croatia. Don't open with four clarifying questions.
+- Ask at most ONE follow-up question per response, only when you genuinely need it. Never a numbered list of questions.
+- Keep responses under 100 words unless the question genuinely warrants more. Never cut off mid-sentence — wrap up cleanly.
+- No bullet points or numbered lists unless the user asks for a comparison.
 
-async def _handle_question(text: str, wallet: list) -> dict[str, Any]:
-    text_lower = text.lower()
-    if "points" in text_lower or "balance" in text_lower or "miles" in text_lower:
-        if not wallet:
-            return {"type": "answer", "message": "You haven’t added any loyalty programs yet. Add your cards in Wallet to track your points."}
-        lines, total = [], 0
-        for card in wallet:
-            program = card.get("program") or card.get("name")
-            points = int(card.get("points") or card.get("balance") or 0)
-            if program:
-                lines.append(f"{program}: {points:,} points")
-                total += points
-        return {
-            "type": "answer",
-            "message": "Here’s your current points balance:\n\n" + "\n".join(lines) + f"\n\nTotal: {total:,} points",
-        }
+Search form pre-fill:
+- As the conversation progresses, if you have enough information to fill the search form, do it.
+- "Enough information" means: origin airport or city, destination airport or city, and a departure date (or rough timeframe). Travelers and cabin are optional — default to 1 / economy if not stated.
+- When you pre-fill, naturally mention it in your reply. Example: "Seattle to JFK in economy sounds good — I've filled that in for you, just hit Search when you're ready."
+- Don't make a big deal of it, just weave it in naturally. Never say "I've pre-filled the form" as your main point — lead with travel advice first.
+- At the end of EVERY response, output a JSON block (and only when you have enough info) in exactly this format on its own line:
+  PREFILL:{"origin":"SEA","destination":"JFK","date":"2026-06-15","return_date":"2026-06-22","travelers":1,"cabin":"economy","tripType":"roundtrip"}
+- Only include the PREFILL line when you genuinely have enough info. Omit it entirely otherwise.
+- For dates: use YYYY-MM-DD format. If the user says "next Friday" or "in two weeks", make a reasonable estimate from today. If you genuinely don't know, omit the date field.
+- For airports: use IATA codes when you're confident (SEA, JFK, LAX, EWR etc). If the user says a city name, use the main airport for that city.
+- tripType: "roundtrip" if a return date is mentioned, "oneway" otherwise.
 
-    context = await _retrieve_context(text)
-    wallet_context = _format_wallet_context(wallet)
-    prompt = f"""You are Zoe, a practical travel rewards assistant.
-USER WALLET:\n{wallet_context}
-KNOWLEDGE:\n{context}
-RULES:
-- Be concise and grounded.
-- Do not invent live prices or award availability.
-- If the user asks a non-trip question, answer directly.
-USER QUESTION:\n{text}"""
-    answer = await generate_text(prompt)
-    return {"type": "answer", "message": answer or "I couldn’t answer that. Try asking differently."}
+Points vs cash guidance:
+- You do NOT have live cash fares or award availability inside this chat. Never claim or imply that you do.
+- When asked "should I use points or cash?" without exact prices, give a directional take — not a fake verdict.
+- NEVER invent specific point costs, cash prices, or award availability.
+- When the user needs live numbers, say "Pull the live options in the search form, then I can help you interpret the result."
+- If the user provides actual cash and point numbers, calculate cents-per-point directly: CPP = (cash price / points) * 100. Tell them the number, whether it's good or weak, and give a lean.
+
+Wallet references:
+- Only reference the user's specific point balances if wallet data is available AND directly relevant.
+- Never say "your massive balance" or assume balances are high.
+
+Verdict interpretation (after the search form runs):
+- "Pay Cash" usually means the cash fare is cheap relative to the points required.
+- "Use Points" means the cents-per-point value is strong enough that points beat cash.
+- "Wait" usually means the cash fare looks high compared to typical pricing.
+
+What not to do:
+- Don't say "I ran the numbers" unless numbers were actually provided.
+- Don't sound like an error state when redirecting to the search form.
+- Don't ask for every trip field before giving general guidance."""
 
 
-def _has_trip_state(state: dict[str, Any]) -> bool:
-    if any(state.get(k) for k in ["origin", "destination", "date", "tripType", "travelers", "cabin", "return_date"]):
-        return True
-    meta = get_meta(state)
-    return bool(
-        meta.get("last_requested_slot")
-        or meta.get("pending_confirmation")
-        or meta.get("origin_hint")
-        or meta.get("destination_hint")
-        or meta.get("month_hint")
-        or meta.get("airport_options_slot")
-        or meta.get("airport_options")
-    )
+async def _fetch_user_context(user_id: str) -> str:
+    try:
+        supabase = get_db_client()
+
+        cards_res = supabase.table("cards")\
+            .select("card_name, points_balance, reward_programs(name)")\
+            .eq("user_id", user_id)\
+            .execute()
+
+        cards = cards_res.data or []
+        if cards:
+            wallet_lines = []
+            for c in cards:
+                prog = (c.get("reward_programs") or {}).get("name", "Unknown program")
+                bal = c.get("points_balance", 0)
+                name = c.get("card_name", "Unknown card")
+                wallet_lines.append(f"  - {name} ({prog}): {bal:,} points")
+            wallet_text = "User's rewards wallet:\n" + "\n".join(wallet_lines)
+        else:
+            wallet_text = "User has no cards added yet."
+
+        searches_res = supabase.table("searches")\
+            .select("origin, destination, departure_date, cabin, trip_type")\
+            .eq("user_id", user_id)\
+            .order("created_at", desc=True)\
+            .limit(10)\
+            .execute()
+
+        searches = searches_res.data or []
+        if searches:
+            search_lines = [
+                f"  - {s['origin']} → {s['destination']} | {s.get('departure_date','')} | {s.get('cabin','economy')} | {s.get('trip_type','roundtrip')}"
+                for s in searches
+            ]
+            searches_text = "User's recent searches:\n" + "\n".join(search_lines)
+        else:
+            searches_text = "User has no recent searches."
+
+        user_res = supabase.table("users")\
+            .select("display_name, email")\
+            .eq("id", user_id)\
+            .single()\
+            .execute()
+
+        user_data = user_res.data or {}
+        name = user_data.get("display_name") or user_data.get("email", "").split("@")[0] or "there"
+
+        return f"User's name: {name}\n\n{wallet_text}\n\n{searches_text}"
+
+    except Exception as e:
+        print("⚠️ Could not fetch user context:", e)
+        return ""
 
 
-def _looks_trip_like(text: str, state: dict[str, Any]) -> bool:
-    if _has_trip_state(state):
-        return True
-    t = text.lower()
-    keywords = [
-        "flight", "fly", "flying", "go to", "travel", "trip", "cash", "points", "miles", "award",
-        "one way", "round trip", "roundtrip", "business", "economy", "first", "traveler", "passenger",
-        "tomorrow", "next week", "next weekend", "weekend", "earlier", "later",
-    ]
-    return any(k in t for k in keywords)
+def _extract_prefill(raw_reply: str) -> tuple[str, Optional[dict]]:
+    """
+    Strip the PREFILL:... line from the reply and parse it.
+    Returns (clean_reply, prefill_dict_or_None).
+    """
+    prefill = None
+    lines = raw_reply.split("\n")
+    clean_lines = []
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("PREFILL:"):
+            try:
+                json_str = stripped[len("PREFILL:"):]
+                data = json.loads(json_str)
+                # Validate minimum required fields
+                if data.get("origin") and data.get("destination"):
+                    prefill = data
+            except Exception:
+                pass  # Malformed JSON — ignore
+        else:
+            clean_lines.append(line)
+
+    clean_reply = "\n".join(clean_lines).strip()
+    return clean_reply, prefill
 
 
-def _maybe_reset_for_replacement_trip(text: str, state: dict[str, Any]) -> dict[str, Any]:
-    meta = get_meta(state)
-    if meta.get("conversation_mode") == "post_verdict" and looks_like_replacement_trip(text):
-        return fresh_state()
-    return state
+async def _call_nvidia(messages: list[dict]) -> str:
+    api_key = os.getenv("NVIDIA_API_KEY")
+    if not api_key:
+        return "I'm having trouble connecting right now. Please try again in a moment."
+
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            resp = await client.post(
+                f"{NVIDIA_BASE_URL.rstrip('/')}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": MODEL_NAME,
+                    "messages": messages,
+                    "temperature": 0.7,
+                    "max_tokens": MAX_TOKENS,
+                },
+            )
+        if resp.status_code >= 400:
+            print("❌ NVIDIA ERROR:", resp.status_code, resp.text[:300])
+            return "I'm having trouble connecting right now. Please try again."
+
+        content = resp.json()["choices"][0]["message"]["content"]
+        return content.strip() if isinstance(content, str) else ""
+
+    except Exception as e:
+        print("❌ ZOE LLM ERROR:", e)
+        return "I'm having a little trouble right now — give me a second and try again."
 
 
-def _apply_airport_text_delta(state: dict[str, Any], slot: str, value: Any) -> dict[str, Any] | None:
-    text = str(value or "").strip()
-    if not text:
-        return None
-    result = apply_airport_resolution(state, slot, text)
-    if result and result.get("question"):
-        return build_collecting_response(result["question"], state)
-    return None
+def _build_messages(user_context: str, history: list[dict], user_message: str) -> list[dict]:
+    system = SYSTEM_PROMPT
+    if user_context:
+        system += f"\n\n--- USER CONTEXT ---\n{user_context}"
 
+    messages = [{"role": "system", "content": system}]
 
-def _apply_reconciler_result(state: dict[str, Any], result: dict[str, Any]) -> dict[str, Any] | None:
-    if not isinstance(result, dict):
-        return None
+    for turn in history[-10:]:
+        role = turn.get("role", "")
+        content = str(turn.get("content") or "").strip()
+        if role in ("user", "assistant") and content:
+            messages.append({"role": role, "content": content[:1000]})
 
-    # Never honor model reset here. Deterministic reset is handled before this.
-    for field in result.get("clear_fields") or []:
-        if field in {"origin", "destination", "date", "tripType", "travelers", "cabin", "return_date"}:
-            state.pop(field, None)
-
-    airport_text = result.get("airport_text") or {}
-    if isinstance(airport_text, dict):
-        # Resolve origin/destination text through the resolver, not the model.
-        for slot in ["origin", "destination"]:
-            if airport_text.get(slot):
-                response = _apply_airport_text_delta(state, slot, airport_text[slot])
-                if response:
-                    return response
-
-    updates = result.get("updates") or {}
-    if isinstance(updates, dict):
-        if updates.get("date"):
-            parsed = parse_date_text(str(updates["date"]), base_date=state.get("date"), slot="date")
-            if parsed.get("date"):
-                state["date"] = parsed["date"]
-            elif parsed.get("month_hint"):
-                get_meta(state)["month_hint"] = parsed["month_hint"]
-        if updates.get("tripType"):
-            trip_type = normalize_trip_type(updates["tripType"])
-            if trip_type:
-                state["tripType"] = trip_type
-        if updates.get("travelers") is not None:
-            travelers = extract_travelers(str(updates["travelers"]))
-            if travelers:
-                state["travelers"] = travelers
-        if updates.get("cabin"):
-            cabin = normalize_cabin(updates["cabin"])
-            if cabin:
-                state["cabin"] = cabin
-        if updates.get("return_date"):
-            parsed = parse_date_text(str(updates["return_date"]), base_date=state.get("date"), slot="return_date")
-            if parsed.get("date"):
-                state["return_date"] = parsed["date"]
-
-    clean_after_update(state)
-    return None
+    messages.append({"role": "user", "content": user_message})
+    return messages
 
 
 async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
     text = (payload.get("message") or "").strip()
-    wallet = payload.get("wallet", [])
-    incoming = payload.get("slots", {}) or {}
     history = payload.get("history", []) or []
-    explicit_slot = payload.get("slot")
-
-    print("📩 USER:", text)
-    print("📦 INCOMING SLOTS:", incoming)
+    user_id = payload.get("user_id")
 
     if not text:
-        return build_collecting_response("Tell me the trip you want to check.", normalize_incoming_state(incoming))
+        return {"type": "followup", "message": "Hey! What's on your travel radar?"}
 
     if text.lower() == "start":
-        return welcome_response()
-
-    state = normalize_incoming_state(incoming)
-    state = _maybe_reset_for_replacement_trip(text, state)
-    meta = get_meta(state)
-
-    # Deterministic reset only. Do not trust the LLM to reset state.
-    if detect_reset_intent(text):
-        return build_reset_response(fresh_state())
-
-    # User is asking for airport options, not trying to change a hint to that full sentence.
-    options_response = handle_airport_options_request(state, text)
-    if options_response:
-        print("🧠 STATE AFTER OPTIONS:", state)
-        return options_response
-
-    # Pending confirmations must resolve transactionally before AI or other parsing.
-    pending_response = handle_pending_confirmation(state, text)
-    if pending_response:
-        if pending_response.get("type") == "followup":
-            print("🧠 STATE AFTER PENDING:", state)
-            return pending_response
-
-    # If frontend explicitly says which slot is being answered, honor that.
-    if explicit_slot:
-        meta["last_requested_slot"] = explicit_slot
-
-    # Active requested slot gets first shot. This prevents date answers from reopening airport choices.
-    active_response = apply_active_slot_answer(state, text)
-    if active_response:
-        if active_response.get("type") == "followup":
-            print("🧠 STATE AFTER ACTIVE SLOT:", state)
-            return active_response
-        print("🧠 STATE AFTER ACTIVE SLOT:", state)
-    else:
-        apply_basic_updates(state, text)
-
-        # AI is a delta interpreter only. It cannot reset or directly decide verdict.
-        ai_result = await reconcile_turn(text, state, history)
-        print("🤖 AI STATE DELTA:", ai_result)
-        response = _apply_reconciler_result(state, ai_result)
-        if response:
-            print("🧠 STATE AFTER AI AIRPORT:", state)
-            return response
-
-        if ai_result.get("intent") == "general_question" and not _looks_trip_like(text, state):
-            answer = await _handle_question(text, wallet)
-            answer["params"] = public_params(state)
-            return answer
-
-    clean_after_update(state)
-    print("🧠 STATE AFTER MERGE:", state)
-
-    if not _looks_trip_like(text, state):
-        answer = await _handle_question(text, wallet)
-        answer["params"] = public_params(state)
-        return answer
-
-    missing = next_missing_slot(state)
-    if missing:
-        question = prompt_for_missing(state, missing)
-        return build_collecting_response(question, state)
-
-    try:
-        params = validate_ready_state(state)
-    except Exception as exc:
-        question = validation_message(exc, state)
-        return build_collecting_response(question, state)
-
-    if request is None:
         return {
-            "type": "error",
-            "message": "I need a live session before I can run a search. Please reload and try again.",
-            "params": public_params(state),
+            "type": "followup",
+            "message": "Hey, I'm Zoe! I can help you figure out where to go, whether your points are worth using, what to do at a destination, or just think through your next trip. What's on your mind?",
         }
 
-    try:
-        search_data = await run_search(request=request, params=params)
-        verdict = search_data.get("verdict") or {}
-        message = build_zoe_verdict_message(search_data)
-        meta = get_meta(state)
-        meta["conversation_mode"] = "post_verdict"
-        set_last_requested(state, None, None)
-        return {
-            "type": "search_result",
-            "message": message,
-            "data": verdict,
-            "search_data": search_data,
-            "search_id": search_data.get("search_id"),
-            "verdict_id": search_data.get("verdict_id"),
-            "params": public_params(state),
-            "suggestions": build_suggestions(state, verdict, stage="post_verdict"),
-        }
-    except HTTPException as exc:
-        friendly = str(exc.detail) if getattr(exc, "detail", None) else "I hit a search error."
-        if "Missing authorization header" in friendly or "Invalid or expired session" in friendly:
-            friendly = "Please log in again so I can run a live search for you."
-        elif "Date" in friendly:
-            friendly = validation_message(Exception(friendly), state)
-        else:
-            friendly = "Sorry, I ran into an issue fetching live results. Please try again."
-        return {"type": "error", "message": friendly, "params": public_params(state), "suggestions": []}
-    except Exception as exc:
-        print("❌ SEARCH ERROR:", repr(exc))
-        return {
-            "type": "error",
-            "message": "Sorry, I ran into an issue fetching live results. Please try again.",
-            "params": public_params(state),
-            "suggestions": [],
-        }
+    user_context = ""
+    if user_id:
+        user_context = await _fetch_user_context(user_id)
+
+    messages = _build_messages(user_context, history, text)
+    raw_reply = await _call_nvidia(messages)
+
+    # Extract prefill data if the model included it
+    clean_reply, prefill = _extract_prefill(raw_reply)
+
+    result: Dict[str, Any] = {
+        "type": "followup",
+        "message": clean_reply,
+    }
+
+    if prefill:
+        result["prefill"] = prefill
+        print("✈️ ZOE PREFILL:", prefill)
+
+    return result
