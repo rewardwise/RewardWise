@@ -214,3 +214,12 @@ RewardWise_MVP0/Backend/training/raw/
 RewardWise_MVP0/Backend/training/processed/
 *.asc
 *.zip
+
+# Repo packing outputs
+rewardwise-repopack.txt
+repopack-output.txt
+repomix-output.txt
+repository.txt
+repo-pack.txt
+*.repopack.txt
+*.repomix.txt
