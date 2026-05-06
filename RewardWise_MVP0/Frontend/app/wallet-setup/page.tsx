@@ -47,6 +47,7 @@ export default function WalletSetupPage() {
 
   // add-cards state
   const [searchTerm, setSearchTerm] = useState("");
+  const [activeTab, setActiveTab] = useState<"card" | "airline">("card");
   const [selectedNewCards, setSelectedNewCards] = useState<string[]>([]);
   const [newBalances, setNewBalances] = useState<Record<string, number>>({});
   const [adding, setAdding] = useState(false);
@@ -57,12 +58,19 @@ export default function WalletSetupPage() {
 
   // cards already in wallet - filtered out of the picker so no duplicates
   const existingNames = new Set(savedCards.map((c) => c.card_name));
-  const filteredCards = AVAILABLE_CARDS.filter(
-    (c) =>
-      !existingNames.has(c.name) &&
-      (c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.program.toLowerCase().includes(searchTerm.toLowerCase()))
+  const q = searchTerm.toLowerCase();
+  const matchesQuery = (c: { name: string; program: string }) =>
+    !q ||
+    c.name.toLowerCase().includes(q) ||
+    c.program.toLowerCase().includes(q);
+  const visibleCards = AVAILABLE_CARDS.filter(
+    (c) => c.category === "card" && !existingNames.has(c.name) && matchesQuery(c)
   );
+  const visibleAirlines = AVAILABLE_CARDS.filter(
+    (c) => c.category === "airline" && !existingNames.has(c.name) && matchesQuery(c)
+  );
+  const visibleItems = activeTab === "card" ? visibleCards : visibleAirlines;
+  const activeTabLabel = activeTab === "card" ? "Credit Cards" : "Airline Programs";
 
   // ── load portfolio (called once on mount, and after mutations) ─────────
   async function loadPortfolio(userId: string) {
@@ -223,7 +231,7 @@ export default function WalletSetupPage() {
 
           {viewMode === "portfolio" && (
             <button
-              onClick={() => { setViewMode("add-cards"); setSearchTerm(""); }}
+              onClick={() => { setViewMode("add-cards"); setSearchTerm(""); setActiveTab("card"); }}
               className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-all"
             >
               <Plus className="w-4 h-4" /> Add Cards
@@ -352,13 +360,9 @@ export default function WalletSetupPage() {
         {viewMode === "add-cards" && (
           <div className="bg-gray-900/90 backdrop-blur rounded-xl p-6 shadow-2xl space-y-4">
             <div>
-              <h2 className="text-lg font-semibold text-white">
-                {savedCards.length === 0 ? "Select your Cards" : "Add More Cards"}
-              </h2>
+              <h2 className="text-lg font-semibold text-white">Add to your wallet</h2>
               <p className="text-gray-400 text-sm mt-1">
-                {savedCards.length === 0
-                  ? "Add your credit cards and loyalty programs to get personalized verdicts."
-                  : "Cards already in your wallet are hidden below."}
+                Pick the cards or programs that hold your points. Items already in your wallet are hidden.
               </p>
             </div>
 
@@ -369,9 +373,41 @@ export default function WalletSetupPage() {
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search cards or programs..."
+                placeholder="Search across cards and programs…"
                 className="w-full bg-gray-800 border border-gray-700 rounded-lg py-3 pl-10 pr-4 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
+            </div>
+
+            {/* Tab strip */}
+            <div className="flex gap-2 border-b border-white/10">
+              <button
+                type="button"
+                onClick={() => setActiveTab("card")}
+                className={`flex items-center gap-2 px-4 py-2 -mb-px border-b-2 text-sm font-medium transition-colors ${
+                  activeTab === "card"
+                    ? "border-emerald-400 text-emerald-300"
+                    : "border-transparent text-gray-400 hover:text-white"
+                }`}
+              >
+                💳 Credit Cards
+                <span className="ml-1 px-2 py-0.5 text-xs rounded-full bg-gray-700/60 text-gray-300">
+                  {visibleCards.length}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("airline")}
+                className={`flex items-center gap-2 px-4 py-2 -mb-px border-b-2 text-sm font-medium transition-colors ${
+                  activeTab === "airline"
+                    ? "border-emerald-400 text-emerald-300"
+                    : "border-transparent text-gray-400 hover:text-white"
+                }`}
+              >
+                ✈️ Airline Programs
+                <span className="ml-1 px-2 py-0.5 text-xs rounded-full bg-gray-700/60 text-gray-300">
+                  {visibleAirlines.length}
+                </span>
+              </button>
             </div>
 
             <div className="flex justify-between items-center text-sm">
@@ -381,16 +417,16 @@ export default function WalletSetupPage() {
               )}
             </div>
 
-            {/* Card picker grid */}
-            <div className="grid md:grid-cols-2 gap-3 max-h-80 overflow-y-auto pr-1">
-              {filteredCards.length === 0 ? (
-                <p className="text-gray-500 text-sm col-span-2 text-center py-8">
-                  {existingNames.size > 0
-                    ? "You've already added all available cards!"
-                    : "No cards match your search."}
+            {/* Picker list (active tab) */}
+            <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+              {visibleItems.length === 0 ? (
+                <p className="text-gray-500 text-sm text-center py-8">
+                  {searchTerm
+                    ? `No matches in ${activeTabLabel} for "${searchTerm}". Try the other tab.`
+                    : "No items available — everything in this category is already in your wallet."}
                 </p>
               ) : (
-                filteredCards.map((card) => {
+                visibleItems.map((card) => {
                   const isSelected = selectedNewCards.includes(card.id);
                   const bal = newBalances[card.id] || 0;
                   return (
@@ -478,7 +514,9 @@ export default function WalletSetupPage() {
                 {adding && <Loader2 className="w-4 h-4 animate-spin" />}
                 {adding
                   ? "Saving..."
-                  : `Add${selectedNewCards.length > 0 ? ` ${selectedNewCards.length}` : ""} Card${selectedNewCards.length !== 1 ? "s" : ""}`}
+                  : selectedNewCards.length > 0
+                  ? `Add ${selectedNewCards.length} to Wallet`
+                  : "Add to Wallet"}
               </button>
             </div>
           </div>
