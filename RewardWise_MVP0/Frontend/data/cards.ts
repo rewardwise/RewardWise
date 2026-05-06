@@ -56,12 +56,6 @@ export const AVAILABLE_CARDS = [
 		logo: "🏨",
 	},
 	{
-		id: "hyatt",
-		name: "World of Hyatt",
-		program: "World of Hyatt",
-		logo: "🏨",
-	},
-	{
 		id: "delta_skymiles",
 		name: "Delta SkyMiles",
 		program: "Delta SkyMiles",
