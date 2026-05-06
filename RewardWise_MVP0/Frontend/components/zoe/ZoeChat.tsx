@@ -281,6 +281,11 @@ export default function ZoeChat({ isOpen, setIsOpen, onFillSearch, verdictContex
 		if (typing || !text.trim()) return;
 		const trimmed = text.trim();
 
+		// Optimistic UI: clear input + show user message + typing dots before any await
+		setMessages(prev => [...prev, { role: "user", content: trimmed }]);
+		setInput("");
+		setTyping(true);
+
 		// Create conversation in DB on first message if needed
 		let convId = conversationId;
 		if (!convId && user) {
@@ -292,12 +297,10 @@ export default function ZoeChat({ isOpen, setIsOpen, onFillSearch, verdictContex
 			if (!error && data) {
 				convId = data.id;
 				setConversationId(convId);
+			} else if (error) {
+				console.error("Failed to create conversation:", error);
 			}
 		}
-
-		setMessages(prev => [...prev, { role: "user", content: trimmed }]);
-		setInput("");
-		setTyping(true);
 
 		try {
 			const headers = await getAuthHeaders();
