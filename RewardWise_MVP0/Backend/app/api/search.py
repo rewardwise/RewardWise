@@ -11,41 +11,9 @@ from app.services.seats_service import search_award_availability
 from app.services.verdict_service import generate_verdict  # RW-VerdictGenerator
 from app.utils.math_utils import calculate_cpp
 from app.validators.airport_codes import is_valid_airport_code  # RW-047
+from app.program_aliases import PROGRAM_ALIASES
 import os
 router = APIRouter()
-
-# Maps seats.aero source strings → card program names that transfer there.
-# Mirrors WalletContext.tsx PROGRAM_ALIASES on the frontend.
-PROGRAM_ALIASES: dict[str, list[str]] = {
-    # ── Airline programs ──────────────────────────────────────────────
-    "united":           ["United MileagePlus"],
-    "delta":            ["Delta SkyMiles"],
-    "american":         ["Citi ThankYou Points", "Chase Ultimate Rewards"],
-    "alaska":           [],  # no major transferable card programs
-    "jetblue":          [],  # TrueBlue has no major transfer partners in wallet
-    "aeroplan":         ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
-    "virginatlantic":   ["Chase Ultimate Rewards", "Capital One Miles"],
-    "flyingblue":       ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
-    "british":          ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
-    "singapore":        ["Chase Ultimate Rewards", "Amex Membership Rewards"],
-    "cathay":           ["Chase Ultimate Rewards", "Amex Membership Rewards"],
-    "emirates":         ["Chase Ultimate Rewards", "Amex Membership Rewards"],
-    "turkish":          ["Chase Ultimate Rewards"],
-    "qantas":           ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
-    "avianca":          ["Capital One Miles"],
-    "lifemiles":        ["Capital One Miles"],  # same as avianca, different brand name
-    "etihad":           ["Amex Membership Rewards"],
-    "qatar":            ["Amex Membership Rewards"],
-    "saudia":           [],  # no transfer partners from major cards
-    "smiles":           [],  # GOL Smiles — no transfer partners from major cards
-    "azul":             [],  # no transfer partners
-    "korean":           [],  # no transfer partners from major cards
-    "ana":              ["Amex Membership Rewards"],
-    "air_france":       ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],  # = flyingblue
-    # ── Hotel programs ────────────────────────────────────────────────
-    "hyatt":            ["World of Hyatt"],
-    "marriott":         ["Marriott Bonvoy"],
-}
 
 
 def get_search_params(
