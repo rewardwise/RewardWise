@@ -1,0 +1,126 @@
+{
+  "itineraries": [
+    {
+      "id": "ewr-lax-roundtrip-mock-001",
+      "leg_ids": [
+        "95565058-2606150700--31722-0-95673321-2606151015",
+        "95673321-2606220900--31722-0-95565058-2606221715"
+      ],
+      "pricing_options": [
+        {
+          "id": "mock-roundtrip-united",
+          "agent_ids": [
+            "united"
+          ],
+          "price": {
+            "amount": 79.9,
+            "update_status": "current",
+            "last_updated": "2026-05-01T13:30:00",
+            "quote_age": 40
+          },
+          "items": [
+            {
+              "agent_id": "united",
+              "url": "/transport_deeplink/4.0/US/en-US/USD/united/1/95565058.95673321.2026-06-15/95673321.95565058.2026-06-22/air/flights?mock=true&ticket_price=79.90",
+              "segment_ids": [
+                "95565058-95673321-2606150700-2606151015--31722",
+                "95673321-95565058-2606220900-2606221715--31722"
+              ],
+              "price": {
+                "amount": 79.9,
+                "update_status": "current",
+                "last_updated": "2026-05-01T13:30:00",
+                "quote_age": 40
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "legs": [
+    {
+      "id": "95565058-2606150700--31722-0-95673321-2606151015",
+      "origin_place_id": 95565058,
+      "destination_place_id": 95673321,
+      "departure": "2026-06-15T07:00:00",
+      "arrival": "2026-06-15T10:15:00",
+      "duration": 375,
+      "segment_ids": [
+        "95565058-95673321-2606150700-2606151015--31722"
+      ],
+      "carrier_ids": [
+        -31722
+      ],
+      "stop_ids": []
+    },
+    {
+      "id": "95673321-2606220900--31722-0-95565058-2606221715",
+      "origin_place_id": 95673321,
+      "destination_place_id": 95565058,
+      "departure": "2026-06-22T09:00:00",
+      "arrival": "2026-06-22T17:15:00",
+      "duration": 315,
+      "segment_ids": [
+        "95673321-95565058-2606220900-2606221715--31722"
+      ],
+      "carrier_ids": [
+        -31722
+      ],
+      "stop_ids": []
+    }
+  ],
+  "segments": [
+    {
+      "id": "95565058-95673321-2606150700-2606151015--31722",
+      "origin_place_id": 95565058,
+      "destination_place_id": 95673321,
+      "arrival": "2026-06-15T10:15:00",
+      "departure": "2026-06-15T07:00:00",
+      "duration": 375,
+      "marketing_flight_number": "1234",
+      "marketing_carrier_id": -31722,
+      "operating_carrier_id": -31722,
+      "mode": "flight"
+    },
+    {
+      "id": "95673321-95565058-2606220900-2606221715--31722",
+      "origin_place_id": 95673321,
+      "destination_place_id": 95565058,
+      "arrival": "2026-06-22T17:15:00",
+      "departure": "2026-06-22T09:00:00",
+      "duration": 315,
+      "marketing_flight_number": "1201",
+      "marketing_carrier_id": -31722,
+      "operating_carrier_id": -31722,
+      "mode": "flight"
+    }
+  ],
+  "places": [
+    {
+      "id": 95565058,
+      "name": "Newark Liberty International",
+      "displayCode": "EWR",
+      "type": "Airport"
+    },
+    {
+      "id": 95673321,
+      "name": "Los Angeles International",
+      "displayCode": "LAX",
+      "type": "Airport"
+    }
+  ],
+  "carriers": [
+    {
+      "id": -31722,
+      "name": "United",
+      "displayCode": "UA"
+    }
+  ],
+  "agents": [
+    {
+      "id": "united",
+      "name": "United"
+    }
+  ]
+}

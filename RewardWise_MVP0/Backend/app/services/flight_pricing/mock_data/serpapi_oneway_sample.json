@@ -1,0 +1,124 @@
+{
+  "search_metadata": {
+    "id": "mock-serpapi-oneway-ewr-lax",
+    "status": "Success",
+    "json_endpoint": "https://serpapi.com/searches/mock-serpapi-oneway-ewr-lax.json",
+    "created_at": "2026-05-01 13:30:00 UTC",
+    "processed_at": "2026-05-01 13:30:01 UTC",
+    "google_flights_url": "https://www.google.com/travel/flights?hl=en",
+    "total_time_taken": 0.82
+  },
+  "search_parameters": {
+    "engine": "google_flights",
+    "hl": "en",
+    "departure_id": "EWR",
+    "arrival_id": "LAX",
+    "outbound_date": "2026-06-15",
+    "type": "2",
+    "travel_class": 1,
+    "adults": 1,
+    "currency": "USD"
+  },
+  "best_flights": [
+    {
+      "flights": [
+        {
+          "departure_airport": {
+            "name": "Newark Liberty International Airport",
+            "id": "EWR",
+            "time": "2026-06-15 07:00"
+          },
+          "arrival_airport": {
+            "name": "Los Angeles International Airport",
+            "id": "LAX",
+            "time": "2026-06-15 10:15"
+          },
+          "duration": 375,
+          "airplane": "Boeing 737 MAX 9",
+          "airline": "United",
+          "airline_logo": "https://www.gstatic.com/flights/airline_logos/70px/UA.png",
+          "travel_class": "Economy",
+          "flight_number": "UA 1234",
+          "legroom": "31 in",
+          "extensions": [
+            "Average legroom (31 in)",
+            "Wi-Fi for a fee",
+            "In-seat power & USB outlets"
+          ]
+        }
+      ],
+      "total_duration": 375,
+      "carbon_emissions": {
+        "this_flight": 368000,
+        "typical_for_this_route": 390000,
+        "difference_percent": -6
+      },
+      "price": 119,
+      "type": "One way",
+      "airline_logo": "https://www.gstatic.com/flights/airline_logos/70px/UA.png",
+      "departure_token": "mock-serpapi-departure-token-ua"
+    }
+  ],
+  "other_flights": [
+    {
+      "flights": [
+        {
+          "departure_airport": {
+            "name": "Newark Liberty International Airport",
+            "id": "EWR",
+            "time": "2026-06-15 08:30"
+          },
+          "arrival_airport": {
+            "name": "Hartsfield-Jackson Atlanta International Airport",
+            "id": "ATL",
+            "time": "2026-06-15 10:10"
+          },
+          "duration": 160,
+          "airplane": "Airbus A321",
+          "airline": "Delta",
+          "airline_logo": "https://www.gstatic.com/flights/airline_logos/70px/DL.png",
+          "travel_class": "Economy",
+          "flight_number": "DL 882",
+          "legroom": "31 in"
+        },
+        {
+          "departure_airport": {
+            "name": "Hartsfield-Jackson Atlanta International Airport",
+            "id": "ATL",
+            "time": "2026-06-15 11:30"
+          },
+          "arrival_airport": {
+            "name": "Los Angeles International Airport",
+            "id": "LAX",
+            "time": "2026-06-15 13:45"
+          },
+          "duration": 255,
+          "airplane": "Boeing 757",
+          "airline": "Delta",
+          "airline_logo": "https://www.gstatic.com/flights/airline_logos/70px/DL.png",
+          "travel_class": "Economy",
+          "flight_number": "DL 1441",
+          "legroom": "31 in"
+        }
+      ],
+      "total_duration": 495,
+      "carbon_emissions": {
+        "this_flight": 428000,
+        "typical_for_this_route": 390000,
+        "difference_percent": 10
+      },
+      "price": 99,
+      "type": "One way",
+      "airline_logo": "https://www.gstatic.com/flights/airline_logos/70px/DL.png",
+      "departure_token": "mock-serpapi-departure-token-dl"
+    }
+  ],
+  "price_insights": {
+    "lowest_price": 99,
+    "price_level": "low",
+    "typical_price_range": [
+      140,
+      260
+    ]
+  }
+}

@@ -8,7 +8,8 @@ import { useAuth } from "@/context/AuthProvider";
 import { useWallet } from "@/context/WalletContext";
 import { useSearchFill } from "@/context/SearchFillContext";
 import { useABTest } from "@/context/ABTestContext";
-import VerdictCard, { VerdictCardSkeleton } from "@/components/VerdictCard";
+import VerdictCard from "@/components/VerdictCard";
+import SearchLoadingExperience from "@/components/SearchLoadingExperience";
 import AirportSearch from "@/components/AirportSearch";
 import ZoeChat from "@/components/zoe/ZoeChat";
 import type { Message } from "@/components/zoe/ZoeChat";
@@ -119,6 +120,12 @@ interface SearchResult {
 }
 
 // ─── HELPERS ──────────────────────────────────────────────────────────────────
+
+const MIN_SEARCH_LOADING_MS = 5000;
+
+function sleep(ms: number) {
+	return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
 
 function formatDuration(mins: number) {
 	const h = Math.floor(mins / 60);
@@ -396,6 +403,10 @@ export default function HomePage() {
 			}
 
 			const data = await res.json();
+			const remainingLoadingMs = MIN_SEARCH_LOADING_MS - (Date.now() - searchStartedAt);
+			if (remainingLoadingMs > 0) {
+				await sleep(remainingLoadingMs);
+			}
 			setResults(data);
 			trackAnalyticsEvent("search_completed", {
 				event_type: "search",
@@ -537,12 +548,8 @@ export default function HomePage() {
 					</div>
 
 					{/* SEARCH ROW 2 */}
-					<div
-						className={`grid grid-cols-1 ${
-							tripType === "roundtrip" ? "sm:grid-cols-3" : "sm:grid-cols-2"
-						} gap-3 mb-4`}
-					>
-						{tripType === "roundtrip" && (
+					<div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+						{tripType === "roundtrip" ? (
 							<div>
 								<label className="block text-emerald-400 text-xs mb-1 flex items-center gap-1">
 									<Calendar className="w-3 h-3" /> RETURN
@@ -555,6 +562,8 @@ export default function HomePage() {
 									className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm [color-scheme:dark]"
 								/>
 							</div>
+						) : (
+							<div />
 						)}
 						<div>
 							<label className="block text-emerald-400 text-xs mb-1 flex items-center gap-1">
@@ -615,9 +624,12 @@ export default function HomePage() {
 					{(searching || results) && (
 						<div className="mt-2 space-y-4">
 							{searching ? (
-								<VerdictCardSkeleton
+								<SearchLoadingExperience
 									origin={origin}
 									destination={destination}
+									cabin={cabin}
+									travelers={travelers}
+									isRoundtrip={tripType === "roundtrip"}
 								/>
 							) : results?.verdict ? (
 								<VerdictCard
