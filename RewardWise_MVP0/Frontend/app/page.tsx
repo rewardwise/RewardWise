@@ -277,7 +277,7 @@ function LandingPageInner() {
 								</div>
 							</div> */}
 
-							<div className="mt-8 grid max-w-2xl gap-3 sm:grid-cols-3">
+							<div className="mt-12 grid max-w-2xl gap-3 sm:mt-8 sm:grid-cols-3">
 								<div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-xl">
 									<div className="text-2xl font-bold text-white">$48B</div>
 									<div className="mt-1 text-[11px] uppercase tracking-[0.12em] text-white/34">
