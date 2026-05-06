@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 import httpx
 
 from app.db.client import get_db_client
+from app.program_aliases import PROGRAM_ALIASES  # noqa: F401
 
 NVIDIA_BASE_URL = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
 MODEL_NAME = os.getenv("NVIDIA_MODEL", "meta/llama-3.3-70b-instruct")

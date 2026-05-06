@@ -125,17 +125,17 @@ function bookingMethodLabel(method: BookingMethod) {
 }
 
 function formatMoney(value?: number | null) {
-	if (typeof value !== "number" || Number.isNaN(value)) return "—";
+	if (typeof value !== "number" || Number.isNaN(value)) return "-";
 	return `$${Math.round(value).toLocaleString()}`;
 }
 
 function formatPoints(value?: number | null) {
-	if (typeof value !== "number" || Number.isNaN(value)) return "—";
+	if (typeof value !== "number" || Number.isNaN(value)) return "-";
 	return value.toLocaleString();
 }
 
 function formatCpp(value?: number | null) {
-	if (typeof value !== "number" || Number.isNaN(value)) return "—";
+	if (typeof value !== "number" || Number.isNaN(value)) return "-";
 	return `${value.toFixed(2)}¢`;
 }
 
@@ -355,7 +355,7 @@ export default function TripsPage() {
 						<div className="rounded-3xl border border-white/10 bg-slate-950/70 p-5 shadow-xl shadow-slate-950/20 backdrop-blur">
 							<p className="text-sm text-slate-400">Avg rating</p>
 							<p className="mt-2 text-3xl font-bold text-white">
-								{averageRating ? averageRating.toFixed(1) : "—"}
+								{averageRating ? averageRating.toFixed(1) : "-"}
 							</p>
 						</div>
 					</div>

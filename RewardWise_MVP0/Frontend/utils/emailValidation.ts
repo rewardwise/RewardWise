@@ -37,7 +37,7 @@ const BLOCKED_DOMAINS = new Set([
 
 /**
  * Returns an error message string if the email is invalid, or null if it's ok.
- * Only intended for use on signup — login should not block existing users.
+ * Only intended for use on signup - login should not block existing users.
  */
 export function isValidEmailFormat(email: string): boolean {
 	return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email);

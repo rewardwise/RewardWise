@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { useAuth } from "@/context/AuthProvider";
+import { PROGRAM_ALIASES } from "@/utils/programAliases";
 
 export interface WalletCard {
   id: string;
@@ -21,30 +22,6 @@ interface WalletContextType {
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
-
-// Maps seats.aero source strings → friendly program names & card program names
-// This is the bridge between seats.aero "Source" field and our card data
-const PROGRAM_ALIASES: Record<string, string[]> = {
-    united:         ["United MileagePlus"],
-    delta:          ["Delta SkyMiles"],
-    american:       ["Citi ThankYou Points", "Chase Ultimate Rewards"],
-    aeroplan:       ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
-    virginatlantic: ["Chase Ultimate Rewards", "Capital One Miles"],
-    flyingblue:     ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
-    british:        ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
-    singapore:      ["Chase Ultimate Rewards", "Amex Membership Rewards"],
-    cathay:         ["Chase Ultimate Rewards", "Amex Membership Rewards"],
-    emirates:       ["Chase Ultimate Rewards", "Amex Membership Rewards"],
-    turkish:        ["Chase Ultimate Rewards"],
-    qantas:         ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
-    avianca:        ["Capital One Miles"],
-    lifemiles:      ["Capital One Miles"],
-    etihad:         ["Amex Membership Rewards"],
-    qatar:          ["Amex Membership Rewards"],
-    ana:            ["Amex Membership Rewards"],
-    hyatt:          ["World of Hyatt"],
-    marriott:       ["Marriott Bonvoy"],
-};
 
 export function WalletProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();

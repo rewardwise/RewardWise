@@ -1,7 +1,7 @@
 // airports.ts
-// Static airport data for autocomplete — IATA code + city + country.
+// Static airport data for autocomplete - IATA code + city + country.
 // Codes sourced from airport_codes.py (backend validator).
-// Place at: RewardWise_MVP0/Frontend/lib/airports.ts
+// Place at: Frontend/components/airports.ts (or your lib path)
 
 export interface Airport {
   code: string;
@@ -771,7 +771,7 @@ export const AIRPORTS: Airport[] = [
   { code: "RAB", city: "Rabaul", country: "PG", name: "Tokua Airport" },
 ];
 
-// Search function — matches by code, city, or country (case-insensitive)
+// Search function - matches by code, city, or country (case-insensitive)
 export function searchAirports(query: string, limit = 6): Airport[] {
   if (!query || query.length < 1) return [];
   const q = query.toUpperCase().trim();

@@ -31,7 +31,7 @@ type ViewMode = "loading" | "portfolio" | "add-cards";
 export default function WalletSetupPage() {
   const router = useRouter();
   const { user, checkPortfolio } = useAuth();
-  // stable client ref — created once, never changes
+  // stable client ref - created once, never changes
   const supabase = useRef(createClient()).current;
 
   // core state
@@ -55,7 +55,7 @@ export default function WalletSetupPage() {
   const totalPoints = savedCards.reduce((s, c) => s + (c.points_balance || 0), 0);
   const totalValue = Math.round(totalPoints * 0.015);
 
-  // cards already in wallet — filtered out of the picker so no duplicates
+  // cards already in wallet - filtered out of the picker so no duplicates
   const existingNames = new Set(savedCards.map((c) => c.card_name));
   const filteredCards = AVAILABLE_CARDS.filter(
     (c) =>
@@ -95,7 +95,7 @@ export default function WalletSetupPage() {
     setViewMode(mapped.length > 0 ? "portfolio" : "add-cards");
   }
 
-  // fire once when user is available — guarded by loaded ref so it never
+  // fire once when user is available - guarded by loaded ref so it never
   // runs twice even if AuthProvider causes a second render
   const loaded = useRef(false);
   useEffect(() => {

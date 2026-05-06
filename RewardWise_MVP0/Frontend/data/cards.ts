@@ -56,12 +56,6 @@ export const AVAILABLE_CARDS = [
 		logo: "🏨",
 	},
 	{
-		id: "hyatt",
-		name: "World of Hyatt",
-		program: "World of Hyatt",
-		logo: "🏨",
-	},
-	{
 		id: "delta_skymiles",
 		name: "Delta SkyMiles",
 		program: "Delta SkyMiles",
@@ -71,6 +65,36 @@ export const AVAILABLE_CARDS = [
 		id: "united_mileageplus",
 		name: "United MileagePlus",
 		program: "United MileagePlus",
+		logo: "✈️",
+	},
+	{
+		id: "alaska_mileage_plan",
+		name: "Alaska Mileage Plan",
+		program: "Alaska Mileage Plan",
+		logo: "✈️",
+	},
+	{
+		id: "american_aadvantage",
+		name: "American AAdvantage",
+		program: "American AAdvantage",
+		logo: "✈️",
+	},
+	{
+		id: "aeroplan",
+		name: "Air Canada Aeroplan",
+		program: "Air Canada Aeroplan",
+		logo: "✈️",
+	},
+	{
+		id: "cathay_asia_miles",
+		name: "Cathay Asia Miles",
+		program: "Cathay Asia Miles",
+		logo: "✈️",
+	},
+	{
+		id: "ana_mileage_club",
+		name: "ANA Mileage Club",
+		program: "ANA Mileage Club",
 		logo: "✈️",
 	},
 ];
