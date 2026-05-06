@@ -11,7 +11,6 @@ import {
 	Edit3,
 	Loader2,
 	Maximize2,
-	MessageCircle,
 	Mic,
 	MicOff,
 	Minimize2,
@@ -81,7 +80,6 @@ export default function ZoeChat({ isOpen, setIsOpen, onFillSearch, verdictContex
 	const { cards } = useWallet();
 
 	const [expanded, setExpanded] = useState(false);
-	const [showNudge, setShowNudge] = useState(true);
 
 	// Current chat state
 	const [messages, setMessages] = useState<Message[]>([]);
@@ -107,6 +105,17 @@ export default function ZoeChat({ isOpen, setIsOpen, onFillSearch, verdictContex
 	const inputRef = useRef<HTMLInputElement>(null);
 	const renameInputRef = useRef<HTMLInputElement>(null);
 	const endRef = useRef<HTMLDivElement>(null);
+	const dragStartYRef = useRef<number | null>(null);
+
+	const handleDragHandleTouchStart = (e: React.TouchEvent) => {
+		dragStartYRef.current = e.touches[0].clientY;
+	};
+	const handleDragHandleTouchEnd = (e: React.TouchEvent) => {
+		if (dragStartYRef.current === null) return;
+		const deltaY = e.changedTouches[0].clientY - dragStartYRef.current;
+		dragStartYRef.current = null;
+		if (deltaY > 60) setIsOpen(false);
+	};
 
 	useEffect(() => {
 		endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -133,15 +142,21 @@ export default function ZoeChat({ isOpen, setIsOpen, onFillSearch, verdictContex
 
 	useEffect(() => {
 		if (isOpen) {
-			setShowNudge(false);
 			setTimeout(() => inputRef.current?.focus(), 100);
 		}
 	}, [isOpen]);
 
 	useEffect(() => {
-		const t = setTimeout(() => setShowNudge(false), 12000);
-		return () => clearTimeout(t);
-	}, []);
+		if (!isOpen) return;
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === "Escape") {
+				setIsOpen(false);
+				setExpanded(false);
+			}
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, [isOpen, setIsOpen]);
 
 	useEffect(() => {
 		return () => {
@@ -368,23 +383,13 @@ export default function ZoeChat({ isOpen, setIsOpen, onFillSearch, verdictContex
 	// ─── Closed state ─────────────────────────────────────────────────────────
 	if (!isOpen) {
 		return (
-			<div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
-				{showNudge && (
-					<div className="max-w-[240px] rounded-2xl border border-emerald-400/15 bg-slate-900/95 px-4 py-3 shadow-2xl">
-						<p className="text-sm font-semibold text-white">Meet Zoe</p>
-						<p className="mt-1 text-xs leading-5 text-slate-400">
-							Chat about your trip — she'll fill in the search form when you're ready.
-						</p>
-					</div>
-				)}
-				<button
-					onClick={() => setIsOpen(true)}
-					className="flex items-center gap-3 rounded-full bg-gradient-to-r from-blue-500 to-emerald-500 px-7 py-4 text-white shadow-2xl transition-all hover:scale-[1.02]"
-				>
-					<MessageCircle className="h-6 w-6" />
-					<span className="text-base font-bold">Ask Zoe ✨</span>
-				</button>
-			</div>
+			<button
+				onClick={() => setIsOpen(true)}
+				aria-label="Open Zoe"
+				className="animate-zoe-pulse fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500 text-white shadow-2xl transition-colors hover:bg-emerald-600"
+			>
+				<Sparkles className="h-6 w-6" />
+			</button>
 		);
 	}
 
@@ -462,59 +467,88 @@ export default function ZoeChat({ isOpen, setIsOpen, onFillSearch, verdictContex
 				</button>
 			</div>
 			<p className={`mt-2 text-center text-[11px] text-slate-600 ${!compact ? "mx-auto max-w-2xl" : ""}`}>
-				{compact
-					? <><button onClick={() => setExpanded(true)} className="text-emerald-600 hover:text-emerald-400">Expand</button> for full view · Hold mic to speak</>
-					: "Hold mic to speak · Zoe fills the search form as you plan"}
+				{compact ? (
+					<>
+						<button onClick={() => setExpanded(true)} className="hidden sm:inline text-emerald-600 hover:text-emerald-400">Expand</button>
+						<span className="hidden sm:inline"> for full view · </span>
+						Hold mic to speak
+					</>
+				) : (
+					"Hold mic to speak · Zoe fills the search form as you plan"
+				)}
 			</p>
 		</div>
 	);
 
-	// ─── Compact popup ────────────────────────────────────────────────────────
+	// ─── Compact popup (desktop) / bottom sheet (mobile) ─────────────────────
 	if (!expanded) {
 		return (
-			<div className="fixed bottom-6 right-6 z-50 flex h-[560px] w-[390px] flex-col rounded-3xl border border-white/10 bg-slate-950/95 shadow-2xl backdrop-blur">
-				{/* Header */}
-				<div className="flex items-center justify-between border-b border-white/10 px-4 py-3.5">
-					<div className="flex items-center gap-3">
-						<div className="flex h-9 w-9 items-center justify-center rounded-full border border-emerald-400/20 bg-emerald-500/15">
-							<Sparkles className="h-4 w-4 text-emerald-300" />
-						</div>
-						<div>
-							<p className="font-semibold leading-none text-white">Zoe</p>
-							<p className="mt-0.5 text-xs text-emerald-300">Your travel agent</p>
-						</div>
+			<>
+				{/* Mobile backdrop — tap to dismiss */}
+				<div
+					onClick={() => setIsOpen(false)}
+					className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm sm:hidden"
+					aria-hidden="true"
+				/>
+				<div
+					role="dialog"
+					aria-modal="true"
+					aria-label="Zoe chat"
+					className="fixed z-50 flex flex-col border border-white/10 bg-slate-950/95 shadow-2xl backdrop-blur inset-x-0 bottom-0 h-[75vh] rounded-t-3xl sm:inset-auto sm:bottom-6 sm:right-6 sm:h-[560px] sm:w-[390px] sm:rounded-3xl"
+				>
+					{/* Drag handle — mobile only, swipe-down dismisses */}
+					<div
+						onTouchStart={handleDragHandleTouchStart}
+						onTouchEnd={handleDragHandleTouchEnd}
+						className="flex justify-center pt-2 pb-1 sm:hidden touch-none"
+						aria-hidden="true"
+					>
+						<div className="h-1 w-12 rounded-full bg-white/20" />
 					</div>
-					<div className="flex items-center gap-1.5">
-						<button onClick={() => setExpanded(true)} title="Expand" className="rounded-xl p-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-white">
-							<Maximize2 className="h-4 w-4" />
-						</button>
-						<button onClick={() => setIsOpen(false)} className="rounded-xl p-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-white">
-							<X className="h-4 w-4" />
-						</button>
-					</div>
-				</div>
 
-				{/* Messages */}
-				<div className="flex-1 overflow-y-auto px-4 py-4">
-					<div className="space-y-4">
-						{messages.map((msg, i) => renderMessage(msg, i, true))}
-						{typing && (
-							<div className="flex justify-start">
-								<div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
-									<div className="flex gap-1 items-center">
-										<div className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:0ms]" />
-										<div className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:150ms]" />
-										<div className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:300ms]" />
+					{/* Header */}
+					<div className="flex items-center justify-between border-b border-white/10 px-4 py-3.5">
+						<div className="flex items-center gap-3">
+							<div className="flex h-9 w-9 items-center justify-center rounded-full border border-emerald-400/20 bg-emerald-500/15">
+								<Sparkles className="h-4 w-4 text-emerald-300" />
+							</div>
+							<div>
+								<p className="font-semibold leading-none text-white">Zoe</p>
+								<p className="mt-0.5 text-xs text-emerald-300">Your travel agent</p>
+							</div>
+						</div>
+						<div className="flex items-center gap-1.5">
+							<button onClick={() => setExpanded(true)} title="Expand" className="hidden sm:inline-flex rounded-xl p-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-white">
+								<Maximize2 className="h-4 w-4" />
+							</button>
+							<button onClick={() => setIsOpen(false)} className="rounded-xl p-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-white">
+								<X className="h-4 w-4" />
+							</button>
+						</div>
+					</div>
+
+					{/* Messages */}
+					<div className="flex-1 overflow-y-auto px-4 py-4">
+						<div className="space-y-4">
+							{messages.map((msg, i) => renderMessage(msg, i, true))}
+							{typing && (
+								<div className="flex justify-start">
+									<div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
+										<div className="flex gap-1 items-center">
+											<div className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:0ms]" />
+											<div className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:150ms]" />
+											<div className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:300ms]" />
+										</div>
 									</div>
 								</div>
-							</div>
-						)}
-						<div ref={endRef} />
+							)}
+							<div ref={endRef} />
+						</div>
 					</div>
-				</div>
 
-				{renderInput(true)}
-			</div>
+					{renderInput(true)}
+				</div>
+			</>
 		);
 	}
 
