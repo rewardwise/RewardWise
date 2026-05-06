@@ -303,7 +303,7 @@ export default function WalletSetupPage() {
                           [card.id]: Number(e.target.value),
                         }))
                       }
-                      className="flex-1 bg-gray-900 border border-gray-700 rounded-lg py-2 px-3 text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      className="min-w-0 flex-1 bg-gray-900 border border-gray-700 rounded-lg py-2 px-3 text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
                       placeholder="Points balance"
                     />
                     <span className="text-emerald-400 text-xs font-medium bg-emerald-500/10 px-2 py-2 rounded whitespace-nowrap">
@@ -474,7 +474,7 @@ export default function WalletSetupPage() {
                               }))
                             }
                             placeholder="Points balance"
-                            className="flex-1 bg-gray-900 border border-gray-700 rounded py-2 px-3 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                            className="min-w-0 flex-1 bg-gray-900 border border-gray-700 rounded py-2 px-3 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                           />
                           {bal > 0 && (
                             <span className="text-emerald-400 text-xs font-medium bg-emerald-500/10 px-2 py-1 rounded flex-shrink-0">
