@@ -234,7 +234,7 @@ export default function WalletSetupPage() {
               onClick={() => { setViewMode("add-cards"); setSearchTerm(""); setActiveTab("card"); }}
               className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-all"
             >
-              <Plus className="w-4 h-4" /> Add Cards
+              <Plus className="w-4 h-4" /> Add to Wallet
             </button>
           )}
 
@@ -266,7 +266,7 @@ export default function WalletSetupPage() {
         {viewMode === "portfolio" && (
           <>
             <div className="bg-gray-900/90 backdrop-blur rounded-xl p-6 shadow-2xl space-y-3">
-              <h2 className="text-base font-semibold text-white mb-1">Your Cards</h2>
+              <h2 className="text-base font-semibold text-white mb-1">Your Wallet</h2>
 
               {savedCards.map((card) => (
                 <div key={card.id} className="bg-gray-800/60 rounded-lg p-4 space-y-3">
