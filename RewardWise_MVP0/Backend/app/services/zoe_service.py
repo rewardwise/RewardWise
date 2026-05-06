@@ -5,6 +5,7 @@ from typing import Any, Dict, List
 from fastapi import HTTPException
 
 from app.api.search import run_search
+from app.program_aliases import PROGRAM_ALIASES  # noqa: F401  reserved for re-enable; kept in sync via RewardWise_MVP0/scripts/check_alias_parity.sh
 from app.rag.flights_retriever import retrieve
 from app.services.airport_resolver import is_airport_options_request, resolve_airport_text
 from app.services.llm import generate_text
@@ -39,30 +40,6 @@ from app.services.zoe_state import (
     validate_ready_state,
     validation_message,
 )
-
-
-PROGRAM_ALIASES: dict[str, list[str]] = {
-    "united": ["United MileagePlus"],
-    "delta": ["Delta SkyMiles"],
-    "american": ["Citi ThankYou Points", "Chase Ultimate Rewards"],
-    "aeroplan": ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
-    "virginatlantic": ["Chase Ultimate Rewards", "Capital One Miles"],
-    "flyingblue": ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
-    "british": ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
-    "singapore": ["Chase Ultimate Rewards", "Amex Membership Rewards"],
-    "cathay": ["Chase Ultimate Rewards", "Amex Membership Rewards"],
-    "emirates": ["Chase Ultimate Rewards", "Amex Membership Rewards"],
-    "turkish": ["Chase Ultimate Rewards"],
-    "qantas": ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
-    "avianca": ["Capital One Miles"],
-    "lifemiles": ["Capital One Miles"],
-    "etihad": ["Amex Membership Rewards"],
-    "qatar": ["Amex Membership Rewards"],
-    "ana": ["Amex Membership Rewards"],
-    "air_france": ["Chase Ultimate Rewards", "Amex Membership Rewards", "Capital One Miles"],
-    "hyatt": ["World of Hyatt"],
-    "marriott": ["Marriott Bonvoy"],
-}
 
 
 def _format_wallet_context(wallet: list) -> str:
