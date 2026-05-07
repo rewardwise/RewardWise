@@ -26,14 +26,12 @@ def get_search_params(
     date_end: Optional[str] = Query(default=None),
 ) -> SearchParams:
     """Dependency that validates and returns typed search params (RW-047)."""
-    for side, raw in (("origin", origin), ("destination", destination)):
-        for code in raw.split(","):
-            if not is_valid_airport_code(code):
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"Invalid {side} airport code: '{code.strip()}'",
-                )
-    # Disjointness (incl. single-airport same-on-both-sides) is enforced in SearchParams.model_post_init.
+    if not is_valid_airport_code(origin):
+        raise HTTPException(status_code=422, detail=f"Invalid origin airport code: '{origin}'")
+    if not is_valid_airport_code(destination):
+        raise HTTPException(status_code=422, detail=f"Invalid destination airport code: '{destination}'")
+    if origin.upper() == destination.upper():
+        raise HTTPException(status_code=422, detail="Origin and destination cannot be the same.")
     try:
         return SearchParams(
             origin=origin,
@@ -128,13 +126,9 @@ async def search(
     user_programs = _get_user_programs(supabase, user_id)
 
     # --- L1 memory + L2 Supabase cache lookup ---
-    # Canonicalize multi-airport (metro) origin/destination so equivalent groups
-    # (e.g. JFK,LGA,EWR vs EWR,JFK,LGA) hit the same cache row.
-    canonical_origin = ",".join(sorted(origin.split(",")))
-    canonical_destination = ",".join(sorted(destination.split(",")))
     cache_params: CacheSearchParams = {
-        "origin": canonical_origin,
-        "destination": canonical_destination,
+        "origin": origin,
+        "destination": destination,
         "departure_date": departure_date,
         "departure_date_end": departure_date_end,
         "return_date": return_date,
@@ -246,8 +240,6 @@ async def search(
             "remaining_seats": award.get("remaining_seats"),
             "direct": award.get("direct", False),
             "airlines": award.get("airlines", ""),
-            "origin_airport": award.get("origin_airport"),
-            "destination_airport": award.get("destination_airport"),
             "trip_ids": award.get("trip_ids", []),
             "trips": award.get("trips", []),
             "source": award.get("source"),
@@ -351,3 +343,328 @@ async def run_search(request: Request, params):
     """
     return await search(request=request, params=params)
 
+
+# ---------------------------------------------------------------------------
+# Public one-time guest search
+# ---------------------------------------------------------------------------
+import hashlib
+import json
+from datetime import datetime, timezone
+
+
+def _client_ip_from_request(request: Request) -> str:
+    """
+    Best-effort client IP extraction behind Vercel/Render/proxies.
+    We store only a salted hash of this value, never the raw IP.
+    """
+    for header_name in ("cf-connecting-ip", "x-real-ip", "x-forwarded-for"):
+        value = request.headers.get(header_name)
+        if value:
+            return value.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+def _hash_public_trial_value(value: str) -> str:
+    secret = (
+        os.environ.get("IP_HASH_SECRET")
+        or os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+        or "local-dev-public-search-secret"
+    )
+    return hashlib.sha256(f"{secret}:{value}".encode("utf-8")).hexdigest()
+
+
+def _public_trial_payload_for_log(params: SearchParams) -> dict:
+    return {
+        "origin": params.origin,
+        "destination": params.destination,
+        "date": params.date,
+        "return_date": params.return_date,
+        "cabin": params.cabin.value,
+        "travelers": params.travelers,
+    }
+
+
+def _claim_public_search_trial(supabase, request: Request, params: SearchParams) -> str:
+    ip = _client_ip_from_request(request)
+    ip_hash = _hash_public_trial_value(ip)
+    user_agent_hash = _hash_public_trial_value(request.headers.get("user-agent", "unknown"))
+
+    existing = (
+        supabase
+        .from_("public_search_trials")
+        .select("id, used_at, status")
+        .eq("ip_hash", ip_hash)
+        .limit(1)
+        .execute()
+    )
+    if existing.data:
+        raise HTTPException(
+            status_code=429,
+            detail="You’ve already used your free search. Create an account to keep comparing trips.",
+        )
+
+    payload = {
+        "ip_hash": ip_hash,
+        "user_agent_hash": user_agent_hash,
+        "origin": params.origin,
+        "destination": params.destination,
+        "departure_date": params.date,
+        "return_date": params.return_date,
+        "cabin": params.cabin.value,
+        "travelers": params.travelers,
+        "status": "started",
+        "request_payload": _public_trial_payload_for_log(params),
+    }
+
+    try:
+        inserted = insert_one(supabase, "public_search_trials", payload)
+        return str(inserted["id"])
+    except Exception:
+        # Handles the race case where two tabs/devices on the same IP submit at once.
+        raise HTTPException(
+            status_code=429,
+            detail="You’ve already used your free search. Create an account to keep comparing trips.",
+        )
+
+
+def _update_public_trial(supabase, trial_id: str, status: str, extra: dict | None = None) -> None:
+    payload = {
+        "status": status,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if extra:
+        payload.update(extra)
+    try:
+        supabase.from_("public_search_trials").update(payload).eq("id", trial_id).execute()
+    except Exception:
+        # Trial logging should never break the user-facing response.
+        pass
+
+
+
+def _sanitize_public_verdict(verdict_details: dict) -> dict:
+    """Return a limited public-preview verdict without booking links or pro-only actions."""
+    if not isinstance(verdict_details, dict):
+        return {}
+
+    safe = dict(verdict_details)
+    safe["booking_note"] = "Create an account to unlock booking links, Zoe follow-up, alerts, and full flight options."
+    safe["booking_link"] = {
+        "seats_aero_link": None,
+        "airline_link": None,
+        "preferred": "none",
+    }
+    return safe
+
+
+def _sanitize_public_award_options(award_options: list[dict]) -> list[dict]:
+    """Keep only top-level award summary fields for the public preview."""
+    sanitized = []
+    for award in (award_options or [])[:3]:
+        sanitized.append({
+            "program": award.get("program"),
+            "points": award.get("points"),
+            "taxes": award.get("taxes"),
+            "cpp": award.get("cpp"),
+            "remaining_seats": award.get("remaining_seats"),
+            "direct": award.get("direct"),
+            "airlines": award.get("airlines", ""),
+        })
+    return sanitized
+
+@router.post("/public-search")
+@limiter.limit("6/minute")
+async def public_search(
+    request: Request,
+    params: SearchParams = Depends(get_search_params),
+):
+    """
+    One-time unauthenticated search for the public landing page.
+    Uses the same search/verdict services as /api/search, but enforces a
+    one-search-per-IP-hash gate via public_search_trials.
+    """
+    origin = params.origin
+    destination = params.destination
+    departure_date = params.date
+    cabin = params.cabin.value
+    travelers = params.travelers
+    return_date = params.return_date
+
+    supabase = get_server_supabase()
+    trial_id = _claim_public_search_trial(supabase, request, params)
+
+    try:
+        # Guest users do not have a saved wallet yet, so award source filtering is broad.
+        user_programs: list[str] = []
+
+        # Keep cache lookup parity with authenticated search.
+        cache_params: CacheSearchParams = {
+            "origin": origin,
+            "destination": destination,
+            "departure_date": departure_date,
+            "return_date": return_date,
+            "passengers": travelers,
+            "cabin": cabin,
+        }
+        memory_cache = get_search_memory_cache()
+        cached_payload = None
+        cached_verdict_details: dict | None = None
+        cached_verdict_row = None
+
+        try:
+            cached_payload = memory_cache.get(cache_params)
+        except Exception:
+            cached_payload = None
+
+        if cached_payload:
+            cached_verdict_row = cached_payload.get("verdict") or None
+        else:
+            try:
+                db_hit = find_search_verdict_in_db(supabase, cache_params)
+                if db_hit:
+                    cached_verdict_row = db_hit.verdict
+                    try:
+                        memory_cache.set(
+                            cache_params,
+                            search_id=str(db_hit.search["id"]),
+                            verdict=db_hit.verdict,
+                        )
+                    except Exception:
+                        pass
+            except Exception:
+                cached_verdict_row = None
+
+        if cached_verdict_row and cached_verdict_row.get("details"):
+            cached_verdict_details = cached_verdict_row["details"]
+
+        async def outbound_task():
+            raw = await search_award_availability(origin, destination, departure_date, cabin)
+            return [a for a in raw if a.get("remaining_seats", 0) >= travelers]
+
+        async def return_task():
+            if not return_date:
+                return []
+            raw = await search_award_availability(destination, origin, return_date, cabin)
+            return [a for a in raw if a.get("remaining_seats", 0) >= travelers]
+
+        outbound_awards, cash_data, return_awards = await asyncio.gather(
+            outbound_task(),
+            get_cash_price(origin, destination, departure_date, cabin, travelers, return_date),
+            return_task(),
+        )
+
+        cash_price = cash_data.get("cash_price")
+
+        award_options = []
+        for award in outbound_awards:
+            points = award.get("points")
+            if not points:
+                continue
+            taxes = (award.get("taxes") or 0) / 100
+            cpp = calculate_cpp(cash_price, taxes, points) if cash_price is not None else None
+            award_options.append({
+                "program": award.get("program"),
+                "points": points,
+                "cash_price": cash_price,
+                "taxes": taxes,
+                "cpp": cpp,
+                "remaining_seats": award.get("remaining_seats"),
+                "direct": award.get("direct", False),
+                "airlines": award.get("airlines", ""),
+                "trip_ids": award.get("trip_ids", []),
+                "trips": award.get("trips", []),
+                "source": award.get("source"),
+            })
+        award_options.sort(key=lambda x: x["cpp"] or 0, reverse=True)
+
+        return_award_options = []
+        for award in return_awards:
+            points = award.get("points")
+            if not points:
+                continue
+            taxes = (award.get("taxes") or 0) / 100
+            cpp = calculate_cpp(cash_price, taxes, points) if cash_price is not None else None
+            return_award_options.append({
+                "program": award.get("program"),
+                "points": points,
+                "cash_price": cash_price,
+                "taxes": taxes,
+                "cpp": cpp,
+                "remaining_seats": award.get("remaining_seats"),
+                "direct": award.get("direct", False),
+                "airlines": award.get("airlines", ""),
+                "trip_ids": award.get("trip_ids", []),
+                "trips": award.get("trips", []),
+                "source": award.get("source"),
+            })
+        return_award_options.sort(key=lambda x: x["cpp"] or 0, reverse=True)
+
+        if cached_verdict_details is not None:
+            verdict_details = cached_verdict_details
+        else:
+            verdict_details = await generate_verdict(
+                origin=origin,
+                destination=destination,
+                date=departure_date,
+                cabin=cabin,
+                travelers=travelers,
+                is_roundtrip=return_date is not None,
+                return_date=return_date,
+                cash_price=cash_price,
+                award_options=award_options,
+                return_award_options=return_award_options,
+                user_programs=None,
+            )
+
+        public_verdict = _sanitize_public_verdict(verdict_details)
+        public_award_options = _sanitize_public_award_options(award_options)
+        public_return_award_options = _sanitize_public_award_options(return_award_options)
+
+        response_payload = {
+            "search_id": None,
+            "verdict_id": None,
+            "public_trial_id": trial_id,
+            "origin": origin,
+            "destination": destination,
+            "date": departure_date,
+            "depart_date": departure_date,
+            "return_date": return_date,
+            "cabin": cabin,
+            "travelers": travelers,
+            "is_roundtrip": return_date is not None,
+            "cash_price": cash_price,
+            "price_level": cash_data.get("price_level"),
+            "typical_price_range": cash_data.get("typical_price_range"),
+            "flights": [],
+            "award_options": public_award_options,
+            "return_award_options": public_return_award_options,
+            "verdict": public_verdict,
+            "user_programs": user_programs,
+            "limited_public_preview": True,
+        }
+
+        _update_public_trial(
+            supabase,
+            trial_id,
+            "completed",
+            {
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "response_summary": {
+                    "cash_price": cash_price,
+                    "price_level": cash_data.get("price_level"),
+                    "recommendation": verdict_details.get("recommendation") if isinstance(verdict_details, dict) else None,
+                    "verdict": verdict_details.get("verdict") if isinstance(verdict_details, dict) else None,
+                    "flight_count": len(cash_data.get("flights", []) or []),
+                    "award_option_count": len(award_options),
+                    "return_award_option_count": len(return_award_options),
+                },
+            },
+        )
+        return response_payload
+
+    except HTTPException as exc:
+        _update_public_trial(supabase, trial_id, "failed", {"error_message": str(exc.detail)})
+        raise
+    except Exception as exc:
+        _update_public_trial(supabase, trial_id, "failed", {"error_message": str(exc)[:500]})
+        raise HTTPException(status_code=500, detail="Public search failed. Please try again or create an account to continue.")

@@ -2,11 +2,11 @@
 
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { isAllowedTeamEmail } from "@/utils/auth/allowlist";
 
 const publicRoutes = [
 	"/",
 	"/login",
+	"/signup",
 	"/auth/callback",
 	"/forgot-password",
 	"/reset-password",
@@ -70,26 +70,14 @@ export async function middleware(request: NextRequest) {
 
 	const pathname = request.nextUrl.pathname;
 	const isPublic = isPublicRoute(pathname);
-	const isAllowed = isAllowedTeamEmail(user?.email);
-
-	if (user && !isAllowed) {
-		await supabase.auth.signOut();
-
-		const url = request.nextUrl.clone();
-		url.pathname = "/";
-		url.search = "";
-		url.searchParams.set("access", "denied");
-
-		const redirectResponse = NextResponse.redirect(url);
-		copyCookies(supabaseResponse, redirectResponse);
-		return redirectResponse;
-	}
 
 	if (!user && !isPublic) {
 		const url = request.nextUrl.clone();
-		url.pathname = "/";
+		url.pathname = "/login";
 		url.search = "";
-		return NextResponse.redirect(url);
+		const redirectResponse = NextResponse.redirect(url);
+		copyCookies(supabaseResponse, redirectResponse);
+		return redirectResponse;
 	}
 
 	if (user && !isPublic && !isSubscriptionFreeRoute(pathname)) {
@@ -110,7 +98,6 @@ export async function middleware(request: NextRequest) {
 			: 0;
 		const hasActiveDayPass = dayPassExpiryMs > Date.now();
 
-		// Access is granted by either active monthly subscription OR active day pass.
 		if (hasActiveDayPass) {
 			return supabaseResponse;
 		}
