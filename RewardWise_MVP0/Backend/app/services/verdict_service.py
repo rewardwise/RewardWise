@@ -17,6 +17,7 @@ PROGRAM_URL_OVERRIDES = {
     "turkish": "https://www.turkishairlines.com/",
     "ethiopian": "https://www.ethiopianairlines.com/",
     "alaska": "https://www.alaskaair.com/",
+    "ana": "https://www.ana.co.jp/",
 }
 
 PROGRAM_HOST_MAP = {
@@ -35,6 +36,13 @@ PROGRAM_HOST_MAP = {
     "lifemiles": "lifemiles.com",
     "korean": "koreanair.com",
     "avianca": "lifemiles.com",
+    "flyingblue": "flyingblue.com",
+    "air_france": "airfrance.com",
+    "singapore": "singaporeair.com",
+    "cathay": "cathaypacific.com",
+    "turkish": "turkishairlines.com",
+    "etihad": "etihad.com",
+    "emirates": "emirates.com",
 }
 
 
