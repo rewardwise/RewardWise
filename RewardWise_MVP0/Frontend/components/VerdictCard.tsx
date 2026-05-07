@@ -208,7 +208,10 @@ function fmtDuration(mins?: number) {
 
 function fmtMoney(value?: number | null, digits = 0) {
   if (value == null || Number.isNaN(Number(value))) return "—";
-  return `$${Number(value).toFixed(digits)}`;
+  return `$${Number(value).toLocaleString("en-US", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  })}`;
 }
 
 function fmtShortDateTime(value?: string | null) {
@@ -727,7 +730,7 @@ export default function VerdictCard({
           </div>
           <div className="text-right">
             <p className="font-bold text-emerald-300">{(option.points * travelers).toLocaleString()} pts</p>
-            {option.taxes != null && option.taxes > 0 && <p className="text-xs text-slate-400">+${Number(option.taxes).toFixed(2)}</p>}
+            {option.taxes != null && option.taxes > 0 && <p className="text-xs text-slate-400">+{fmtMoney(option.taxes, 2)}</p>}
           </div>
         </div>
       </div>
@@ -1131,7 +1134,7 @@ export default function VerdictCard({
                       <p className="mt-0.5 text-xs text-slate-400">
                         {bestOutbound.direct ? "Nonstop" : bestOutbound.remaining_seats ? `${bestOutbound.remaining_seats} seat${bestOutbound.remaining_seats !== 1 ? "s" : ""} left` : "Award space available"}
                         {bestOutbound.airlines ? ` · ${bestOutbound.airlines}` : ""}
-                        {bestOutbound.taxes != null && bestOutbound.taxes > 0 ? ` · +$${Number(bestOutbound.taxes).toFixed(0)} taxes` : " · No fuel surcharges"}
+                        {bestOutbound.taxes != null && bestOutbound.taxes > 0 ? ` · +${fmtMoney(bestOutbound.taxes, 0)} taxes` : " · No fuel surcharges"}
                       </p>
                       {bestOutbound.cpp != null && (
                         <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1">
