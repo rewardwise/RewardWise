@@ -4,6 +4,12 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { MapPin, X } from "lucide-react";
 import { searchAirports, type Airport } from "@/components/airports";
+import {
+  searchMetros,
+  findMetroByCsv,
+  formatMetroDisplay,
+  type MetroGroup,
+} from "@/components/metro-groups";
 
 interface AirportSearchProps {
   label: string;
@@ -12,23 +18,38 @@ interface AirportSearchProps {
   placeholder?: string;
 }
 
+type Result =
+  | { kind: "airport"; airport: Airport }
+  | { kind: "metro"; metro: MetroGroup };
+
 export default function AirportSearch({
   label,
   value,
   onChange,
   placeholder = "e.g. JFK",
 }: AirportSearchProps) {
-  const [query, setQuery] = useState(value);
-  const [results, setResults] = useState<Airport[]>([]);
+  const valueToDisplay = (raw: string): string => {
+    if (!raw) return "";
+    if (raw.includes(",")) {
+      const metro = findMetroByCsv(raw);
+      return metro ? formatMetroDisplay(metro) : raw;
+    }
+    return raw;
+  };
+
+  const [query, setQuery] = useState(() => valueToDisplay(value));
+  const [results, setResults] = useState<Result[]>([]);
   const [open, setOpen] = useState(false);
   const [highlighted, setHighlighted] = useState(-1);
+  const [lastSyncedValue, setLastSyncedValue] = useState(value);
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Keep query in sync if parent resets value
-  useEffect(() => {
-    setQuery(value);
-  }, [value]);
+  // Sync query when parent resets value (setState-during-render pattern)
+  if (value !== lastSyncedValue) {
+    setLastSyncedValue(value);
+    setQuery(valueToDisplay(value));
+  }
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -40,12 +61,19 @@ export default function AirportSearch({
       ) {
         setOpen(false);
         // If they typed but didn't select, restore to last valid value
-        if (value && query !== value) setQuery(value);
+        const display = valueToDisplay(value);
+        if (value && query !== display) setQuery(display);
       }
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
   }, [value, query]);
+
+  const buildResults = (raw: string): Result[] => {
+    const metros = searchMetros(raw).map<Result>((m) => ({ kind: "metro", metro: m }));
+    const airports = searchAirports(raw).map<Result>((a) => ({ kind: "airport", airport: a }));
+    return [...metros, ...airports].slice(0, 8);
+  };
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const raw = e.target.value.toUpperCase();
@@ -57,14 +85,20 @@ export default function AirportSearch({
       onChange("");
       return;
     }
-    const found = searchAirports(raw);
+    const found = buildResults(raw);
     setResults(found);
     setOpen(found.length > 0);
   }, [onChange]);
 
-  const select = useCallback((airport: Airport) => {
-    setQuery(airport.code);
-    onChange(airport.code);
+  const select = useCallback((r: Result) => {
+    if (r.kind === "metro") {
+      const csv = r.metro.airports.join(",");
+      setQuery(formatMetroDisplay(r.metro));
+      onChange(csv);
+    } else {
+      setQuery(r.airport.code);
+      onChange(r.airport.code);
+    }
     setOpen(false);
     setResults([]);
     setHighlighted(-1);
@@ -87,7 +121,7 @@ export default function AirportSearch({
       }
     } else if (e.key === "Escape") {
       setOpen(false);
-      if (value) setQuery(value);
+      if (value) setQuery(valueToDisplay(value));
     }
   };
 
@@ -116,13 +150,13 @@ export default function AirportSearch({
           onFocus={() => {
             if (results.length > 0) setOpen(true);
             else if (query.length > 0) {
-              const found = searchAirports(query);
+              const found = buildResults(query);
               setResults(found);
               setOpen(found.length > 0);
             }
           }}
           placeholder={placeholder}
-          maxLength={10}
+          maxLength={30}
           autoComplete="off"
           spellCheck={false}
           className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 pr-8 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm uppercase"
@@ -149,49 +183,61 @@ export default function AirportSearch({
             boxShadow: "0 16px 40px rgba(0,0,0,0.5)",
           }}
         >
-          {results.map((airport, i) => (
-            <button
-              key={airport.code}
-              type="button"
-              onMouseDown={(e) => {
-                e.preventDefault(); // prevent blur before click
-                select(airport);
-              }}
-              onMouseEnter={() => setHighlighted(i)}
-              className="w-full px-4 py-2.5 flex items-center gap-3 text-left transition-colors"
-              style={{
-                background: i === highlighted ? "rgba(52,211,153,0.08)" : "transparent",
-                borderBottom: i < results.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none",
-              }}
-            >
-              {/* IATA code badge */}
-              <span
-                className="font-bold text-sm flex-shrink-0 w-10 text-center rounded-md py-0.5"
+          {results.map((r, i) => {
+            const isMetro = r.kind === "metro";
+            const code = isMetro ? r.metro.code : r.airport.code;
+            const primary = isMetro
+              ? r.metro.name
+              : `${r.airport.city}${r.airport.name ? ` - ${r.airport.name}` : ""}`;
+            const trailing = isMetro
+              ? r.metro.airports.join(" · ")
+              : r.airport.country;
+            const key = isMetro ? `metro-${r.metro.code}` : `airport-${r.airport.code}`;
+            return (
+              <button
+                key={key}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  select(r);
+                }}
+                onMouseEnter={() => setHighlighted(i)}
+                className="w-full px-4 py-2.5 flex items-center gap-3 text-left transition-colors"
                 style={{
-                  color: i === highlighted ? "#34d399" : "#94a3b8",
-                  background: i === highlighted ? "rgba(52,211,153,0.1)" : "rgba(255,255,255,0.05)",
+                  background: i === highlighted ? "rgba(52,211,153,0.08)" : "transparent",
+                  borderBottom: i < results.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none",
                 }}
               >
-                {airport.code}
-              </span>
-
-              {/* City + name */}
-              <div className="flex-1 min-w-0">
-                <p
-                  className="text-sm font-medium truncate"
-                  style={{ color: i === highlighted ? "#fff" : "#cbd5e1" }}
+                <span
+                  className="font-bold text-sm flex-shrink-0 w-14 text-center rounded-md py-0.5"
+                  style={{
+                    color: i === highlighted ? "#34d399" : "#94a3b8",
+                    background: i === highlighted ? "rgba(52,211,153,0.1)" : "rgba(255,255,255,0.05)",
+                  }}
                 >
-                  {airport.city}
-                  {airport.name ? ` - ${airport.name}` : ""}
-                </p>
-              </div>
+                  {isMetro ? `${code} ✦` : code}
+                </span>
 
-              {/* Country flag / code */}
-              <span className="text-xs flex-shrink-0" style={{ color: "#475569" }}>
-                {airport.country}
-              </span>
-            </button>
-          ))}
+                <div className="flex-1 min-w-0">
+                  <p
+                    className="text-sm font-medium truncate"
+                    style={{ color: i === highlighted ? "#fff" : "#cbd5e1" }}
+                  >
+                    {primary}
+                  </p>
+                  {isMetro && (
+                    <p className="text-[11px] text-emerald-400/70 truncate">
+                      All airports — {r.metro.airports.length} in this group
+                    </p>
+                  )}
+                </div>
+
+                <span className="text-xs flex-shrink-0 truncate max-w-[120px]" style={{ color: "#475569" }}>
+                  {trailing}
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>

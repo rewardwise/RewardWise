@@ -208,7 +208,10 @@ function fmtDuration(mins?: number) {
 
 function fmtMoney(value?: number | null, digits = 0) {
   if (value == null || Number.isNaN(Number(value))) return "—";
-  return `$${Number(value).toFixed(digits)}`;
+  return `$${Number(value).toLocaleString("en-US", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  })}`;
 }
 
 function fmtShortDateTime(value?: string | null) {
@@ -727,7 +730,7 @@ export default function VerdictCard({
           </div>
           <div className="text-right">
             <p className="font-bold text-emerald-300">{(option.points * travelers).toLocaleString()} pts</p>
-            {option.taxes != null && option.taxes > 0 && <p className="text-xs text-slate-400">+${Number(option.taxes).toFixed(2)}</p>}
+            {option.taxes != null && option.taxes > 0 && <p className="text-xs text-slate-400">+{fmtMoney(option.taxes, 2)}</p>}
           </div>
         </div>
       </div>
@@ -852,6 +855,14 @@ export default function VerdictCard({
                     </button>
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* Flight identity */}
+            {bestOutbound && (
+              <div className="mt-5 space-y-3">
+                {renderAwardLeg(bestOutbound, isRoundtrip ? "Outbound flight" : "Award flight")}
+                {isRoundtrip && bestReturn && renderAwardLeg(bestReturn, "Return flight", true)}
               </div>
             )}
 
@@ -1131,8 +1142,35 @@ export default function VerdictCard({
                       <p className="mt-0.5 text-xs text-slate-400">
                         {bestOutbound.direct ? "Nonstop" : bestOutbound.remaining_seats ? `${bestOutbound.remaining_seats} seat${bestOutbound.remaining_seats !== 1 ? "s" : ""} left` : "Award space available"}
                         {bestOutbound.airlines ? ` · ${bestOutbound.airlines}` : ""}
-                        {bestOutbound.taxes != null && bestOutbound.taxes > 0 ? ` · +$${Number(bestOutbound.taxes).toFixed(0)} taxes` : " · No fuel surcharges"}
+                        {bestOutbound.taxes != null && bestOutbound.taxes > 0 ? ` · +${fmtMoney(bestOutbound.taxes, 0)} taxes` : " · No fuel surcharges"}
                       </p>
+                      {(() => {
+                        const trip = bestOutbound.trips?.[0];
+                        if (!trip) return null;
+                        const parts: string[] = [];
+                        if (trip.departs_at && trip.arrives_at) {
+                          parts.push(`${fmtTime(trip.departs_at)} – ${fmtTime(trip.arrives_at)}`);
+                        } else if (trip.departs_at) {
+                          parts.push(fmtTime(trip.departs_at));
+                        }
+                        if (trip.total_duration) parts.push(fmtDuration(trip.total_duration));
+                        if (trip.flight_numbers) parts.push(trip.flight_numbers);
+                        if (parts.length === 0) return null;
+                        return <p className="mt-0.5 text-xs text-slate-500">{parts.join(" · ")}</p>;
+                      })()}
+                      {isRoundtrip && bestReturn?.trips?.[0] && (() => {
+                        const trip = bestReturn.trips[0];
+                        const parts: string[] = [];
+                        if (trip.departs_at && trip.arrives_at) {
+                          parts.push(`${fmtTime(trip.departs_at)} – ${fmtTime(trip.arrives_at)}`);
+                        } else if (trip.departs_at) {
+                          parts.push(fmtTime(trip.departs_at));
+                        }
+                        if (trip.total_duration) parts.push(fmtDuration(trip.total_duration));
+                        if (trip.flight_numbers) parts.push(trip.flight_numbers);
+                        if (parts.length === 0) return null;
+                        return <p className="mt-0.5 text-xs text-slate-500">Return · {parts.join(" · ")}</p>;
+                      })()}
                       {bestOutbound.cpp != null && (
                         <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1">
                           <span className="text-[11px] font-semibold text-slate-300">{bestOutbound.cpp.toFixed(2)}¢/pt</span>

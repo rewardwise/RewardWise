@@ -1,4 +1,9 @@
+import logging
 from typing import Optional
+
+from app.services.seats_service import get_trip_detail
+
+logger = logging.getLogger(__name__)
 
 PROGRAM_URL_OVERRIDES = {
     "american": "https://www.aa.com/",
@@ -12,6 +17,22 @@ PROGRAM_URL_OVERRIDES = {
     "turkish": "https://www.turkishairlines.com/",
     "ethiopian": "https://www.ethiopianairlines.com/",
     "alaska": "https://www.alaskaair.com/",
+}
+
+PROGRAM_HOST_MAP = {
+    "aeroplan": "aircanada.com",
+    "american": "aa.com",
+    "alaska": "alaskaair.com",
+    "delta": "delta.com",
+    "united": "united.com",
+    "british": "britishairways.com",
+    "qantas": "qantas.com",
+    "qatar": "qatarairways.com",
+    "finnair": "finnair.com",
+    "ana": "ana.co.jp",
+    "virginatlantic": "virginatlantic.com",
+    "smiles": "smiles.com.br",
+    "lifemiles": "lifemiles.com",
 }
 
 
@@ -28,6 +49,51 @@ def _get_booking_link(program: Optional[str], trip_ids: list) -> dict:
         "seats_aero_link": None,
         "airline_link": airline_url,
         "preferred": "airline" if program else "none",
+    }
+
+
+def _pick_booking_link(booking_links: list, winner_program: str) -> Optional[str]:
+    """Pick the deep link that matches the winner's program by URL host pattern.
+
+    Falls back to the first link if no host match. Returns None if list empty.
+    """
+    if not booking_links:
+        return None
+
+    expected_host = PROGRAM_HOST_MAP.get((winner_program or "").lower())
+    if expected_host:
+        for link_obj in booking_links:
+            url = (link_obj or {}).get("link") or ""
+            if expected_host in url.lower():
+                return url
+
+    first = booking_links[0] if booking_links else {}
+    return (first or {}).get("link") or None
+
+
+async def _resolve_use_points_booking_link(
+    program: Optional[str],
+    trip_ids: list,
+    fallback: dict,
+) -> dict:
+    """Fetch /trips/{id} for the winner and override seats_aero_link with the
+    program-matched deep link. On any failure, return the fallback (homepage).
+    """
+    if not trip_ids:
+        return fallback
+    try:
+        detail = await get_trip_detail(trip_ids[0])
+    except Exception as exc:
+        logger.warning("get_trip_detail failed for trip_id=%s: %s", trip_ids[0], exc)
+        return fallback
+    booking_links = (detail or {}).get("booking_links") or []
+    deep_link = _pick_booking_link(booking_links, program or "")
+    if not deep_link:
+        return fallback
+    return {
+        "seats_aero_link": deep_link,
+        "airline_link": fallback.get("airline_link"),
+        "preferred": "seats_aero",
     }
 
 
@@ -56,24 +122,66 @@ def _metrics(cash_price: Optional[float], winner: Optional[dict]) -> dict:
     }
 
 
-def _build_next_step(recommendation: str, origin: str, destination: str, cabin: str) -> dict:
+def _build_next_step(
+    recommendation: str,
+    origin: str,
+    destination: str,
+    cabin: str,
+    *,
+    cpp: Optional[float] = None,
+    cash_price: Optional[float] = None,
+    remaining_seats: int = 0,
+    urgency: bool = False,
+    program_label: Optional[str] = None,
+    data_quality: str = "full",
+) -> Optional[dict]:
+    """Build next-step suggestion or return None when verdict is its own answer.
+
+    Returns None aggressively, better to say nothing than say something generic.
+    """
+    program = program_label or "the airline"
+    cabin_lower = (cabin or "economy").lower()
+    is_premium = cabin_lower in {"business", "first", "premium_economy"}
+
     if recommendation == "use_points":
-        return {
-            "type": "retry_dates",
-            "label": "Try a week earlier",
-            "prompt": f"What about {origin} to {destination} a week earlier?",
-        }
+        if urgency and remaining_seats > 0:
+            seat_word = "seat" if remaining_seats == 1 else "seats"
+            return {
+                "label": f"Book now, only {remaining_seats} {seat_word} left",
+                "prompt": f"Lock this in on {program} before someone else grabs it.",
+            }
+        return None
+
     if recommendation == "pay_cash":
-        alt_cabin = "business" if cabin == "economy" else "economy"
-        return {
-            "type": "try_other_cabin",
-            "label": f"Check {alt_cabin.title()} instead",
-            "prompt": f"What if I fly {alt_cabin} instead?",
-        }
+        if cabin_lower == "economy" and cash_price is not None and cash_price <= 250:
+            return None
+        if is_premium and cpp is not None and cpp < 1.25:
+            return {
+                "label": "There's probably a better deal",
+                "prompt": "Premium awards usually beat this. Check a different date or another airline program.",
+            }
+        if cabin_lower == "economy" and cpp is not None and cpp < 1.25:
+            return {
+                "label": "Save your points for a bigger trip",
+                "prompt": "Your points stretch further on premium cabins or long-haul flights. Hold off on this one.",
+            }
+        return None
+
+    if recommendation == "wait":
+        if data_quality != "full":
+            return {
+                "label": "Try the search again",
+                "prompt": "Live pricing came back thin. Running it again usually surfaces a real fare.",
+            }
+        if cpp is not None:
+            return {
+                "label": "Worth checking nearby dates",
+                "prompt": f"{program} at {cpp:.1f}¢/pt is okay, not great. A few days either side often turns up better availability.",
+            }
+
     return {
-        "type": "retry_dates",
         "label": "Try different dates",
-        "prompt": f"Check {origin} to {destination} a week earlier.",
+        "prompt": "Nearby dates often turn up better options.",
     }
 
 
@@ -148,6 +256,14 @@ async def generate_verdict(
 ) -> dict:
     del date, is_roundtrip, return_date, return_award_options  # reserved for future richer copy
 
+    # When origin/destination came in as a metro CSV (e.g. "JFK,LGA,EWR"),
+    # use the first airport as a fallback for prompts that need a single code,
+    # and prefer the actual winning award's airport once we have a winner.
+    is_metro_origin = "," in origin
+    is_metro_destination = "," in destination
+    display_origin = origin.split(",")[0]
+    display_destination = destination.split(",")[0]
+
     candidates, all_awards = _choose_candidate(award_options, user_programs)
     missing_sources: list[str] = []
     if cash_price is None:
@@ -179,7 +295,14 @@ async def generate_verdict(
             data_quality=data_quality,
             missing_sources=missing_sources,
             safe_fallback_used=True,
-            next_step=_build_next_step("wait", origin, destination, cabin),
+            next_step=_build_next_step(
+                "wait",
+                display_origin,
+                display_destination,
+                cabin,
+                cash_price=cash_price,
+                data_quality=data_quality,
+            ),
         )
         return response
 
@@ -198,7 +321,14 @@ async def generate_verdict(
             data_quality=data_quality,
             missing_sources=missing_sources,
             safe_fallback_used=bool(missing_sources),
-            next_step=_build_next_step("pay_cash", origin, destination, cabin),
+            next_step=_build_next_step(
+                "pay_cash",
+                display_origin,
+                display_destination,
+                cabin,
+                cash_price=cash_price,
+                data_quality=data_quality,
+            ),
         )
         return response
 
@@ -221,7 +351,14 @@ async def generate_verdict(
             data_quality=data_quality,
             missing_sources=missing_sources,
             safe_fallback_used=bool(missing_sources),
-            next_step=_build_next_step("pay_cash" if cash_price is not None else "wait", origin, destination, cabin),
+            next_step=_build_next_step(
+                "pay_cash" if cash_price is not None else "wait",
+                display_origin,
+                display_destination,
+                cabin,
+                cash_price=cash_price,
+                data_quality=data_quality,
+            ),
         )
         return response
 
@@ -236,7 +373,11 @@ async def generate_verdict(
     program_label = _fmt(program)
     trip_ids = winner.get("trip_ids", []) if isinstance(winner, dict) else []
     booking_link = _get_booking_link(program, trip_ids)
+    winner_origin = winner.get("origin_airport") or display_origin
+    winner_destination = winner.get("destination_airport") or display_destination
     winner_payload = {
+        "origin_airport": winner_origin,
+        "destination_airport": winner_destination,
         "program": program,
         "points": points,
         "taxes": taxes,
@@ -260,7 +401,17 @@ async def generate_verdict(
             data_quality=data_quality,
             missing_sources=missing_sources,
             safe_fallback_used=True,
-            next_step=_build_next_step("wait", origin, destination, cabin),
+            next_step=_build_next_step(
+                "wait",
+                winner_origin,
+                winner_destination,
+                cabin,
+                cpp=cpp,
+                cash_price=cash_price,
+                remaining_seats=remaining_seats,
+                program_label=program_label,
+                data_quality=data_quality,
+            ),
         )
         return response
 
@@ -287,7 +438,18 @@ async def generate_verdict(
             data_quality=data_quality,
             missing_sources=missing_sources,
             safe_fallback_used=bool(missing_sources),
-            next_step=_build_next_step("pay_cash", origin, destination, cabin),
+            next_step=_build_next_step(
+                "pay_cash",
+                winner_origin,
+                winner_destination,
+                cabin,
+                cpp=cpp,
+                cash_price=cash_price,
+                remaining_seats=remaining_seats,
+                urgency=urgency,
+                program_label=program_label,
+                data_quality=data_quality,
+            ),
         )
         return response
 
@@ -299,21 +461,37 @@ async def generate_verdict(
         )
         if urgency:
             explanation += f" There are only {remaining_seats} seat{'s' if remaining_seats != 1 else ''} left, so this is worth acting on soon."
+        metro_suffix = (
+            f" Best from {winner_origin}{(' to ' + winner_destination) if is_metro_destination else ''}."
+            if is_metro_origin or is_metro_destination
+            else ""
+        )
         response = _base_response(
             recommendation="use_points",
             verdict_label="Use Points",
-            headline=f"{program_label} is the strongest redemption on this trip.",
+            headline=f"{program_label} is the strongest redemption on this trip.{metro_suffix}",
             explanation=explanation,
             confidence="high",
             confidence_reason="Live cash pricing and matching award availability were both found, and the cents-per-point value is strong.",
             booking_note=f"Verify the award on {program_label}'s site before you transfer any points.",
-            booking_link=booking_link,
+            booking_link=await _resolve_use_points_booking_link(program, trip_ids, booking_link),
             winner=winner_payload,
             cash_price=cash_price,
             data_quality=data_quality,
             missing_sources=missing_sources,
             safe_fallback_used=bool(missing_sources),
-            next_step=_build_next_step("use_points", origin, destination, cabin),
+            next_step=_build_next_step(
+                "use_points",
+                winner_origin,
+                winner_destination,
+                cabin,
+                cpp=cpp,
+                cash_price=cash_price,
+                remaining_seats=remaining_seats,
+                urgency=urgency,
+                program_label=program_label,
+                data_quality=data_quality,
+            ),
         )
         return response
 
@@ -335,7 +513,18 @@ async def generate_verdict(
             data_quality=data_quality,
             missing_sources=missing_sources,
             safe_fallback_used=bool(missing_sources),
-            next_step=_build_next_step("wait", origin, destination, cabin),
+            next_step=_build_next_step(
+                "wait",
+                winner_origin,
+                winner_destination,
+                cabin,
+                cpp=cpp,
+                cash_price=cash_price,
+                remaining_seats=remaining_seats,
+                urgency=urgency,
+                program_label=program_label,
+                data_quality=data_quality,
+            ),
         )
         return response
 
@@ -354,5 +543,16 @@ async def generate_verdict(
         data_quality=data_quality,
         missing_sources=missing_sources,
         safe_fallback_used=True,
-        next_step=_build_next_step("wait", origin, destination, cabin),
+        next_step=_build_next_step(
+            "wait",
+            winner_origin,
+            winner_destination,
+            cabin,
+            cpp=cpp,
+            cash_price=cash_price,
+            remaining_seats=remaining_seats,
+            urgency=urgency,
+            program_label=program_label,
+            data_quality=data_quality,
+        ),
     )

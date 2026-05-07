@@ -317,6 +317,9 @@ export default function HomePage() {
 		if (searchFill.destination) setDestination(searchFill.destination);
 		if (searchFill.cabin) setCabin(searchFill.cabin);
 		if (searchFill.travelers) setTravelers(Number(searchFill.travelers));
+		if (searchFill.departDate) setDepartDate(searchFill.departDate);
+		if ("returnDate" in searchFill) setReturnDate(searchFill.returnDate || "");
+		if (searchFill.tripType) setTripType(searchFill.tripType);
 	}, [searchFill]);
 
 	const runSearch = async () => {

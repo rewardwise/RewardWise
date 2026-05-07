@@ -98,6 +98,9 @@ async def search_award_availability(origin: str, destination: str, date: str, ca
             except Exception:
                 pass
 
+        route_obj = avail.get("Route") if isinstance(avail.get("Route"), dict) else {}
+        first_origin = origin.upper().split(",")[0]
+        first_destination = destination.upper().split(",")[0]
         results.append({
             "program": avail.get("Source", "unknown"),
             "points": int(mileage_cost),
@@ -107,7 +110,9 @@ async def search_award_availability(origin: str, destination: str, date: str, ca
             "airlines": avail.get(f"{cabin_prefix}Airlines", ""),
             "direct": avail.get(f"{cabin_prefix}Direct", False),
             "date": avail.get("Date"),
-            "route": avail.get("Route", {}).get("ID") if isinstance(avail.get("Route"), dict) else f"{origin.upper()}-{destination.upper()}",
+            "origin_airport": route_obj.get("OriginAirport") or first_origin,
+            "destination_airport": route_obj.get("DestinationAirport") or first_destination,
+            "route": route_obj.get("ID") or f"{first_origin}-{first_destination}",
             "trip_ids": trip_ids,          # for lazy /trips/{id} fetch if needed
             "trips": trips_detail,         # segment detail if include_trips returned it
             "also_available": {
