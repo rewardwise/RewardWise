@@ -56,24 +56,66 @@ def _metrics(cash_price: Optional[float], winner: Optional[dict]) -> dict:
     }
 
 
-def _build_next_step(recommendation: str, origin: str, destination: str, cabin: str) -> dict:
+def _build_next_step(
+    recommendation: str,
+    origin: str,
+    destination: str,
+    cabin: str,
+    *,
+    cpp: Optional[float] = None,
+    cash_price: Optional[float] = None,
+    remaining_seats: int = 0,
+    urgency: bool = False,
+    program_label: Optional[str] = None,
+    data_quality: str = "full",
+) -> Optional[dict]:
+    """Build next-step suggestion or return None when verdict is its own answer.
+
+    Returns None aggressively, better to say nothing than say something generic.
+    """
+    program = program_label or "the airline"
+    cabin_lower = (cabin or "economy").lower()
+    is_premium = cabin_lower in {"business", "first", "premium_economy"}
+
     if recommendation == "use_points":
-        return {
-            "type": "retry_dates",
-            "label": "Try a week earlier",
-            "prompt": f"What about {origin} to {destination} a week earlier?",
-        }
+        if urgency and remaining_seats > 0:
+            seat_word = "seat" if remaining_seats == 1 else "seats"
+            return {
+                "label": f"Book now, only {remaining_seats} {seat_word} left",
+                "prompt": f"Lock this in on {program} before someone else grabs it.",
+            }
+        return None
+
     if recommendation == "pay_cash":
-        alt_cabin = "business" if cabin == "economy" else "economy"
-        return {
-            "type": "try_other_cabin",
-            "label": f"Check {alt_cabin.title()} instead",
-            "prompt": f"What if I fly {alt_cabin} instead?",
-        }
+        if cabin_lower == "economy" and cash_price is not None and cash_price <= 250:
+            return None
+        if is_premium and cpp is not None and cpp < 1.25:
+            return {
+                "label": "There's probably a better deal",
+                "prompt": "Premium awards usually beat this. Check a different date or another airline program.",
+            }
+        if cabin_lower == "economy" and cpp is not None and cpp < 1.25:
+            return {
+                "label": "Save your points for a bigger trip",
+                "prompt": "Your points stretch further on premium cabins or long-haul flights. Hold off on this one.",
+            }
+        return None
+
+    if recommendation == "wait":
+        if data_quality != "full":
+            return {
+                "label": "Try the search again",
+                "prompt": "Live pricing came back thin. Running it again usually surfaces a real fare.",
+            }
+        if cpp is not None:
+            return {
+                "label": "Worth checking nearby dates",
+                "prompt": f"{program} at {cpp:.1f}\u00a2/pt is okay, not great. A few days either side often turns up better availability.",
+            }
+
     return {
-        "type": "retry_dates",
         "label": "Try different dates",
-        "prompt": f"Check {origin} to {destination} a week earlier.",
+        "prompt": "Nearby dates often turn up better options.",
     }
 
 
@@ -179,7 +221,11 @@ async def generate_verdict(
             data_quality=data_quality,
             missing_sources=missing_sources,
             safe_fallback_used=True,
-            next_step=_build_next_step("wait", origin, destination, cabin),
+            next_step=_build_next_step(
+                "wait", origin, destination, cabin,
+                cash_price=cash_price,
+                data_quality=data_quality,
+            ),
         )
         return response
 
@@ -198,7 +244,11 @@ async def generate_verdict(
             data_quality=data_quality,
             missing_sources=missing_sources,
             safe_fallback_used=bool(missing_sources),
-            next_step=_build_next_step("pay_cash", origin, destination, cabin),
+            next_step=_build_next_step(
+                "pay_cash", origin, destination, cabin,
+                cash_price=cash_price,
+                data_quality=data_quality,
+            ),
         )
         return response
 
@@ -221,7 +271,12 @@ async def generate_verdict(
             data_quality=data_quality,
             missing_sources=missing_sources,
             safe_fallback_used=bool(missing_sources),
-            next_step=_build_next_step("pay_cash" if cash_price is not None else "wait", origin, destination, cabin),
+            next_step=_build_next_step(
+                "pay_cash" if cash_price is not None else "wait",
+                origin, destination, cabin,
+                cash_price=cash_price,
+                data_quality=data_quality,
+            ),
         )
         return response
 
@@ -260,7 +315,14 @@ async def generate_verdict(
             data_quality=data_quality,
             missing_sources=missing_sources,
             safe_fallback_used=True,
-            next_step=_build_next_step("wait", origin, destination, cabin),
+            next_step=_build_next_step(
+                "wait", origin, destination, cabin,
+                cpp=cpp,
+                cash_price=cash_price,
+                remaining_seats=remaining_seats,
+                program_label=program_label,
+                data_quality=data_quality,
+            ),
         )
         return response
 
@@ -287,7 +349,15 @@ async def generate_verdict(
             data_quality=data_quality,
             missing_sources=missing_sources,
             safe_fallback_used=bool(missing_sources),
-            next_step=_build_next_step("pay_cash", origin, destination, cabin),
+            next_step=_build_next_step(
+                "pay_cash", origin, destination, cabin,
+                cpp=cpp,
+                cash_price=cash_price,
+                remaining_seats=remaining_seats,
+                urgency=urgency,
+                program_label=program_label,
+                data_quality=data_quality,
+            ),
         )
         return response
 
@@ -313,7 +383,15 @@ async def generate_verdict(
             data_quality=data_quality,
             missing_sources=missing_sources,
             safe_fallback_used=bool(missing_sources),
-            next_step=_build_next_step("use_points", origin, destination, cabin),
+            next_step=_build_next_step(
+                "use_points", origin, destination, cabin,
+                cpp=cpp,
+                cash_price=cash_price,
+                remaining_seats=remaining_seats,
+                urgency=urgency,
+                program_label=program_label,
+                data_quality=data_quality,
+            ),
         )
         return response
 
@@ -335,7 +413,15 @@ async def generate_verdict(
             data_quality=data_quality,
             missing_sources=missing_sources,
             safe_fallback_used=bool(missing_sources),
-            next_step=_build_next_step("wait", origin, destination, cabin),
+            next_step=_build_next_step(
+                "wait", origin, destination, cabin,
+                cpp=cpp,
+                cash_price=cash_price,
+                remaining_seats=remaining_seats,
+                urgency=urgency,
+                program_label=program_label,
+                data_quality=data_quality,
+            ),
         )
         return response
 
@@ -354,5 +440,13 @@ async def generate_verdict(
         data_quality=data_quality,
         missing_sources=missing_sources,
         safe_fallback_used=True,
-        next_step=_build_next_step("wait", origin, destination, cabin),
+        next_step=_build_next_step(
+            "wait", origin, destination, cabin,
+            cpp=cpp,
+            cash_price=cash_price,
+            remaining_seats=remaining_seats,
+            urgency=urgency,
+            program_label=program_label,
+            data_quality=data_quality,
+        ),
     )
