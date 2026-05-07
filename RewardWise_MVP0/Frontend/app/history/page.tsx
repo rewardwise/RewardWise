@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 
 import TropicalBackground from "@/components/TropicalBackground";
 import { useAuth } from "@/context/AuthProvider";
+import { useSearchFill } from "@/context/SearchFillContext";
 import { createClient } from "@/utils/supabase/client";
 
 import {
@@ -14,6 +15,7 @@ import {
 	ChevronLeft,
 	ChevronRight,
 	Heart,
+	RotateCcw,
 	Search,
 	Star,
 } from "lucide-react";
@@ -124,6 +126,7 @@ function getVisiblePageNumbers(currentPage: number, totalPages: number) {
 export default function HistoryPage() {
 	const router = useRouter();
 	const { user, loading: authLoading } = useAuth();
+	const { setSearchFill } = useSearchFill();
 	const supabase = useMemo(() => createClient(), []);
 
 	const [selectedTrip, setSelectedTrip] = useState<Trip | null>(null);
@@ -250,6 +253,21 @@ export default function HistoryPage() {
 	const handleSelectTrip = (trip: Trip) => {
 		resetFeedbackForm();
 		setSelectedTrip(trip);
+	};
+
+	const handleRerunSearch = (trip: Trip) => {
+		const toIsoDate = (value?: string | null) =>
+			value ? String(value).slice(0, 10) : "";
+		setSearchFill({
+			origin: trip.origin,
+			destination: trip.destination,
+			departDate: toIsoDate(trip.departureDate),
+			returnDate: trip.returnDate ? toIsoDate(trip.returnDate) : null,
+			travelers: trip.passengers,
+			cabin: (trip.cabin || "Economy").toLowerCase(),
+			tripType: trip.tripType,
+		});
+		router.push("/home");
 	};
 
 	const handleSubmit = async () => {
@@ -457,12 +475,22 @@ export default function HistoryPage() {
 														</td>
 
 														<td className="px-6 py-4 text-right">
-															<button
-																onClick={() => handleSelectTrip(trip)}
-																className="rounded-lg bg-emerald-500/90 px-3 py-2 text-xs font-medium text-white hover:bg-emerald-500"
-															>
-																Review
-															</button>
+															<div className="flex items-center justify-end gap-2">
+																<button
+																	onClick={() => handleRerunSearch(trip)}
+																	aria-label="Re-run search"
+																	title="Re-run search"
+																	className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-gray-300 hover:bg-white/10 hover:text-white"
+																>
+																	<RotateCcw className="h-4 w-4" />
+																</button>
+																<button
+																	onClick={() => handleSelectTrip(trip)}
+																	className="rounded-lg bg-emerald-500/90 px-3 py-2 text-xs font-medium text-white hover:bg-emerald-500"
+																>
+																	Review
+																</button>
+															</div>
 														</td>
 													</tr>
 												))}
@@ -593,6 +621,14 @@ export default function HistoryPage() {
 									</span>
 								</div>
 							</div>
+
+							<button
+								onClick={() => handleRerunSearch(selectedTrip)}
+								className="mb-6 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-3 text-sm font-medium text-white hover:bg-emerald-600 sm:w-auto"
+							>
+								<RotateCcw className="h-4 w-4" />
+								Re-run search
+							</button>
 
 							{/* Read-only past-verdict summary */}
 							<div className="mb-6 rounded-xl border border-white/10 bg-white/[0.03] p-4">
