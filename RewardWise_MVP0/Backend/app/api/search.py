@@ -25,12 +25,14 @@ def get_search_params(
     return_date: Optional[str] = Query(default=None),
 ) -> SearchParams:
     """Dependency that validates and returns typed search params (RW-047)."""
-    if not is_valid_airport_code(origin):
-        raise HTTPException(status_code=422, detail=f"Invalid origin airport code: '{origin}'")
-    if not is_valid_airport_code(destination):
-        raise HTTPException(status_code=422, detail=f"Invalid destination airport code: '{destination}'")
-    if origin.upper() == destination.upper():
-        raise HTTPException(status_code=422, detail="Origin and destination cannot be the same.")
+    for side, raw in (("origin", origin), ("destination", destination)):
+        for code in raw.split(","):
+            if not is_valid_airport_code(code):
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Invalid {side} airport code: '{code.strip()}'",
+                )
+    # Disjointness (incl. single-airport same-on-both-sides) is enforced in SearchParams.model_post_init.
     try:
         return SearchParams(
             origin=origin,
@@ -123,9 +125,13 @@ async def search(
     user_programs = _get_user_programs(supabase, user_id)
 
     # --- L1 memory + L2 Supabase cache lookup ---
+    # Canonicalize multi-airport (metro) origin/destination so equivalent groups
+    # (e.g. JFK,LGA,EWR vs EWR,JFK,LGA) hit the same cache row.
+    canonical_origin = ",".join(sorted(origin.split(",")))
+    canonical_destination = ",".join(sorted(destination.split(",")))
     cache_params: CacheSearchParams = {
-        "origin": origin,
-        "destination": destination,
+        "origin": canonical_origin,
+        "destination": canonical_destination,
         "departure_date": departure_date,
         "return_date": return_date,
         "passengers": travelers,
@@ -200,6 +206,8 @@ async def search(
             "remaining_seats": award.get("remaining_seats"),
             "direct": award.get("direct", False),
             "airlines": award.get("airlines", ""),
+            "origin_airport": award.get("origin_airport"),
+            "destination_airport": award.get("destination_airport"),
             "trip_ids": award.get("trip_ids", []),
             "trips": award.get("trips", []),
             "source": award.get("source"),
@@ -226,6 +234,8 @@ async def search(
             "remaining_seats": award.get("remaining_seats"),
             "direct": award.get("direct", False),
             "airlines": award.get("airlines", ""),
+            "origin_airport": award.get("origin_airport"),
+            "destination_airport": award.get("destination_airport"),
             "trip_ids": award.get("trip_ids", []),
             "trips": award.get("trips", []),
             "source": award.get("source"),
