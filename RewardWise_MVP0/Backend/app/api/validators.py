@@ -40,8 +40,10 @@ class SearchParams(BaseModel):
     @classmethod
     def validate_airport_code(cls, v: str) -> str:
         code = v.strip().upper()
-        if not re.fullmatch(r"[A-Z]{3}", code):
-            raise ValueError("Airport code must be exactly 3 letters (e.g. EWR, LAX)")
+        if not re.fullmatch(r"[A-Z]{3}(,[A-Z]{3}){0,4}", code):
+            raise ValueError(
+                "Airport code must be 1-5 comma-separated 3-letter codes (e.g. JFK or JFK,LGA,EWR)"
+            )
         return code
 
     @field_validator("date", "return_date", mode="before")
@@ -65,9 +67,14 @@ class SearchParams(BaseModel):
         return v
 
     def model_post_init(self, __context) -> None:
-        """Cross-field: origin != destination, return_date after date."""
-        if self.origin == self.destination:
-            raise ValueError("Origin and destination cannot be the same airport")
+        """Cross-field: origin and destination must be disjoint, return_date after date."""
+        origin_set = set(self.origin.split(","))
+        dest_set = set(self.destination.split(","))
+        overlap = origin_set & dest_set
+        if overlap:
+            raise ValueError(
+                f"Origin and destination cannot share airports: {sorted(overlap)}"
+            )
         if self.return_date:
             dep = datetime.strptime(self.date, "%Y-%m-%d").date()
             ret = datetime.strptime(self.return_date, "%Y-%m-%d").date()
