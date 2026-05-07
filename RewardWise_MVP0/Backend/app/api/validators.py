@@ -32,6 +32,7 @@ class SearchParams(BaseModel):
     origin: str
     destination: str
     date: str
+    date_end: Optional[str] = None
     cabin: CabinClass = CabinClass.economy
     travelers: int = 1
     return_date: Optional[str] = None
@@ -46,7 +47,7 @@ class SearchParams(BaseModel):
             )
         return code
 
-    @field_validator("date", "return_date", mode="before")
+    @field_validator("date", "date_end", "return_date", mode="before")
     @classmethod
     def validate_date_format(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
@@ -67,7 +68,8 @@ class SearchParams(BaseModel):
         return v
 
     def model_post_init(self, __context) -> None:
-        """Cross-field: origin and destination must be disjoint, return_date after date."""
+        """Cross-field: origin and destination must be disjoint, return_date after date,
+        date_end >= date when range mode requested."""
         origin_set = set(self.origin.split(","))
         dest_set = set(self.destination.split(","))
         overlap = origin_set & dest_set
@@ -75,6 +77,11 @@ class SearchParams(BaseModel):
             raise ValueError(
                 f"Origin and destination cannot share airports: {sorted(overlap)}"
             )
+        if self.date_end:
+            dep = datetime.strptime(self.date, "%Y-%m-%d").date()
+            dep_end = datetime.strptime(self.date_end, "%Y-%m-%d").date()
+            if dep_end < dep:
+                raise ValueError("date_end must be on or after date")
         if self.return_date:
             dep = datetime.strptime(self.date, "%Y-%m-%d").date()
             ret = datetime.strptime(self.return_date, "%Y-%m-%d").date()

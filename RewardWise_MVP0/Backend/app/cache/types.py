@@ -8,6 +8,7 @@ class SearchParams(TypedDict, total=False):
     origin: str
     destination: str
     departure_date: str
+    departure_date_end: str | None
     return_date: str | None
     passengers: int
     cabin: str | None

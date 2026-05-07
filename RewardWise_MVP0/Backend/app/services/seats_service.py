@@ -1,5 +1,6 @@
 import httpx
 import os
+from typing import Optional
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -13,7 +14,15 @@ CABIN_MAP = {
     "first": "F"
 }
 
-async def search_award_availability(origin: str, destination: str, date: str, cabin: str) -> list:
+async def search_award_availability(
+    origin: str,
+    destination: str,
+    date: str,
+    cabin: str,
+    *,
+    end_date: Optional[str] = None,
+    take: Optional[int] = None,
+) -> list:
     api_key = os.getenv("SEATS_AERO_API_KEY")
     if not api_key:
         raise ValueError("SEATS_AERO_API_KEY is not set.")
@@ -22,12 +31,16 @@ async def search_award_availability(origin: str, destination: str, date: str, ca
         "Partner-Authorization": api_key,
         "accept": "application/json"
     }
+    resolved_end_date = end_date or date
+    is_range = resolved_end_date != date
+    resolved_take = take if take is not None else (100 if is_range else 50)
     params = {
         "origin_airport": origin.upper(),
         "destination_airport": destination.upper(),
         "start_date": date,
-        "end_date": date,
+        "end_date": resolved_end_date,
         "cabins": cabin.lower(),
+        "take": resolved_take,
         "include_trips": "true",   # ← pulls AvailabilityTrips inline, no extra call
     }
 
