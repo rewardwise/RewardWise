@@ -17,7 +17,7 @@ const publicRoutes = [
  * Keep this tight. Do NOT include core app routes like /home, /concierge,
  * /wallet-setup, /history, /trips, etc.
  */
-const subscriptionFreeRoutes = ["/subscribe"];
+const subscriptionFreeRoutes = ["/subscribe", "/profile"];
 
 function isPublicRoute(pathname: string) {
 	return publicRoutes.some((route) => {
