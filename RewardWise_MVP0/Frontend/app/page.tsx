@@ -2,7 +2,7 @@
 
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
 	ArrowRight,
@@ -165,7 +165,7 @@ const STORY_STEPS: StoryStep[] = [
 		description:
 			"Add the route, dates, cabin, and travelers so MyTravelWallet knows exactly what it should compare.",
 		icon: Search,
-		chips: ["EWR → MIA", "Jun 10–17", "Economy", "1 traveler"],
+		chips: ["EWR → YHZ", "Jun 10–17", "Economy", "1 traveler"],
 		panelTitle: "Trip details captured",
 		panelDescription:
 			"The search context narrows the analysis to the flight decision you actually care about.",
@@ -204,7 +204,7 @@ const STORY_STEPS: StoryStep[] = [
 const SCROLL_PER_STEP = 600;
 const TOTAL_SCROLL = SCROLL_PER_STEP * STORY_STEPS.length;
 
-export default function LandingPage() {
+function LandingPageContent() {
 	const router = useRouter();
 	const searchParams = useSearchParams();
 	const trySearchRef = useRef<HTMLDivElement | null>(null);
@@ -564,75 +564,75 @@ export default function LandingPage() {
 								</button>
 							</div>
 
-							{/* Right: floating verdict card — desktop only */}
+							{/* Right: compact sample verdict card — desktop only */}
 							<div className="hidden lg:flex lg:items-center lg:self-stretch">
-								<div className="relative w-full overflow-hidden rounded-[28px] border border-white/10 bg-[rgba(7,16,30,0.48)] p-6 shadow-[0_8px_64px_rgba(0,0,0,0.35)] backdrop-blur-3xl">
-									{/* Subtle top glow */}
-									<div className="pointer-events-none absolute inset-x-0 top-0 h-36 bg-[radial-gradient(ellipse_at_top,rgba(134,239,172,0.12),transparent_70%)]" />
-									{/* Subtle bottom-right accent */}
-									<div className="pointer-events-none absolute bottom-0 right-0 h-32 w-32 rounded-full bg-sky-400/8 blur-3xl" />
+								<div className="relative w-full max-w-[430px] overflow-hidden rounded-[30px] border border-white/10 bg-[rgba(7,16,30,0.56)] p-5 shadow-[0_18px_70px_rgba(0,0,0,0.34)] backdrop-blur-3xl">
+									<div className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-[radial-gradient(ellipse_at_top,rgba(134,239,172,0.14),transparent_68%)]" />
+									<div className="pointer-events-none absolute -right-10 bottom-4 h-32 w-32 rounded-full bg-sky-400/10 blur-3xl" />
 
-									{/* Card header */}
-									<div className="relative mb-5 flex items-start justify-between gap-3">
+									<div className="relative flex items-center justify-between gap-3">
 										<div>
-											<p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#86EFAC]/70">
+											<p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#86EFAC]/75">
 												Sample verdict
 											</p>
-											<h3 className="mt-1 text-xl font-semibold tracking-tight text-white">
-												EWR → MIA · Business
-											</h3>
+											<h3 className="mt-1 text-lg font-semibold tracking-tight text-white">EWR → YHZ</h3>
+											<p className="mt-0.5 text-xs text-white/42">Business · 1 traveler</p>
 										</div>
-										<span className="mt-1 shrink-0 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-300">
+										<span className="shrink-0 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1.5 text-xs font-semibold text-emerald-200">
 											Use Points
 										</span>
 									</div>
 
-									{/* Metric row */}
-									<div className="relative grid grid-cols-3 gap-2.5">
-										<div className="rounded-2xl border border-white/8 bg-white/[0.04] p-3.5">
-											<p className="text-[10px] uppercase tracking-[0.12em] text-white/38">Cash</p>
-											<p className="mt-1.5 text-lg font-semibold text-white">$3,240</p>
+									<div className="relative mt-5 rounded-3xl border border-emerald-400/15 bg-[linear-gradient(180deg,rgba(34,197,94,0.12),rgba(255,255,255,0.04))] p-4">
+										<div className="flex items-end justify-between gap-4">
+											<div>
+												<p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-200/70">Best move</p>
+												<p className="mt-1 text-2xl font-bold tracking-tight text-white">Use points</p>
+											</div>
+											<div className="text-right">
+												<p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/35">Value</p>
+												<p className="mt-1 text-2xl font-bold text-emerald-200">4.9¢</p>
+											</div>
 										</div>
-										<div className="rounded-2xl border border-white/8 bg-white/[0.04] p-3.5">
-											<p className="text-[10px] uppercase tracking-[0.12em] text-white/38">Points</p>
-											<p className="mt-1.5 text-lg font-semibold text-white">65k</p>
-										</div>
-										<div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/[0.06] p-3.5">
-											<p className="text-[10px] uppercase tracking-[0.12em] text-emerald-400/60">Value</p>
-											<p className="mt-1.5 text-lg font-semibold text-emerald-200">4.9¢</p>
-										</div>
-									</div>
-
-									{/* Verdict explanation */}
-									<div className="relative mt-3 rounded-2xl border border-white/6 bg-white/[0.03] p-4">
-										<p className="text-sm font-medium text-white/90">Your points look strong here.</p>
-										<p className="mt-1.5 text-xs leading-5 text-white/48">
-											For premium-cabin redemptions like this, your points are likely delivering outsized value compared with paying cash.
+										<p className="mt-3 text-sm leading-6 text-white/62">
+											The cash fare is high enough that this redemption is worth saving your money for.
 										</p>
 									</div>
 
-									{/* Program chips */}
-									<div className="relative mt-4 flex flex-wrap gap-2">
-										{["Chase UR", "United", "Amex MR"].map((p) => (
-											<span
-												key={p}
-												className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1 text-xs font-medium text-white/55"
-											>
-												{p}
-											</span>
-										))}
+									<div className="relative mt-4 grid grid-cols-2 gap-3">
+										<div className="rounded-2xl border border-white/8 bg-white/[0.045] p-3">
+											<p className="text-[10px] uppercase tracking-[0.12em] text-white/36">Cash fare</p>
+											<p className="mt-1 text-lg font-semibold text-white">$3,240</p>
+										</div>
+										<div className="rounded-2xl border border-white/8 bg-white/[0.045] p-3">
+											<p className="text-[10px] uppercase tracking-[0.12em] text-white/36">Award</p>
+											<p className="mt-1 text-lg font-semibold text-white">65k pts</p>
+										</div>
 									</div>
 
-									{/* Divider hint */}
-									<div className="relative mt-5 flex items-center gap-2 text-[10px] text-white/28">
-										<div className="h-px flex-1 bg-white/6" />
-										<span>your wallet · your trip · one verdict</span>
-										<div className="h-px flex-1 bg-white/6" />
+									<div className="relative mt-4 flex flex-wrap gap-2">
+										{/* {["Chase UR", "United", "Amex MR"].map((program) => (
+											<span
+												key={program}
+												className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1 text-[11px] font-medium text-white/55"
+											>
+												{program}
+											</span>
+										))} */}
+									</div>
+
+									<div className="relative mt-5 rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3">
+										<div className="flex items-center justify-between gap-3 text-xs">
+											<span className="text-white/38">your wallet</span>
+											<span className="h-px flex-1 bg-white/8" />
+											<span className="text-white/38">your trip</span>
+											<span className="h-px flex-1 bg-white/8" />
+											<span className="font-medium text-[#86EFAC]/80">one verdict</span>
+										</div>
 									</div>
 								</div>
 							</div>
 						</div>
-
 						{/* One-time public search form */}
 						{(showTrySearch || searching || results || searchError) ? (
 							<div
@@ -1222,4 +1222,29 @@ export default function LandingPage() {
 			`}</style>
 		</div>
 	);
+}
+
+function LandingPageFallback() {
+  return (
+    <div className="relative min-h-screen overflow-hidden bg-[#07101E] text-white">
+      <div
+        className="absolute inset-0 bg-cover bg-center"
+        style={{ backgroundImage: "url('/beach-hero.png')" }}
+      />
+      <div className="absolute inset-0 bg-[rgba(6,14,26,0.72)]" />
+      <div className="relative z-10 flex min-h-screen items-center justify-center px-6">
+        <div className="rounded-full border border-white/12 bg-white/8 px-5 py-3 text-sm text-white/85 backdrop-blur-xl">
+          Loading MyTravelWallet...
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function LandingPage() {
+  return (
+    <Suspense fallback={<LandingPageFallback />}>
+      <LandingPageContent />
+    </Suspense>
+  );
 }

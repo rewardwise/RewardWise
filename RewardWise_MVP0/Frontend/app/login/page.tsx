@@ -41,10 +41,6 @@ function LoginPageInner() {
 			return "We couldn’t complete sign in. Please try again.";
 		}
 
-		if (callbackError === "oauth_not_allowed") {
-			return "That Google account is not approved for MyTravelWallet access.";
-		}
-
 		if (accessDenied) {
 			return "That account is not approved for access right now.";
 		}

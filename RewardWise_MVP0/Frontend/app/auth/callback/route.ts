@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
-import { isAllowedTeamEmail } from "@/utils/auth/allowlist";
 import { isSubscriptionActive } from "@/utils/subscription/check";
 
 export async function GET(request: Request) {
@@ -22,9 +21,9 @@ export async function GET(request: Request) {
 				data: { user },
 			} = await supabase.auth.getUser();
 
-			if (!user || !isAllowedTeamEmail(user.email)) {
+			if (!user) {
 				await supabase.auth.signOut();
-				return NextResponse.redirect(`${origin}/?access=denied`);
+				return NextResponse.redirect(`${origin}/login?error=auth_callback_error`);
 			}
 
 			const next = searchParams.get("next");
