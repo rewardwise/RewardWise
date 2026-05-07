@@ -2,11 +2,12 @@
 
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
 	ArrowRight,
 	BarChart3,
+	Calendar,
 	Check,
 	ChevronDown,
 	CreditCard,
@@ -14,25 +15,81 @@ import {
 	Plane,
 	Search,
 	Sparkles,
+	User,
 	Wallet,
 	type LucideIcon,
 } from "lucide-react";
 
-import SearchProgress from "@/components/SearchProgress";
+import AirportSearch from "@/components/AirportSearch";
+import SearchLoadingExperience from "@/components/SearchLoadingExperience";
+import VerdictCard from "@/components/VerdictCard";
 import { useAuth } from "@/context/AuthProvider";
 import { useSearchFill } from "@/context/SearchFillContext";
 
 type Cabin = "economy" | "business" | "first";
 
-type TeaserResult = {
-	verdict: "Pay Cash" | "Use Points" | "Wait";
-	cashPrice: number;
-	pointsPrice: number;
-	cpp: number;
-	savingsLabel: string;
-	headline: string;
-	description: string;
-};
+interface VerdictWinner {
+	program: string | null;
+	points: number | null;
+	taxes: number | null;
+	cpp: number | null;
+	direct: boolean | null;
+}
+
+interface BookingLink {
+	seats_aero_link: string | null;
+	airline_link: string | null;
+	preferred: "seats_aero" | "airline" | "none";
+}
+
+interface Verdict {
+	verdict: string;
+	verdict_label?: string;
+	recommendation?: "use_points" | "pay_cash" | "wait";
+	headline?: string;
+	explanation?: string;
+	winner: VerdictWinner | null;
+	pay_cash: boolean;
+	confidence: "high" | "medium" | "low";
+	confidence_reason?: string;
+	booking_note: string;
+	booking_link: BookingLink;
+	data_quality?: string;
+	missing_sources?: string[];
+	metrics?: {
+		cash_price?: number | null;
+		points_cost?: number | null;
+		taxes?: number | null;
+		cpp?: number | null;
+		estimated_savings?: number | null;
+	};
+}
+
+interface SearchResult {
+	search_id?: string | null;
+	verdict_id?: string | null;
+	public_trial_id?: string | null;
+	origin: string;
+	destination: string;
+	date: string;
+	return_date: string | null;
+	cabin: string;
+	travelers: number;
+	is_roundtrip: boolean;
+	cash_price: number | null;
+	price_level: string | null;
+	typical_price_range: [number, number] | null;
+	flights: any[];
+	award_options: any[];
+	return_award_options: any[];
+	verdict: Verdict;
+}
+
+const MIN_PUBLIC_SEARCH_LOADING_MS = 5000;
+
+function sleep(ms: number) {
+	return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
 
 type StoryStep = {
 	label: string;
@@ -147,55 +204,6 @@ const STORY_STEPS: StoryStep[] = [
 const SCROLL_PER_STEP = 600;
 const TOTAL_SCROLL = SCROLL_PER_STEP * STORY_STEPS.length;
 
-function formatCurrency(value: number) {
-	return new Intl.NumberFormat("en-US", {
-		style: "currency",
-		currency: "USD",
-		maximumFractionDigits: 0,
-	}).format(value);
-}
-
-function buildTeaserResult(cabin: Cabin, travelers: number): TeaserResult {
-	const count = Math.max(travelers, 1);
-
-	if (cabin === "business") {
-		return {
-			verdict: "Use Points",
-			cashPrice: 3240 * count,
-			pointsPrice: 65000 * count,
-			cpp: 4.98,
-			savingsLabel: `${formatCurrency(1880 * count)} in value`,
-			headline: "Your points look strong here",
-			description:
-				"For premium-cabin redemptions like this, your points are likely delivering outsized value compared with paying cash.",
-		};
-	}
-
-	if (cabin === "first") {
-		return {
-			verdict: "Use Points",
-			cashPrice: 8450 * count,
-			pointsPrice: 120000 * count,
-			cpp: 7.04,
-			savingsLabel: `${formatCurrency(5120 * count)} in value`,
-			headline: "Excellent redemption territory",
-			description:
-				"First-class fares are expensive enough that using points is often the smarter move if award space exists.",
-		};
-	}
-
-	return {
-		verdict: "Pay Cash",
-		cashPrice: 387 * count,
-		pointsPrice: 35000 * count,
-		cpp: 1.11,
-		savingsLabel: "Save your points for a stronger redemption",
-		headline: "Cash is probably the better move",
-		description:
-			"For an economy trip like this, the points value is likely too low to justify burning miles right now.",
-	};
-}
-
 export default function LandingPage() {
 	const router = useRouter();
 	const searchParams = useSearchParams();
@@ -209,13 +217,16 @@ export default function LandingPage() {
 
 	const [origin, setOrigin] = useState("");
 	const [destination, setDestination] = useState("");
-	const [dates, setDates] = useState("");
+	const [departDate, setDepartDate] = useState("");
+	const [returnDate, setReturnDate] = useState("");
 	const [cabin, setCabin] = useState<Cabin>("economy");
 	const [travelers, setTravelers] = useState("1");
+	const [tripType, setTripType] = useState<"roundtrip" | "oneway">("roundtrip");
 	const [showTrySearch, setShowTrySearch] = useState(false);
 	const [searching, setSearching] = useState(false);
+	const [searchError, setSearchError] = useState("");
 	const [signingOutUnauthorized, setSigningOutUnauthorized] = useState(false);
-	const [teaserResult, setTeaserResult] = useState<TeaserResult | null>(null);
+	const [results, setResults] = useState<SearchResult | null>(null);
 
 	// Scroll-driven story state
 	const [storyProgress, setStoryProgress] = useState(0); // 0–1 across full section
@@ -224,10 +235,6 @@ export default function LandingPage() {
 	const lastScrollY = useRef(0);
 
 	const accessDenied = searchParams.get("access") === "denied";
-	const travelerCount = useMemo(() => {
-		const parsed = Number.parseInt(travelers, 10);
-		return Number.isNaN(parsed) ? 1 : parsed;
-	}, [travelers]);
 
 	// Auth redirect
 	useEffect(() => {
@@ -331,7 +338,9 @@ export default function LandingPage() {
 		setPendingSearch({
 			origin,
 			destination,
-			dates,
+			date: departDate,
+			return_date: tripType === "roundtrip" ? returnDate : null,
+			tripType,
 			cabin,
 			travelers,
 			selectedPrograms: [],
@@ -340,22 +349,73 @@ export default function LandingPage() {
 	};
 
 	const handleAuthRoute = (path: "/login" | "/signup") => {
-		if (origin || destination || dates) {
+		if (origin || destination || departDate) {
 			savePendingSearch();
 		}
 		router.push(path);
 	};
 
-	const handleSearch = () => {
-		if (!origin.trim() || !destination.trim()) return;
+	const handleSearch = async () => {
+		const searchStartedAt = Date.now();
 
+		if (!origin || !destination || !departDate) {
+			setSearchError("Please fill in origin, destination, and departure date.");
+			return;
+		}
+
+		if (tripType === "roundtrip" && !returnDate) {
+			setSearchError("Please select a return date for round trips.");
+			return;
+		}
+
+		setSearchError("");
+		setResults(null);
 		setSearching(true);
-		setTeaserResult(null);
 
-		window.setTimeout(() => {
+		try {
+			const params = new URLSearchParams({
+				origin,
+				destination,
+				date: departDate,
+				cabin,
+				travelers,
+			});
+
+			if (tripType === "roundtrip" && returnDate) {
+				params.append("return_date", returnDate);
+			}
+
+			const API_URL = process.env.NEXT_PUBLIC_API_URL;
+			if (!API_URL) {
+				throw new Error("Missing NEXT_PUBLIC_API_URL.");
+			}
+
+			const res = await fetch(`${API_URL}/api/public-search?${params.toString()}`, {
+				method: "POST",
+			});
+
+			if (!res.ok) {
+				const errData = await res.json().catch(() => null);
+				const detail = errData?.detail;
+				const message = Array.isArray(detail)
+					? (detail[0]?.msg?.replace("Value error, ", "") ??
+						`Server error: ${res.status}`)
+					: (detail ?? `Server error: ${res.status}`);
+				throw new Error(message);
+			}
+
+			const data = await res.json();
+			const remainingLoadingMs =
+				MIN_PUBLIC_SEARCH_LOADING_MS - (Date.now() - searchStartedAt);
+			if (remainingLoadingMs > 0) {
+				await sleep(remainingLoadingMs);
+			}
+			setResults(data);
+		} catch (err: any) {
+			setSearchError(err.message || "Something went wrong. Try again.");
+		} finally {
 			setSearching(false);
-			setTeaserResult(buildTeaserResult(cabin, travelerCount));
-		}, 3200);
+		}
 	};
 
 	if (loading || signingOutUnauthorized) {
@@ -573,264 +633,186 @@ export default function LandingPage() {
 							</div>
 						</div>
 
-						{/* Teaser search form */}
-						{(showTrySearch || searching || teaserResult) ? (
+						{/* One-time public search form */}
+						{(showTrySearch || searching || results || searchError) ? (
 							<div
 								ref={trySearchRef}
 								className="mt-10 overflow-hidden rounded-[32px] border border-white/12 bg-[rgba(7,16,30,0.72)] shadow-2xl shadow-black/30 backdrop-blur-2xl"
 							>
 								<div className="border-b border-white/8 px-6 py-5 sm:px-8">
 									<p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#86EFAC]/90">
-										No signup teaser
+										One free search
 									</p>
 									<h3 className="mt-2 text-2xl font-semibold tracking-tight text-white">
-										Try a trip search first
+										Try the same search flow before signing up
 									</h3>
 									<p className="mt-2 max-w-2xl text-sm leading-6 text-white/62">
-										Get a preview verdict first. When you are ready, create an
-										account to unlock the full experience.
+										Use the full route/date/cabin flow once for free. After that,
+										create an account to keep comparing trips.
 									</p>
 								</div>
 
 								<div className="p-6 sm:p-8">
-									{!searching && !teaserResult ? (
-										<div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-											<div className="grid gap-4 sm:grid-cols-2">
-												<div>
-													<label
-														htmlFor="origin"
-														className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.14em] text-[#86EFAC]/80"
-													>
-														From
-													</label>
-													<input
-														id="origin"
-														value={origin}
-														onChange={(e) => setOrigin(e.target.value)}
-														placeholder="Newark or EWR"
-														className="w-full rounded-2xl border border-white/12 bg-white/7 px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-white/25 focus:border-[rgba(34,197,94,0.45)] focus:bg-white/10"
-													/>
-												</div>
-												<div>
-													<label
-														htmlFor="destination"
-														className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.14em] text-[#86EFAC]/80"
-													>
-														To
-													</label>
-													<input
-														id="destination"
-														value={destination}
-														onChange={(e) => setDestination(e.target.value)}
-														placeholder="Miami or MIA"
-														className="w-full rounded-2xl border border-white/12 bg-white/7 px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-white/25 focus:border-[rgba(34,197,94,0.45)] focus:bg-white/10"
-													/>
-												</div>
-												<div>
-													<label
-														htmlFor="dates"
-														className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.14em] text-[#86EFAC]/80"
-													>
-														Dates
-													</label>
-													<input
-														id="dates"
-														value={dates}
-														onChange={(e) => setDates(e.target.value)}
-														placeholder="Next month or Jul 10–15"
-														className="w-full rounded-2xl border border-white/12 bg-white/7 px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-white/25 focus:border-[rgba(34,197,94,0.45)] focus:bg-white/10"
-													/>
-												</div>
-												<div className="grid grid-cols-2 gap-4">
-													<div>
-														<label
-															htmlFor="cabin"
-															className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.14em] text-[#86EFAC]/80"
-														>
-															Cabin
-														</label>
-														<select
-															id="cabin"
-															value={cabin}
-															onChange={(e) => setCabin(e.target.value as Cabin)}
-															className="w-full rounded-2xl border border-white/12 bg-white/7 px-4 py-3.5 text-sm text-white outline-none transition focus:border-[rgba(34,197,94,0.45)] focus:bg-white/10"
-														>
-															<option value="economy">Economy</option>
-															<option value="business">Business</option>
-															<option value="first">First</option>
-														</select>
-													</div>
-													<div>
-														<label
-															htmlFor="travelers"
-															className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.14em] text-[#86EFAC]/80"
-														>
-															Travelers
-														</label>
-														<select
-															id="travelers"
-															value={travelers}
-															onChange={(e) => setTravelers(e.target.value)}
-															className="w-full rounded-2xl border border-white/12 bg-white/7 px-4 py-3.5 text-sm text-white outline-none transition focus:border-[rgba(34,197,94,0.45)] focus:bg-white/10"
-														>
-															{[1, 2, 3, 4].map((n) => (
-																<option key={n} value={n}>{n}</option>
-															))}
-														</select>
-													</div>
-												</div>
-												<div className="sm:col-span-2">
+									{!searching && !results ? (
+										<>
+											<div className="mb-4 flex gap-2">
+												{(["roundtrip", "oneway"] as const).map((type) => (
 													<button
-														onClick={handleSearch}
-														disabled={!origin.trim() || !destination.trim()}
-														className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#22C55E] px-5 py-3.5 text-sm font-semibold text-[#07101E] transition hover:bg-[#16A34A] disabled:cursor-not-allowed disabled:bg-white/12 disabled:text-white/35"
+														key={type}
+														type="button"
+														onClick={() => {
+															setTripType(type);
+															if (type === "oneway") setReturnDate("");
+														}}
+														className={`rounded-lg px-4 py-1.5 text-xs font-medium transition-colors ${
+															tripType === type
+																? "bg-emerald-500 text-white"
+																: "bg-white/8 text-white/50 hover:bg-white/12 hover:text-white"
+														}`}
 													>
-														See my preview verdict
-														<ArrowRight className="h-4 w-4" />
+														{type === "roundtrip" ? "Round Trip" : "One Way"}
 													</button>
+												))}
+											</div>
+
+											<div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+												<AirportSearch
+													label="FROM"
+													value={origin}
+													onChange={setOrigin}
+													placeholder="City or airport"
+												/>
+												<AirportSearch
+													label="TO"
+													value={destination}
+													onChange={setDestination}
+													placeholder="City or airport"
+												/>
+												<div>
+													<label className="mb-1 flex items-center gap-1 text-xs text-emerald-400">
+														<Calendar className="h-3 w-3" /> DEPART
+													</label>
+													<input
+														type="date"
+														min={new Date().toISOString().split("T")[0]}
+														value={departDate}
+														onChange={(event) => setDepartDate(event.target.value)}
+														className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white [color-scheme:dark] focus:outline-none focus:ring-2 focus:ring-emerald-500"
+													/>
 												</div>
 											</div>
-											<div className="rounded-[28px] border border-white/10 bg-white/6 p-5">
-												<p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/40">
-													What you will see
-												</p>
-												<ul className="mt-4 space-y-3 text-sm text-white/70">
-													{[
-														"A quick verdict preview for your route",
-														"Estimated cash price and points value",
-														"A simple explanation of why the verdict makes sense",
-													].map((item) => (
-														<li key={item} className="flex items-start gap-3">
-															<span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-400/14 text-emerald-100">
-																<Check className="h-3.5 w-3.5" />
-															</span>
-															<span>{item}</span>
-														</li>
-													))}
-												</ul>
-												<p className="mt-5 text-xs leading-5 text-white/42">
-													This is a teaser preview. Create an account to unlock
-													the full product experience.
-												</p>
+
+											<div
+												className={`mt-3 grid grid-cols-1 gap-3 ${
+													tripType === "roundtrip" ? "sm:grid-cols-3" : "sm:grid-cols-2"
+												}`}
+											>
+												{tripType === "roundtrip" && (
+													<div>
+														<label className="mb-1 flex items-center gap-1 text-xs text-emerald-400">
+															<Calendar className="h-3 w-3" /> RETURN
+														</label>
+														<input
+															type="date"
+															min={departDate || new Date().toISOString().split("T")[0]}
+															value={returnDate}
+															onChange={(event) => setReturnDate(event.target.value)}
+															className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white [color-scheme:dark] focus:outline-none focus:ring-2 focus:ring-emerald-500"
+														/>
+													</div>
+												)}
+												<div>
+													<label className="mb-1 flex items-center gap-1 text-xs text-emerald-400">
+														<User className="h-3 w-3" /> TRAVELERS
+													</label>
+													<select
+														value={travelers}
+														onChange={(event) => setTravelers(event.target.value)}
+														className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+													>
+														{[1, 2, 3, 4, 5, 6].map((n) => (
+															<option key={n} value={n}>
+																{n} Traveler{n > 1 ? "s" : ""}
+															</option>
+														))}
+													</select>
+												</div>
+												<div>
+													<label className="mb-1 flex items-center gap-1 text-xs text-emerald-400">
+														<Plane className="h-3 w-3" /> CABIN
+													</label>
+													<select
+														value={cabin}
+														onChange={(event) => setCabin(event.target.value as Cabin)}
+														className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+													>
+														<option value="economy">Economy</option>
+														<option value="business">Business</option>
+														<option value="first">First</option>
+													</select>
+												</div>
 											</div>
-										</div>
+
+											<button
+												onClick={handleSearch}
+												disabled={
+													searching ||
+													!origin ||
+													!destination ||
+													!departDate ||
+													(tripType === "roundtrip" && !returnDate)
+												}
+												className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-500 py-3 font-semibold text-white transition-colors hover:bg-emerald-600 disabled:bg-gray-700 disabled:text-white/40"
+											>
+												<Search className="h-5 w-5" /> Search Flights
+											</button>
+
+											{searchError && (
+												<div className="mt-4 rounded-2xl border border-red-400/25 bg-red-400/10 px-4 py-3 text-sm text-red-100">
+													{searchError}
+												</div>
+											)}
+										</>
 									) : null}
 
 									{searching ? (
-										<SearchProgress
+										<SearchLoadingExperience
 											origin={origin}
 											destination={destination}
 											cabin={cabin}
-											travelers={travelers}
-											programs="Chase UR, Amex MR, United, Delta, Marriott, Hilton"
+											travelers={Number(travelers)}
+											isRoundtrip={tripType === "roundtrip"}
 										/>
 									) : null}
 
-									{teaserResult ? (
-										<div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-											<div className="rounded-[28px] border border-emerald-400/16 bg-[linear-gradient(180deg,rgba(34,197,94,0.10),rgba(255,255,255,0.04))] p-6">
-												<div className="flex flex-wrap items-center justify-between gap-3">
-													<div>
-														<p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#86EFAC]/90">
-															Preview verdict
-														</p>
-														<h4 className="mt-2 text-2xl font-semibold tracking-tight text-white">
-															{origin || "Your route"} →{" "}
-															{destination || "Destination"}
-														</h4>
-													</div>
-													<span
-														className={`rounded-full px-3 py-1 text-xs font-semibold ${
-															teaserResult.verdict === "Pay Cash"
-																? "border border-sky-300/25 bg-sky-300/12 text-sky-50"
-																: teaserResult.verdict === "Use Points"
-																	? "border border-emerald-300/25 bg-emerald-300/12 text-emerald-50"
-																	: "border border-amber-300/25 bg-amber-300/12 text-amber-50"
-														}`}
-													>
-														{teaserResult.verdict}
-													</span>
-												</div>
-												<div className="mt-6 grid gap-4 sm:grid-cols-3">
-													<div className="rounded-2xl border border-white/10 bg-white/6 p-4">
-														<p className="text-xs uppercase tracking-[0.14em] text-white/40">Cash price</p>
-														<p className="mt-2 text-xl font-semibold text-white">
-															{formatCurrency(teaserResult.cashPrice)}
-														</p>
-													</div>
-													<div className="rounded-2xl border border-white/10 bg-white/6 p-4">
-														<p className="text-xs uppercase tracking-[0.14em] text-white/40">Points estimate</p>
-														<p className="mt-2 text-xl font-semibold text-white">
-															{teaserResult.pointsPrice.toLocaleString()} pts
-														</p>
-													</div>
-													<div className="rounded-2xl border border-white/10 bg-white/6 p-4">
-														<p className="text-xs uppercase tracking-[0.14em] text-white/40">Estimated value</p>
-														<p className="mt-2 text-xl font-semibold text-white">
-															{teaserResult.cpp.toFixed(1)}¢
-														</p>
-													</div>
-												</div>
-												<div className="mt-6 rounded-2xl border border-white/10 bg-white/6 p-5">
-													<p className="text-lg font-semibold text-white">
-														{teaserResult.headline}
-													</p>
-													<p className="mt-3 text-sm leading-6 text-white/68">
-														{teaserResult.description}
-													</p>
-													<p className="mt-4 text-sm font-medium text-[#86EFAC]">
-														{teaserResult.savingsLabel}
-													</p>
-												</div>
-											</div>
-											<div className="rounded-[28px] border border-white/10 bg-white/6 p-6">
-												<p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/40">
-													Unlock more in MyTravelWallet
-												</p>
-												<ul className="mt-4 space-y-3 text-sm text-white/70">
-													{[
-														"Save your search and continue inside the app",
-														"Track program balances and wallet value",
-														"Get full points-versus-cash verdicts on future trips",
-													].map((item) => (
-														<li key={item} className="flex items-start gap-3">
-															<span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-400/14 text-emerald-100">
-																<Check className="h-3.5 w-3.5" />
-															</span>
-															<span>{item}</span>
-														</li>
-													))}
-												</ul>
-												<div className="mt-6 space-y-3">
-													<button
-														onClick={() => handleAuthRoute("/signup")}
-														className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#22C55E] px-5 py-3.5 text-sm font-semibold text-[#07101E] transition hover:bg-[#16A34A]"
-													>
-														Create free account
-														<ArrowRight className="h-4 w-4" />
-													</button>
-													<button
-														onClick={() => handleAuthRoute("/login")}
-														className="inline-flex w-full items-center justify-center rounded-2xl border border-white/12 bg-white/6 px-5 py-3.5 text-sm font-medium text-white/82 transition hover:bg-white/10 hover:text-white"
-													>
-														I already have an account
-													</button>
-													<button
-														onClick={() => {
-															setTeaserResult(null);
-															setShowTrySearch(true);
-														}}
-														className="inline-flex w-full items-center justify-center rounded-2xl border border-transparent px-5 py-3 text-sm font-medium text-white/55 transition hover:text-white"
-													>
-														Edit search
-													</button>
-												</div>
-											</div>
+									{results?.verdict ? (
+										<div className="space-y-5">
+											<VerdictCard
+												verdict={results.verdict}
+												cashPrice={results.cash_price}
+												origin={results.origin}
+												destination={results.destination}
+												departDate={results.date}
+												returnDate={results.return_date}
+												cabin={results.cabin}
+												travelers={results.travelers}
+												isRoundtrip={results.is_roundtrip}
+												awardOptions={results.award_options}
+												returnAwardOptions={results.return_award_options}
+												flights={results.flights}
+												userPrograms={[]}
+												verdictId={results.verdict_id}
+												publicPreview
+												onPublicPreviewSignup={() => handleAuthRoute("/signup")}
+												onPublicPreviewSignin={() => handleAuthRoute("/login")}
+											/>
+
 										</div>
 									) : null}
 								</div>
 							</div>
 						) : null}
+
 					</section>
 
 					{/* ---------------------------------------------------------------- */}

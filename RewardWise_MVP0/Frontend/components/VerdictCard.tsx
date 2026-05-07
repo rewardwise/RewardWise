@@ -173,6 +173,9 @@ interface VerdictCardProps {
   userPrograms?: string[];
   verdictId?: string | null;
   onAskZoe?: (context: string) => void;
+  publicPreview?: boolean;
+  onPublicPreviewSignup?: () => void;
+  onPublicPreviewSignin?: () => void;
 }
 
 function formatDate(d: string) {
@@ -208,10 +211,7 @@ function fmtDuration(mins?: number) {
 
 function fmtMoney(value?: number | null, digits = 0) {
   if (value == null || Number.isNaN(Number(value))) return "—";
-  return `$${Number(value).toLocaleString("en-US", {
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  })}`;
+  return `$${Number(value).toFixed(digits)}`;
 }
 
 function fmtShortDateTime(value?: string | null) {
@@ -424,6 +424,9 @@ export default function VerdictCard({
   userPrograms = [],
   verdictId,
   onAskZoe,
+  publicPreview = false,
+  onPublicPreviewSignup,
+  onPublicPreviewSignin,
 }: VerdictCardProps) {
   const { addToWatchlist, isWatching } = useAlerts();
   const [justAdded, setJustAdded] = useState(false);
@@ -730,7 +733,7 @@ export default function VerdictCard({
           </div>
           <div className="text-right">
             <p className="font-bold text-emerald-300">{(option.points * travelers).toLocaleString()} pts</p>
-            {option.taxes != null && option.taxes > 0 && <p className="text-xs text-slate-400">+{fmtMoney(option.taxes, 2)}</p>}
+            {option.taxes != null && option.taxes > 0 && <p className="text-xs text-slate-400">+${Number(option.taxes).toFixed(2)}</p>}
           </div>
         </div>
       </div>
@@ -738,9 +741,11 @@ export default function VerdictCard({
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
+    if (publicPreview) return;
     touchStartX.current = e.touches[0].clientX;
   };
   const handleTouchEnd = (e: React.TouchEvent) => {
+    if (publicPreview) return;
     touchEndX.current = e.changedTouches[0].clientX;
     const diff = (touchStartX.current ?? 0) - (touchEndX.current ?? 0);
     if (Math.abs(diff) > 50) setSlide(diff > 0 ? 1 : 0);
@@ -752,17 +757,21 @@ export default function VerdictCard({
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
-      {/* ── Slide track ── */}
+      {/* ── Slide track. Public previews render verdict + details side by side on desktop. ── */}
       <div
-        className="flex items-stretch transition-transform duration-300 ease-in-out"
-        style={{ transform: `translateX(-${slide * 100}%)` }}
+        className={
+          publicPreview
+            ? "grid items-stretch gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(340px,0.84fr)]"
+            : "flex items-stretch transition-transform duration-300 ease-in-out"
+        }
+        style={publicPreview ? undefined : { transform: `translateX(-${slide * 100}%)` }}
       >
 
         {/* ════════════════════════════════════════
             SLIDE 1 — Verdict
         ════════════════════════════════════════ */}
-        <div className="min-w-full flex flex-col">
-          <div className="flex-1 rounded-3xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl md:p-8">
+        <div className={publicPreview ? "min-w-0 flex h-full flex-col gap-5" : "min-w-full flex flex-col"}>
+          <div className="flex-1 rounded-3xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl md:p-8 flex flex-col">
 
             {/* Header */}
             <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
@@ -793,8 +802,8 @@ export default function VerdictCard({
               </div>
             </div>
 
-            {/* Reasoning panel */}
-            {reasoningOpen && (
+            {/* Reasoning panel — always visible in public preview, togglable otherwise */}
+            {(publicPreview || reasoningOpen) && (
               <div className="mt-8 rounded-2xl bg-white/[0.04] p-5 md:p-6">
                 <div className="grid gap-5 md:grid-cols-3">
                   <div>
@@ -818,35 +827,37 @@ export default function VerdictCard({
 
                 <p className="mt-5 text-base leading-7 text-slate-300">{reasoningCopy}</p>
 
-                {/* Quick questions */}
-                <div className="mt-5 flex flex-wrap gap-3">
-                  {quickQuestions.map((question) => (
-                    <button
-                      key={question}
-                      type="button"
-                      onClick={() => void askInline(question)}
-                      disabled={!!inlineLoading}
-                      className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
-                        inlineAnswer?.question === question
-                          ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-200"
-                          : "border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.08]"
-                      } disabled:opacity-50`}
-                    >
-                      {inlineLoading === question ? (
-                        <span className="flex items-center gap-2">
-                          <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                          </svg>
-                          {question}
-                        </span>
-                      ) : question}
-                    </button>
-                  ))}
-                </div>
+                {/* Quick questions — full-app only */}
+                {!publicPreview && (
+                  <div className="mt-5 flex flex-wrap gap-3">
+                    {quickQuestions.map((question) => (
+                      <button
+                        key={question}
+                        type="button"
+                        onClick={() => void askInline(question)}
+                        disabled={!!inlineLoading}
+                        className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
+                          inlineAnswer?.question === question
+                            ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-200"
+                            : "border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.08]"
+                        } disabled:opacity-50`}
+                      >
+                        {inlineLoading === question ? (
+                          <span className="flex items-center gap-2">
+                            <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                            </svg>
+                            {question}
+                          </span>
+                        ) : question}
+                      </button>
+                    ))}
+                  </div>
+                )}
 
                 {/* Inline answer */}
-                {inlineAnswer && (
+                {!publicPreview && inlineAnswer && (
                   <div className="mt-4 rounded-2xl border border-emerald-400/15 bg-emerald-500/[0.06] px-4 py-3">
                     <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-300">{inlineAnswer.question}</p>
                     <p className="text-sm leading-6 text-slate-200">{inlineAnswer.answer}</p>
@@ -858,16 +869,71 @@ export default function VerdictCard({
               </div>
             )}
 
-            {/* Flight identity */}
-            {bestOutbound && (
-              <div className="mt-5 space-y-3">
-                {renderAwardLeg(bestOutbound, isRoundtrip ? "Outbound flight" : "Award flight")}
-                {isRoundtrip && bestReturn && renderAwardLeg(bestReturn, "Return flight", true)}
-              </div>
-            )}
+            {/* Zoe locked features — public preview filler to balance height */}
+{publicPreview && (
+  <div className="mt-5 rounded-2xl border border-white/8 bg-white/[0.02] p-5">
+    <p className="mb-4 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+      Full access with an account
+    </p>
 
-            {/* Next step */}
-            {verdict.next_step?.label && (
+    <div className="space-y-4">
+      {[
+        {
+          icon: "✦",
+          color: "text-emerald-300 bg-emerald-400/10 border-emerald-400/20",
+          label: "Ask Zoe anything",
+          sub: "Get follow-up answers about your specific trip — why not points, what if you wait, nearby dates.",
+        },
+        {
+          icon: "⚡",
+          color: "text-amber-300 bg-amber-400/10 border-amber-400/20",
+          label: "Set price alerts",
+          sub: "Zoe watches the route and pings you when cash fares drop or award space opens up.",
+        },
+        {
+          icon: "◈",
+          color: "text-sky-300 bg-sky-400/10 border-sky-400/20",
+          label: "Your wallet, your verdict",
+          sub: "Connect your loyalty programs so every recommendation is built around what you actually have.",
+        },
+        {
+          icon: "↺",
+          color: "text-violet-300 bg-violet-400/10 border-violet-400/20",
+          label: "Personalized trip history",
+          sub: "Save past searches and compare future trips against what you’ve already looked at.",
+        },
+        {
+          icon: "⌁",
+          color: "text-rose-300 bg-rose-400/10 border-rose-400/20",
+          label: "Smarter points timing",
+          sub: "See when it may be better to save your points for a higher-value redemption.",
+        },
+        {
+          icon: "✓",
+          color: "text-green-300 bg-green-400/10 border-green-400/20",
+          label: "Less guesswork",
+          sub: "One clear answer before you book.",
+        },
+      ].map(({ icon, color, label, sub }) => (
+        <div key={label} className="flex items-start gap-3">
+          <span
+            className={`mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-xl border text-sm font-semibold ${color}`}
+          >
+            {icon}
+          </span>
+
+          <div>
+            <p className="text-sm font-semibold text-slate-300">{label}</p>
+            <p className="mt-0.5 text-xs leading-5 text-slate-500">{sub}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  </div>
+)}
+
+            {/* Next step — full-app only */}
+            {!publicPreview && verdict.next_step?.label && (
               <div className="mt-5 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-4">
                 <p className="mb-1 text-[11px] uppercase tracking-[0.14em] text-emerald-300">Next step</p>
                 <p className="font-semibold text-white">{verdict.next_step.label}</p>
@@ -880,84 +946,88 @@ export default function VerdictCard({
               <div className="mt-5 rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4">
                 <p className="text-[11px] uppercase tracking-[0.14em] text-amber-200">Missing data</p>
                 <p className="mt-1 text-sm leading-6 text-slate-200">
-                  Zoe could not fully verify: {verdict.missing_sources.map((item) => item.replace(/_/g, " ")).join(", ")}.
+                  We could not fully verify: {verdict.missing_sources.map((item) => item.replace(/_/g, " ")).join(", ")}.
                 </p>
               </div>
             )}
 
-            {/* Footer controls */}
-            <div className="mt-8 border-t border-white/10 pt-5">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <button
-                  type="button"
-                  onClick={() => setReasoningOpen((v) => !v)}
-                  className="inline-flex items-center gap-2 text-base font-semibold text-slate-300 hover:text-white"
-                >
-                  {reasoningOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                  {reasoningOpen ? "Hide reasoning" : "See how Zoe decided"}
-                </button>
-                <div className="flex flex-wrap items-center gap-3">
-                  <button onClick={speak} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-medium text-slate-200 hover:bg-white/[0.06]">
-                    {speaking ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />} {speaking ? "Stop" : "Listen"}
-                  </button>
-                  {bookingUrl ? (
-                    <a href={bookingUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-xl bg-emerald-400 px-5 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-300">
-                      Book / verify <ExternalLink className="h-4 w-4" />
-                    </a>
-                  ) : (
-                    <a href={googleFlightsUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-xl bg-emerald-400 px-5 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-300">
-                      Search fares <Search className="h-4 w-4" />
-                    </a>
-                  )}
-                  <button
-                    onClick={handleSetAlert}
-                    disabled={alreadyWatching || justAdded}
-                    className="flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold disabled:opacity-60"
-                    style={{ borderColor: "rgba(251,191,36,0.25)", background: "rgba(251,191,36,0.08)", color: "#fbbf24" }}
-                  >
-                    {alreadyWatching || justAdded ? <Check className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
-                    {alreadyWatching || justAdded ? "Alert set" : "Set alert"}
-                  </button>
+            {/* Footer controls — full app only */}
+            {!publicPreview && (
+              <div className="mt-8 border-t border-white/10 pt-5">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                   <button
                     type="button"
-                    onClick={() => {
-                      if (!onAskZoe) return;
-                      const cashStr = displayCashPrice != null ? `$${Math.round(displayCashPrice)}` : null;
-                      const ptsStr = displayPoints != null ? `${Number(displayPoints).toLocaleString()} points` : null;
-                      const progStr = winner?.program ? winner.program.replace(/_/g, " ") : null;
-                      const cppStr = winner?.cpp != null ? `${winner.cpp.toFixed(2)} cents per point` : null;
-                      const savingsStr = displaySavings != null ? `saving roughly $${Math.round(displaySavings)}` : null;
-                      const parts = [
-                        `The search returned a verdict for ${origin} → ${destination}`,
-                        `on ${departDate}${returnDate ? ` returning ${returnDate}` : ""}, ${travelers} traveler${travelers !== 1 ? "s" : ""}, ${(cabin || "economy").replace(/_/g, " ")} class.`,
-                        `Verdict: ${recommendationLabel}.`,
-                        cashStr ? `Cash fare: ${cashStr}.` : null,
-                        ptsStr && progStr ? `Best award: ${ptsStr} via ${progStr}.` : null,
-                        cppStr ? `Value: ${cppStr}.` : null,
-                        savingsStr ? `Using points would save ${savingsStr} vs cash.` : null,
-                        `Confidence: ${confidence}.`,
-                        verdict.confidence_reason ?? null,
-                        verdict.explanation ?? null,
-                      ].filter(Boolean).join(" ");
-                      onAskZoe(parts);
-                    }}
-                    className="inline-flex items-center gap-2 rounded-xl bg-emerald-400 px-5 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-300"
+                    onClick={() => setReasoningOpen((v) => !v)}
+                    className="inline-flex items-center gap-2 text-base font-semibold text-slate-300 hover:text-white"
                   >
-                    Ask Zoe <Sparkles className="h-4 w-4" />
+                    {reasoningOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    {reasoningOpen ? "Hide reasoning" : "See how Zoe decided"}
                   </button>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button onClick={speak} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-medium text-slate-200 hover:bg-white/[0.06]">
+                      {speaking ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />} {speaking ? "Stop" : "Listen"}
+                    </button>
+                    {bookingUrl ? (
+                      <a href={bookingUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-xl bg-emerald-400 px-5 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-300">
+                        Book / verify <ExternalLink className="h-4 w-4" />
+                      </a>
+                    ) : (
+                      <a href={googleFlightsUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-xl bg-emerald-400 px-5 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-300">
+                        Search fares <Search className="h-4 w-4" />
+                      </a>
+                    )}
+                    <button
+                      onClick={handleSetAlert}
+                      disabled={alreadyWatching || justAdded}
+                      className="flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold disabled:opacity-60"
+                      style={{ borderColor: "rgba(251,191,36,0.25)", background: "rgba(251,191,36,0.08)", color: "#fbbf24" }}
+                    >
+                      {alreadyWatching || justAdded ? <Check className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
+                      {alreadyWatching || justAdded ? "Alert set" : "Set alert"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!onAskZoe) return;
+                        const cashStr = displayCashPrice != null ? `$${Math.round(displayCashPrice)}` : null;
+                        const ptsStr = displayPoints != null ? `${Number(displayPoints).toLocaleString()} points` : null;
+                        const progStr = winner?.program ? winner.program.replace(/_/g, " ") : null;
+                        const cppStr = winner?.cpp != null ? `${winner.cpp.toFixed(2)} cents per point` : null;
+                        const savingsStr = displaySavings != null ? `saving roughly $${Math.round(displaySavings)}` : null;
+                        const parts = [
+                          `The search returned a verdict for ${origin} → ${destination}`,
+                          `on ${departDate}${returnDate ? ` returning ${returnDate}` : ""}, ${travelers} traveler${travelers !== 1 ? "s" : ""}, ${(cabin || "economy").replace(/_/g, " ")} class.`,
+                          `Verdict: ${recommendationLabel}.`,
+                          cashStr ? `Cash fare: ${cashStr}.` : null,
+                          ptsStr && progStr ? `Best award: ${ptsStr} via ${progStr}.` : null,
+                          cppStr ? `Value: ${cppStr}.` : null,
+                          savingsStr ? `Using points would save ${savingsStr} vs cash.` : null,
+                          `Confidence: ${confidence}.`,
+                          verdict.confidence_reason ?? null,
+                          verdict.explanation ?? null,
+                        ].filter(Boolean).join(" ");
+                        onAskZoe(parts);
+                      }}
+                      className="inline-flex items-center gap-2 rounded-xl bg-emerald-400 px-5 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-300"
+                    >
+                      Ask Zoe <Sparkles className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
 
-            {verdict.booking_note && <p className="mt-4 text-xs text-slate-500">{verdict.booking_note}</p>}
-            <FeedbackInline verdictId={verdictId} />
+
+
+            {!publicPreview && verdict.booking_note && <p className="mt-4 text-xs text-slate-500">{verdict.booking_note}</p>}
+            {!publicPreview && <FeedbackInline verdictId={verdictId} />}
           </div>
         </div>
 
         {/* ════════════════════════════════════════
             SLIDE 2 — Trip details
         ════════════════════════════════════════ */}
-        <div className="min-w-full flex flex-col">
+        <div className={publicPreview ? "min-w-0 flex flex-col" : "min-w-full flex flex-col"}>
           <div className="flex-1 rounded-3xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl md:p-8">
 
             {/* ── Header row ── */}
@@ -1079,7 +1149,7 @@ export default function VerdictCard({
                   )}
 
                   {/* Booking CTA */}
-                  {bestCashFlight.booking_url && (
+                  {!publicPreview && bestCashFlight.booking_url && (
                     <div className="border-t border-white/6 px-5 py-3">
                       <a
                         href={bestCashFlight.booking_url}
@@ -1142,35 +1212,8 @@ export default function VerdictCard({
                       <p className="mt-0.5 text-xs text-slate-400">
                         {bestOutbound.direct ? "Nonstop" : bestOutbound.remaining_seats ? `${bestOutbound.remaining_seats} seat${bestOutbound.remaining_seats !== 1 ? "s" : ""} left` : "Award space available"}
                         {bestOutbound.airlines ? ` · ${bestOutbound.airlines}` : ""}
-                        {bestOutbound.taxes != null && bestOutbound.taxes > 0 ? ` · +${fmtMoney(bestOutbound.taxes, 0)} taxes` : " · No fuel surcharges"}
+                        {bestOutbound.taxes != null && bestOutbound.taxes > 0 ? ` · +$${Number(bestOutbound.taxes).toFixed(0)} taxes` : " · No fuel surcharges"}
                       </p>
-                      {(() => {
-                        const trip = bestOutbound.trips?.[0];
-                        if (!trip) return null;
-                        const parts: string[] = [];
-                        if (trip.departs_at && trip.arrives_at) {
-                          parts.push(`${fmtTime(trip.departs_at)} – ${fmtTime(trip.arrives_at)}`);
-                        } else if (trip.departs_at) {
-                          parts.push(fmtTime(trip.departs_at));
-                        }
-                        if (trip.total_duration) parts.push(fmtDuration(trip.total_duration));
-                        if (trip.flight_numbers) parts.push(trip.flight_numbers);
-                        if (parts.length === 0) return null;
-                        return <p className="mt-0.5 text-xs text-slate-500">{parts.join(" · ")}</p>;
-                      })()}
-                      {isRoundtrip && bestReturn?.trips?.[0] && (() => {
-                        const trip = bestReturn.trips[0];
-                        const parts: string[] = [];
-                        if (trip.departs_at && trip.arrives_at) {
-                          parts.push(`${fmtTime(trip.departs_at)} – ${fmtTime(trip.arrives_at)}`);
-                        } else if (trip.departs_at) {
-                          parts.push(fmtTime(trip.departs_at));
-                        }
-                        if (trip.total_duration) parts.push(fmtDuration(trip.total_duration));
-                        if (trip.flight_numbers) parts.push(trip.flight_numbers);
-                        if (parts.length === 0) return null;
-                        return <p className="mt-0.5 text-xs text-slate-500">Return · {parts.join(" · ")}</p>;
-                      })()}
                       {bestOutbound.cpp != null && (
                         <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1">
                           <span className="text-[11px] font-semibold text-slate-300">{bestOutbound.cpp.toFixed(2)}¢/pt</span>
@@ -1205,13 +1248,87 @@ export default function VerdictCard({
                 </div>
               )}
 
+              {/* ── Zoe chat demo (public preview only) ── */}
+              {publicPreview && (
+                <div className="rounded-2xl border border-white/8 bg-[#0d1420] overflow-hidden">
+                  {/* Zoe header */}
+                  <div className="flex items-center gap-3 px-4 py-3 border-b border-white/6">
+                    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-emerald-500/20 border border-emerald-400/30">
+                      <Sparkles className="h-4 w-4 text-emerald-300" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-white leading-none">Zoe</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">Your travel agent</p>
+                    </div>
+                  </div>
+                  {/* Chat messages */}
+                  <div className="px-4 py-4 space-y-3">
+                    {/* User bubble */}
+                    <div className="flex justify-end">
+                      <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-emerald-500 px-4 py-2.5">
+                        <p className="text-sm font-medium text-white leading-5">
+                          Can you explain why I should pay cash for {origin} → {destination}?
+                        </p>
+                      </div>
+                    </div>
+                    {/* Zoe bubble */}
+                    <div className="flex justify-start">
+                      <div className="max-w-[90%] rounded-2xl rounded-tl-sm bg-white/[0.06] border border-white/8 px-4 py-3">
+                        <p className="text-sm leading-6 text-slate-200">
+                          The cash fare is {fmtMoney(displayCashPrice, 0)} — that's a solid price for this route. The best award I found is{" "}
+                          {hasAward ? `${Number(displayPoints).toLocaleString()} pts` : "not available"}
+                          {displayTaxes != null && displayTaxes > 0 ? ` + ${fmtMoney(displayTaxes, 0)} in taxes` : ""}, which works out to only{" "}
+                          {bestOutbound?.cpp != null ? `${bestOutbound.cpp.toFixed(2)}¢ per point` : "weak value"}.
+                          {" "}Your points are worth more saved for a premium cabin or international trip where redemption value is higher.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  {/* Locked input bar */}
+                  <div className="px-4 pb-4">
+                    <div className="flex items-center gap-2 rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-2.5 cursor-not-allowed" onClick={onPublicPreviewSignup}>
+                      <p className="flex-1 text-sm text-slate-600">Ask Zoe a follow-up…</p>
+                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500/20">
+                        <Sparkles className="h-3 w-3 text-emerald-400" />
+                      </div>
+                    </div>
+                    <p className="mt-2 text-center text-[11px] text-slate-600">Sign up to chat with Zoe about your trip</p>
+                  </div>
+                </div>
+              )}
+
             </div>
           </div>
+          {publicPreview && (onPublicPreviewSignup || onPublicPreviewSignin) && (
+            <div className="rounded-3xl border border-white/10 bg-slate-950/95 p-5 shadow-2xl">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Keep comparing trips</p>
+              <p className="mt-2 text-sm leading-6 text-slate-300">
+                This free search shows the verdict and key details only — and it's limited to one use per network. Create an account to save searches, add your wallet, and unlock the full experience with booking tools, alerts, and deeper comparisons.
+              </p>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={onPublicPreviewSignup}
+                  className="inline-flex items-center justify-center rounded-2xl bg-emerald-400 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-emerald-300"
+                >
+                  Create free account
+                </button>
+                <button
+                  type="button"
+                  onClick={onPublicPreviewSignin}
+                  className="inline-flex items-center justify-center rounded-2xl border border-white/12 bg-white/[0.04] px-5 py-3 text-sm font-medium text-slate-200 transition hover:bg-white/[0.08] hover:text-white"
+                >
+                  Sign in
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
       </div>{/* end slide track */}
 
-      {/* ── Navigation dots + arrows ── */}
+      {/* ── Navigation dots + arrows. Hidden for public previews because both sections are visible together. ── */}
+      {!publicPreview && (
       <div className="mt-4 flex items-center justify-center gap-4">
         <button
           type="button"
@@ -1246,6 +1363,7 @@ export default function VerdictCard({
           <ChevronRight className="h-4 w-4" />
         </button>
       </div>
+      )}
     </div>
   );
 }
