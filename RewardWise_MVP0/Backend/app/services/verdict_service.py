@@ -34,6 +34,8 @@ PROGRAM_HOST_MAP = {
     "virginatlantic": "virginatlantic.com",
     "smiles": "smiles.com.br",
     "lifemiles": "lifemiles.com",
+    "korean": "koreanair.com",
+    "avianca": "lifemiles.com",
     "flyingblue": "flyingblue.com",
     "air_france": "airfrance.com",
     "singapore": "singaporeair.com",
