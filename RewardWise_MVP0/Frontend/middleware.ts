@@ -12,14 +12,12 @@ const publicRoutes = [
 	"/reset-password",
 ];
 
-/** Routes reachable without an active Zoe subscription (paywall / purchase flows). */
-const subscriptionFreeRoutes = [
-	"/subscribe",
-	"/profile",
-	"/home",
-	"/concierge",
-	"/wallet-setup",
-];
+/**
+ * Routes reachable without an active Zoe subscription.
+ * Keep this tight. Do NOT include core app routes like /home, /concierge,
+ * /wallet-setup, /history, /trips, etc.
+ */
+const subscriptionFreeRoutes = ["/subscribe"];
 
 function isPublicRoute(pathname: string) {
 	return publicRoutes.some((route) => {
@@ -70,17 +68,19 @@ export async function middleware(request: NextRequest) {
 
 	const pathname = request.nextUrl.pathname;
 	const isPublic = isPublicRoute(pathname);
+	const isSubscriptionFree = isSubscriptionFreeRoute(pathname);
 
 	if (!user && !isPublic) {
 		const url = request.nextUrl.clone();
 		url.pathname = "/login";
 		url.search = "";
+
 		const redirectResponse = NextResponse.redirect(url);
 		copyCookies(supabaseResponse, redirectResponse);
 		return redirectResponse;
 	}
 
-	if (user && !isPublic && !isSubscriptionFreeRoute(pathname)) {
+	if (user && !isPublic && !isSubscriptionFree) {
 		const { data: sub } = await supabase
 			.from("subscriptions")
 			.select("status")
@@ -96,26 +96,29 @@ export async function middleware(request: NextRequest) {
 		const dayPassExpiryMs = profile?.day_pass_expires_at
 			? new Date(profile.day_pass_expires_at).getTime()
 			: 0;
+
 		const hasActiveDayPass = dayPassExpiryMs > Date.now();
 
 		if (hasActiveDayPass) {
 			return supabaseResponse;
 		}
 
-		if (!sub || sub.status === "canceled") {
+		if (sub?.status === "past_due") {
 			const url = request.nextUrl.clone();
 			url.pathname = "/subscribe";
 			url.search = "";
+			url.searchParams.set("past_due", "1");
+
 			const redirectResponse = NextResponse.redirect(url);
 			copyCookies(supabaseResponse, redirectResponse);
 			return redirectResponse;
 		}
 
-		if (sub.status === "past_due") {
+		if (sub?.status !== "active") {
 			const url = request.nextUrl.clone();
 			url.pathname = "/subscribe";
 			url.search = "";
-			url.searchParams.set("past_due", "1");
+
 			const redirectResponse = NextResponse.redirect(url);
 			copyCookies(supabaseResponse, redirectResponse);
 			return redirectResponse;
