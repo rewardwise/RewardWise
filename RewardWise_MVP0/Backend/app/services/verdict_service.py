@@ -1,4 +1,9 @@
+import logging
 from typing import Optional
+
+from app.services.seats_service import get_trip_detail
+
+logger = logging.getLogger(__name__)
 
 PROGRAM_URL_OVERRIDES = {
     "american": "https://www.aa.com/",
@@ -12,6 +17,22 @@ PROGRAM_URL_OVERRIDES = {
     "turkish": "https://www.turkishairlines.com/",
     "ethiopian": "https://www.ethiopianairlines.com/",
     "alaska": "https://www.alaskaair.com/",
+}
+
+PROGRAM_HOST_MAP = {
+    "aeroplan": "aircanada.com",
+    "american": "aa.com",
+    "alaska": "alaskaair.com",
+    "delta": "delta.com",
+    "united": "united.com",
+    "british": "britishairways.com",
+    "qantas": "qantas.com",
+    "qatar": "qatarairways.com",
+    "finnair": "finnair.com",
+    "ana": "ana.co.jp",
+    "virginatlantic": "virginatlantic.com",
+    "smiles": "smiles.com.br",
+    "lifemiles": "lifemiles.com",
 }
 
 
@@ -28,6 +49,51 @@ def _get_booking_link(program: Optional[str], trip_ids: list) -> dict:
         "seats_aero_link": None,
         "airline_link": airline_url,
         "preferred": "airline" if program else "none",
+    }
+
+
+def _pick_booking_link(booking_links: list, winner_program: str) -> Optional[str]:
+    """Pick the deep link that matches the winner's program by URL host pattern.
+
+    Falls back to the first link if no host match. Returns None if list empty.
+    """
+    if not booking_links:
+        return None
+
+    expected_host = PROGRAM_HOST_MAP.get((winner_program or "").lower())
+    if expected_host:
+        for link_obj in booking_links:
+            url = (link_obj or {}).get("link") or ""
+            if expected_host in url.lower():
+                return url
+
+    first = booking_links[0] if booking_links else {}
+    return (first or {}).get("link") or None
+
+
+async def _resolve_use_points_booking_link(
+    program: Optional[str],
+    trip_ids: list,
+    fallback: dict,
+) -> dict:
+    """Fetch /trips/{id} for the winner and override seats_aero_link with the
+    program-matched deep link. On any failure, return the fallback (homepage).
+    """
+    if not trip_ids:
+        return fallback
+    try:
+        detail = await get_trip_detail(trip_ids[0])
+    except Exception as exc:
+        logger.warning("get_trip_detail failed for trip_id=%s: %s", trip_ids[0], exc)
+        return fallback
+    booking_links = (detail or {}).get("booking_links") or []
+    deep_link = _pick_booking_link(booking_links, program or "")
+    if not deep_link:
+        return fallback
+    return {
+        "seats_aero_link": deep_link,
+        "airline_link": fallback.get("airline_link"),
+        "preferred": "seats_aero",
     }
 
 
@@ -408,7 +474,7 @@ async def generate_verdict(
             confidence="high",
             confidence_reason="Live cash pricing and matching award availability were both found, and the cents-per-point value is strong.",
             booking_note=f"Verify the award on {program_label}'s site before you transfer any points.",
-            booking_link=booking_link,
+            booking_link=await _resolve_use_points_booking_link(program, trip_ids, booking_link),
             winner=winner_payload,
             cash_price=cash_price,
             data_quality=data_quality,
