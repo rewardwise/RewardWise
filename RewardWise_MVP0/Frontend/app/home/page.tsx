@@ -105,6 +105,8 @@ interface SearchResult {
 	origin: string;
 	destination: string;
 	date: string;
+	depart_date_end?: string | null;
+	winning_date?: string | null;
 	cabin: string;
 	travelers: number;
 	is_roundtrip: boolean;
@@ -130,6 +132,19 @@ function formatDuration(mins: number) {
 	const h = Math.floor(mins / 60);
 	const m = mins % 60;
 	return `${h}h ${m}m`;
+}
+
+function shiftIsoDate(iso: string, days: number): string {
+	const [y, m, d] = iso.split("-").map(Number);
+	if (!y || !m || !d) return iso;
+	const dt = new Date(Date.UTC(y, m - 1, d));
+	dt.setUTCDate(dt.getUTCDate() + days);
+	return dt.toISOString().slice(0, 10);
+}
+
+function clampToToday(iso: string): string {
+	const today = new Date().toISOString().slice(0, 10);
+	return iso < today ? today : iso;
 }
 
 // ─── CASH FLIGHT CARD ─────────────────────────────────────────────────────────
@@ -245,6 +260,7 @@ export default function HomePage() {
 	const [travelers, setTravelers] = useState(1);
 	const [cabin, setCabin] = useState("economy");
 	const [tripType, setTripType] = useState("roundtrip");
+	const [dateMode, setDateMode] = useState<"exact" | "flexible">("exact");
 	const [searching, setSearching] = useState(false);
 	const [searchError, setSearchError] = useState("");
 	const [results, setResults] = useState<SearchResult | null>(null);
@@ -381,13 +397,22 @@ export default function HomePage() {
 		});
 
 		try {
+			const isFlexible = dateMode === "flexible" && Boolean(departDate);
+			const flexibleStart = isFlexible
+				? clampToToday(shiftIsoDate(departDate, -3))
+				: departDate;
+			const flexibleEnd = isFlexible ? shiftIsoDate(departDate, 3) : null;
+
 			const params = new URLSearchParams({
 				origin,
 				destination,
-				date: departDate,
+				date: flexibleStart,
 				cabin,
 				travelers: travelers.toString(),
 			});
+			if (flexibleEnd) {
+				params.append("date_end", flexibleEnd);
+			}
 			if (tripType === "roundtrip" && returnDate) {
 				params.append("return_date", returnDate);
 			}
@@ -531,6 +556,32 @@ export default function HomePage() {
 						))}
 					</div>
 
+					{/* DATE MODE TOGGLE */}
+					<div className="flex flex-wrap gap-3 mb-3 text-xs text-gray-300">
+						<label className="inline-flex items-center gap-1.5 cursor-pointer">
+							<input
+								type="radio"
+								name="dateMode"
+								value="exact"
+								checked={dateMode === "exact"}
+								onChange={() => setDateMode("exact")}
+								className="accent-emerald-500"
+							/>
+							Exact date
+						</label>
+						<label className="inline-flex items-center gap-1.5 cursor-pointer">
+							<input
+								type="radio"
+								name="dateMode"
+								value="flexible"
+								checked={dateMode === "flexible"}
+								onChange={() => setDateMode("flexible")}
+								className="accent-emerald-500"
+							/>
+							Flexible (±3 days)
+						</label>
+					</div>
+
 					{/* SEARCH ROW 1 */}
 					<div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
 						<AirportSearch
@@ -547,7 +598,8 @@ export default function HomePage() {
 						/>
 						<div>
 							<label className="block text-emerald-400 text-xs mb-1 flex items-center gap-1">
-								<Calendar className="w-3 h-3" /> DEPART
+								<Calendar className="w-3 h-3" />
+								{dateMode === "flexible" ? "DEPART (anchor)" : "DEPART"}
 							</label>
 							<input
 								type="date"
@@ -653,6 +705,8 @@ export default function HomePage() {
 									origin={results.origin}
 									destination={results.destination}
 									departDate={results.date}
+									departDateEnd={results.depart_date_end ?? null}
+									winningDate={results.winning_date ?? null}
 									returnDate={results.return_date}
 									cabin={results.cabin}
 									travelers={numTravelers}

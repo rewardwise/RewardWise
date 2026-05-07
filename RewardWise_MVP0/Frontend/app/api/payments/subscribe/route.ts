@@ -46,7 +46,7 @@ export async function POST(request: Request) {
 		const userEmail = user.email?.toLowerCase() ?? "";
 		const isPmTester = pmTesterEmails.includes(userEmail);
 
-		const monthlyAmount = isPmTester ? 100 : 999;
+		const monthlyAmount = isPmTester ? 100 : 399;
 		const productName = isPmTester
 			? "MyTravelWallet Pro - PM Test Monthly"
 			: "MyTravelWallet Pro - Monthly";

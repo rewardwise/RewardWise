@@ -9,6 +9,10 @@ from app.cache.types import SearchParams
 
 def build_search_cache_key(params: SearchParams) -> str:
     o, d, dep, ret, pax, cab = normalize_search_params(params)
+    dep_end_raw = params.get("departure_date_end")
+    dep_end = str(dep_end_raw).strip() if dep_end_raw else ""
+    if dep_end and dep_end != dep:
+        return f"search:{o}|{d}|{dep}-{dep_end}|{ret}|{pax}|{cab}"
     return f"search:{o}|{d}|{dep}|{ret}|{pax}|{cab}"
 
 

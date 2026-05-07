@@ -23,6 +23,7 @@ def get_search_params(
     cabin: str = Query(default="economy"),
     travelers: int = Query(default=1),
     return_date: Optional[str] = Query(default=None),
+    date_end: Optional[str] = Query(default=None),
 ) -> SearchParams:
     """Dependency that validates and returns typed search params (RW-047)."""
     if not is_valid_airport_code(origin):
@@ -36,6 +37,7 @@ def get_search_params(
             origin=origin,
             destination=destination,
             date=date,
+            date_end=date_end,
             cabin=cabin,
             travelers=travelers,
             return_date=return_date,
@@ -82,6 +84,7 @@ async def search(
     origin = params.origin
     destination = params.destination
     departure_date = params.date
+    departure_date_end = params.date_end
     cabin = params.cabin.value
     travelers = params.travelers
     return_date = params.return_date
@@ -127,6 +130,7 @@ async def search(
         "origin": origin,
         "destination": destination,
         "departure_date": departure_date,
+        "departure_date_end": departure_date_end,
         "return_date": return_date,
         "passengers": travelers,
         "cabin": cabin,
@@ -164,7 +168,13 @@ async def search(
 
     # --- Parallel fetch ---
     async def outbound_task():
-        raw = await search_award_availability(origin, destination, departure_date, cabin)
+        raw = await search_award_availability(
+            origin,
+            destination,
+            departure_date,
+            cabin,
+            end_date=departure_date_end,
+        )
         return [a for a in raw if a.get("remaining_seats", 0) >= travelers]
 
     async def return_task():
@@ -200,12 +210,16 @@ async def search(
             "remaining_seats": award.get("remaining_seats"),
             "direct": award.get("direct", False),
             "airlines": award.get("airlines", ""),
+            "origin_airport": award.get("origin_airport"),
+            "destination_airport": award.get("destination_airport"),
+            "date": award.get("date"),
             "trip_ids": award.get("trip_ids", []),
             "trips": award.get("trips", []),
             "source": award.get("source"),
         })
     results.sort(key=lambda x: x["cpp"] or 0, reverse=True)
     award_options = results
+    winning_date = award_options[0].get("date") if award_options else None
 
     # --- Build return award options with CPP ---
     return_results = []
@@ -306,6 +320,8 @@ async def search(
         "destination": destination,
         "date": departure_date,
         "depart_date": departure_date,
+        "depart_date_end": departure_date_end,
+        "winning_date": winning_date,
         "return_date": return_date,
         "cabin": cabin,
         "travelers": travelers,

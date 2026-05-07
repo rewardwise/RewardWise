@@ -163,6 +163,8 @@ interface VerdictCardProps {
   origin: string;
   destination: string;
   departDate: string;
+  departDateEnd?: string | null;
+  winningDate?: string | null;
   returnDate?: string | null;
   cabin?: string;
   travelers: number;
@@ -184,6 +186,15 @@ function formatDate(d: string) {
     month: "short",
     day: "numeric",
     year: "numeric",
+  });
+}
+
+function formatShortDate(d: string) {
+  const [year, month, day] = d.split("-").map(Number);
+  if (!year || !month || !day) return d;
+  return new Date(year, month - 1, day).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
   });
 }
 
@@ -414,6 +425,8 @@ export default function VerdictCard({
   origin,
   destination,
   departDate,
+  departDateEnd = null,
+  winningDate = null,
   returnDate,
   cabin,
   travelers,
@@ -460,6 +473,13 @@ export default function VerdictCard({
   const displaySavings = metrics.estimated_savings ?? null;
   const hasAward = displayPoints != null && displayPoints > 0;
   const mainExplanation = verdict.explanation || verdict.verdict || "Zoe compared the live cash fare against the strongest award option available for this trip.";
+
+  const isFlexibleSearch = Boolean(departDateEnd && departDateEnd !== departDate);
+  const searchedRangeCopy = isFlexibleSearch
+    ? winningDate && winningDate !== departDate
+      ? `Searched ${formatShortDate(departDate)} to ${formatShortDate(departDateEnd!)}, best is ${formatShortDate(winningDate)}.`
+      : `Searched ${formatShortDate(departDate)} to ${formatShortDate(departDateEnd!)}.`
+    : null;
 
   const reasoningCopy = verdict.confidence_reason || (
     recommendation === "pay_cash"
@@ -788,6 +808,11 @@ export default function VerdictCard({
                 <p className="mt-5 max-w-4xl text-lg font-medium leading-8 text-slate-300 md:text-xl">
                   {mainExplanation}
                 </p>
+                {searchedRangeCopy && (
+                  <p className="mt-3 inline-flex items-center rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200">
+                    {searchedRangeCopy}
+                  </p>
+                )}
               </div>
               <div className="flex shrink-0 flex-wrap items-center gap-2 md:justify-end">
                 <span className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-bold capitalize ${confidenceTone(confidence)}`}>
@@ -1050,7 +1075,10 @@ export default function VerdictCard({
                   )}
                 </div>
                 <p className="mt-1 text-sm text-slate-500">
-                  {formatDate(departDate)}{returnDate ? ` – ${formatDate(returnDate)}` : ""} · {travelers} traveler{travelers !== 1 ? "s" : ""} · <span className="capitalize">{(cabin || "economy").replace(/_/g, " ")}</span>
+                  {isFlexibleSearch
+                    ? `${formatShortDate(departDate)} to ${formatShortDate(departDateEnd!)}${winningDate && winningDate !== departDate ? ` (best ${formatShortDate(winningDate)})` : ""}`
+                    : formatDate(departDate)}
+                  {returnDate ? ` – ${formatDate(returnDate)}` : ""} · {travelers} traveler{travelers !== 1 ? "s" : ""} · <span className="capitalize">{(cabin || "economy").replace(/_/g, " ")}</span>
                 </p>
               </div>
               {displayCashPrice != null && (
