@@ -2,133 +2,372 @@
 
 "use client";
 
-import { FormEvent, Suspense, useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowRight, Check, Loader2, Plane, Sparkles } from "lucide-react";
+import {
+	ArrowRight,
+	BarChart3,
+	Check,
+	ChevronDown,
+	CreditCard,
+	Loader2,
+	Plane,
+	Search,
+	Sparkles,
+	Wallet,
+	type LucideIcon,
+} from "lucide-react";
+
+import SearchProgress from "@/components/SearchProgress";
 import { useAuth } from "@/context/AuthProvider";
+import { useSearchFill } from "@/context/SearchFillContext";
 
-type SubmitState = "idle" | "submitting" | "success" | "error";
+type Cabin = "economy" | "business" | "first";
 
-function LandingPageInner() {
+type TeaserResult = {
+	verdict: "Pay Cash" | "Use Points" | "Wait";
+	cashPrice: number;
+	pointsPrice: number;
+	cpp: number;
+	savingsLabel: string;
+	headline: string;
+	description: string;
+};
+
+type StoryStep = {
+	label: string;
+	title: string;
+	description: string;
+	icon: LucideIcon;
+	chips: string[];
+	panelTitle: string;
+	panelDescription: string;
+	accentColor: string;
+	accentBg: string;
+};
+
+const FEATURE_CARDS = [
+	{
+		icon: Wallet,
+		title: "Compare points vs cash",
+		description:
+			"See whether using points is actually a good deal before you book.",
+	},
+	{
+		icon: CreditCard,
+		title: "Bring your rewards together",
+		description:
+			"Track balances across programs and understand the value of your travel wallet.",
+	},
+	{
+		icon: BarChart3,
+		title: "Get one clear verdict",
+		description:
+			"MyTravelWallet cuts through the noise and tells you when to pay cash, use points, or wait.",
+	},
+];
+
+const HOW_IT_WORKS = [
+	{
+		step: "01",
+		title: "Tell us about your trip",
+		description:
+			"Start with a route, dates, cabin, and travelers so the app knows what to compare.",
+	},
+	{
+		step: "02",
+		title: "Add your rewards balances",
+		description:
+			"Bring in the loyalty programs you care about so verdicts reflect your actual wallet.",
+	},
+	{
+		step: "03",
+		title: "Book with confidence",
+		description:
+			"Get a clean recommendation and explanation instead of guessing if points are worth it.",
+	},
+];
+
+const STORY_STEPS: StoryStep[] = [
+	{
+		label: "Your wallet",
+		title: "Start with the rewards you already have",
+		description:
+			"Bring your real points and programs into one place so the recommendation actually reflects your wallet.",
+		icon: Wallet,
+		chips: ["Chase UR", "United", "Amex MR"],
+		panelTitle: "Rewards in view",
+		panelDescription:
+			"Your balances and programs become the starting point instead of scattered tabs and guesswork.",
+		accentColor: "text-emerald-300",
+		accentBg: "bg-emerald-400/15 border-emerald-400/20",
+	},
+	{
+		label: "Your trip",
+		title: "Layer in the flight you want to take",
+		description:
+			"Add the route, dates, cabin, and travelers so MyTravelWallet knows exactly what it should compare.",
+		icon: Search,
+		chips: ["EWR → MIA", "Jun 10–17", "Economy", "1 traveler"],
+		panelTitle: "Trip details captured",
+		panelDescription:
+			"The search context narrows the analysis to the flight decision you actually care about.",
+		accentColor: "text-sky-300",
+		accentBg: "bg-sky-400/15 border-sky-400/20",
+	},
+	{
+		label: "Our analysis",
+		title: "We evaluate the stuff that really matters",
+		description:
+			"Cash price, award cost, point value, and timing get weighed together so you are not doing mental math alone.",
+		icon: BarChart3,
+		chips: ["Cash fares", "Award pricing", "Point value", "Timing"],
+		panelTitle: "Decision engine running",
+		panelDescription:
+			"Instead of bouncing between programs and prices, the app condenses the tradeoffs into one analysis.",
+		accentColor: "text-violet-300",
+		accentBg: "bg-violet-400/15 border-violet-400/20",
+	},
+	{
+		label: "Your verdict",
+		title: "You get one clean booking recommendation",
+		description:
+			"Know whether to pay cash, use points, or wait — without opening 47 tabs to figure it out.",
+		icon: Sparkles,
+		chips: ["Pay Cash", "Use Points", "Wait"],
+		panelTitle: "Clear verdict delivered",
+		panelDescription:
+			"The final answer is simple, calm, and built around your trip plus your rewards wallet.",
+		accentColor: "text-amber-300",
+		accentBg: "bg-amber-400/15 border-amber-400/20",
+	},
+];
+
+// Total scroll height per step (px). Tune this to feel right.
+const SCROLL_PER_STEP = 600;
+const TOTAL_SCROLL = SCROLL_PER_STEP * STORY_STEPS.length;
+
+function formatCurrency(value: number) {
+	return new Intl.NumberFormat("en-US", {
+		style: "currency",
+		currency: "USD",
+		maximumFractionDigits: 0,
+	}).format(value);
+}
+
+function buildTeaserResult(cabin: Cabin, travelers: number): TeaserResult {
+	const count = Math.max(travelers, 1);
+
+	if (cabin === "business") {
+		return {
+			verdict: "Use Points",
+			cashPrice: 3240 * count,
+			pointsPrice: 65000 * count,
+			cpp: 4.98,
+			savingsLabel: `${formatCurrency(1880 * count)} in value`,
+			headline: "Your points look strong here",
+			description:
+				"For premium-cabin redemptions like this, your points are likely delivering outsized value compared with paying cash.",
+		};
+	}
+
+	if (cabin === "first") {
+		return {
+			verdict: "Use Points",
+			cashPrice: 8450 * count,
+			pointsPrice: 120000 * count,
+			cpp: 7.04,
+			savingsLabel: `${formatCurrency(5120 * count)} in value`,
+			headline: "Excellent redemption territory",
+			description:
+				"First-class fares are expensive enough that using points is often the smarter move if award space exists.",
+		};
+	}
+
+	return {
+		verdict: "Pay Cash",
+		cashPrice: 387 * count,
+		pointsPrice: 35000 * count,
+		cpp: 1.11,
+		savingsLabel: "Save your points for a stronger redemption",
+		headline: "Cash is probably the better move",
+		description:
+			"For an economy trip like this, the points value is likely too low to justify burning miles right now.",
+	};
+}
+
+export default function LandingPage() {
 	const router = useRouter();
 	const searchParams = useSearchParams();
-	const formRef = useRef<HTMLDivElement | null>(null);
-	const { user, loading, signOut } = useAuth();
+	const trySearchRef = useRef<HTMLDivElement | null>(null);
 
-	const [firstName, setFirstName] = useState("");
-	const [lastName, setLastName] = useState("");
-	const [email, setEmail] = useState("");
-	const [submitState, setSubmitState] = useState<SubmitState>("idle");
-	const [errorMessage, setErrorMessage] = useState("");
-	const [positionNumber, setPositionNumber] = useState<number | null>(null);
+	// Refs for the scroll-driven story section
+	const storyOuterRef = useRef<HTMLDivElement | null>(null);
+
+	const { user, loading, signOut } = useAuth();
+	const { setPendingSearch } = useSearchFill();
+
+	const [origin, setOrigin] = useState("");
+	const [destination, setDestination] = useState("");
+	const [dates, setDates] = useState("");
+	const [cabin, setCabin] = useState<Cabin>("economy");
+	const [travelers, setTravelers] = useState("1");
+	const [showTrySearch, setShowTrySearch] = useState(false);
+	const [searching, setSearching] = useState(false);
 	const [signingOutUnauthorized, setSigningOutUnauthorized] = useState(false);
+	const [teaserResult, setTeaserResult] = useState<TeaserResult | null>(null);
+
+	// Scroll-driven story state
+	const [storyProgress, setStoryProgress] = useState(0); // 0–1 across full section
+	const [activeStoryIndex, setActiveStoryIndex] = useState(0);
+	const [navVisible, setNavVisible] = useState(true);
+	const lastScrollY = useRef(0);
 
 	const accessDenied = searchParams.get("access") === "denied";
+	const travelerCount = useMemo(() => {
+		const parsed = Number.parseInt(travelers, 10);
+		return Number.isNaN(parsed) ? 1 : parsed;
+	}, [travelers]);
 
+	// Auth redirect
 	useEffect(() => {
-		if (loading) return;
+		if (!loading && user && !accessDenied) {
+			router.replace("/home");
+		}
+	}, [accessDenied, loading, router, user]);
 
-		if (accessDenied && user) {
+	// Sign-out on access denied
+	useEffect(() => {
+		if (!loading && accessDenied && user) {
 			setSigningOutUnauthorized(true);
 			void signOut().finally(() => {
 				setSigningOutUnauthorized(false);
-				router.replace("/");
+				router.replace("/?access=denied");
 			});
-			return;
-		}
-
-		if (user && !accessDenied) {
-			router.replace("/home");
 		}
 	}, [accessDenied, loading, router, signOut, user]);
 
-	const scrollToForm = () => {
-		formRef.current?.scrollIntoView({
-			behavior: "smooth",
-			block: "center",
+	// Scroll to teaser search when revealed
+	useEffect(() => {
+		if (showTrySearch) {
+			trySearchRef.current?.scrollIntoView({
+				behavior: "smooth",
+				block: "start",
+			});
+		}
+	}, [showTrySearch]);
+
+	// Hide nav on scroll down, show on scroll up
+	useEffect(() => {
+		const handleNavScroll = () => {
+			const currentY = window.scrollY;
+			// Only hide after scrolled past 80px so it doesn't flicker at the top
+			if (currentY < 80) {
+				setNavVisible(true);
+			} else if (currentY > lastScrollY.current + 6) {
+				setNavVisible(false);
+			} else if (currentY < lastScrollY.current - 4) {
+				setNavVisible(true);
+			}
+			lastScrollY.current = currentY;
+		};
+
+		window.addEventListener("scroll", handleNavScroll, { passive: true });
+		return () => window.removeEventListener("scroll", handleNavScroll);
+	}, []);
+
+	// ---------------------------------------------------------------------------
+	// Scroll-progress tracking for the story section.
+	//
+	// Strategy: the outer wrapper div has height = TOTAL_SCROLL + 100vh.
+	// The inner sticky panel fills 100vh and stays pinned while you scroll
+	// through the wrapper. We read scrollY relative to the wrapper top to get
+	// progress. No wheel hijacking — fully passive, browser-native.
+	// ---------------------------------------------------------------------------
+	useEffect(() => {
+		const prefersReducedMotion = window.matchMedia(
+			"(prefers-reduced-motion: reduce)",
+		).matches;
+
+		const handleScroll = () => {
+			const outer = storyOuterRef.current;
+			if (!outer || window.innerWidth < 1024) return;
+
+			const rect = outer.getBoundingClientRect();
+			// How far we've scrolled into the outer wrapper (past its top edge)
+			const scrolledIn = -rect.top;
+			// The usable scroll range (wrapper height minus the 100vh sticky panel)
+			const scrollRange = TOTAL_SCROLL;
+
+			const raw = scrolledIn / scrollRange;
+			const clamped = Math.max(0, Math.min(1, raw));
+
+			if (prefersReducedMotion) {
+				// Jump directly to the step without smooth animation
+				const stepIndex = Math.min(
+					STORY_STEPS.length - 1,
+					Math.floor(clamped * STORY_STEPS.length),
+				);
+				setActiveStoryIndex(stepIndex);
+				setStoryProgress(clamped);
+				return;
+			}
+
+			setStoryProgress(clamped);
+
+			// Map progress to step index, capped at last step
+			const stepIndex = Math.min(
+				STORY_STEPS.length - 1,
+				Math.floor(clamped * STORY_STEPS.length),
+			);
+			setActiveStoryIndex(stepIndex);
+		};
+
+		window.addEventListener("scroll", handleScroll, { passive: true });
+		return () => window.removeEventListener("scroll", handleScroll);
+	}, []);
+
+	const savePendingSearch = () => {
+		setPendingSearch({
+			origin,
+			destination,
+			dates,
+			cabin,
+			travelers,
+			selectedPrograms: [],
+			balances: {},
 		});
 	};
 
-	const handleAuthorizedTesterAccess = () => {
-		router.push(user ? "/home" : "/login");
+	const handleAuthRoute = (path: "/login" | "/signup") => {
+		if (origin || destination || dates) {
+			savePendingSearch();
+		}
+		router.push(path);
 	};
 
-	const validateEmail = (value: string) => {
-		return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
-	};
+	const handleSearch = () => {
+		if (!origin.trim() || !destination.trim()) return;
 
-	const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
-		e.preventDefault();
+		setSearching(true);
+		setTeaserResult(null);
 
-		const trimmedFirst = firstName.trim();
-		const trimmedLast = lastName.trim();
-		const trimmedEmail = email.trim();
-		const sheetUrl = process.env.NEXT_PUBLIC_WAITLIST_SHEET_URL?.trim();
-
-		setErrorMessage("");
-
-		if (!trimmedFirst) {
-			setSubmitState("error");
-			setErrorMessage("Please enter your first name.");
-			return;
-		}
-
-		if (!trimmedLast) {
-			setSubmitState("error");
-			setErrorMessage("Please enter your last name.");
-			return;
-		}
-
-		if (!validateEmail(trimmedEmail)) {
-			setSubmitState("error");
-			setErrorMessage("Please enter a valid email address.");
-			return;
-		}
-
-		if (!sheetUrl) {
-			setSubmitState("error");
-			setErrorMessage(
-				"Waitlist form is not configured yet. Add NEXT_PUBLIC_WAITLIST_SHEET_URL.",
-			);
-			return;
-		}
-
-		setSubmitState("submitting");
-
-		try {
-			await fetch(sheetUrl, {
-				method: "POST",
-				mode: "no-cors",
-				headers: {
-					"Content-Type": "application/json",
-				},
-				body: JSON.stringify({
-					firstName: trimmedFirst,
-					lastName: trimmedLast,
-					email: trimmedEmail,
-				}),
-			});
-
-			setPositionNumber(Math.floor(Math.random() * 150) + 250);
-			setSubmitState("success");
-		} catch {
-			setSubmitState("error");
-			setErrorMessage("Something went wrong. Please try again.");
-		}
+		window.setTimeout(() => {
+			setSearching(false);
+			setTeaserResult(buildTeaserResult(cabin, travelerCount));
+		}, 3200);
 	};
 
 	if (loading || signingOutUnauthorized) {
 		return (
-			<div className="relative min-h-screen overflow-hidden bg-[#080E1C] text-white">
+			<div className="relative min-h-screen overflow-hidden bg-[#07101E] text-white">
 				<div
 					className="absolute inset-0 bg-cover bg-center"
-					style={{
-						backgroundImage: "url('/beach-hero.png')",
-					}}
+					style={{ backgroundImage: "url('/beach-hero.png')" }}
 				/>
-				<div className="absolute inset-0 bg-[rgba(8,14,28,0.38)]" />
+				<div className="absolute inset-0 bg-[rgba(6,14,26,0.72)]" />
 				<div className="relative z-10 flex min-h-screen items-center justify-center px-6">
-					<div className="flex items-center gap-3 rounded-full border border-white/12 bg-[rgba(8,14,28,0.74)] px-5 py-3 text-sm text-white/80 backdrop-blur-xl">
+					<div className="flex items-center gap-3 rounded-full border border-white/12 bg-white/8 px-5 py-3 text-sm text-white/85 backdrop-blur-xl">
 						<Loader2 className="h-4 w-4 animate-spin" />
 						{signingOutUnauthorized ? "Resetting access..." : "Loading..."}
 					</div>
@@ -137,381 +376,868 @@ function LandingPageInner() {
 		);
 	}
 
+	const activeStory = STORY_STEPS[activeStoryIndex];
+	const ActiveStoryIcon = activeStory.icon;
+
+	// Progress within the current step (0–1), used for sub-step animations
+	const stepProgress =
+		(storyProgress * STORY_STEPS.length) % 1;
+
 	return (
-		<div className="relative min-h-screen overflow-hidden bg-[#080E1C] text-white">
+		<div className="relative min-h-screen bg-[#07101E] text-white">
 			<div
-				className="absolute inset-0 bg-cover bg-center"
-				style={{
-					backgroundImage: "url('/beach-hero.png')",
-				}}
+				className="fixed inset-0 bg-cover bg-center"
+				style={{ backgroundImage: "url('/beach-hero.png')" }}
 			/>
-			<div className="absolute inset-0 bg-[rgba(8,14,28,0.38)]" />
-			<div className="absolute inset-0 bg-gradient-to-br from-[rgba(8,14,28,0.55)] via-[rgba(8,14,28,0.22)] to-[rgba(8,14,28,0.5)]" />
+			<div className="fixed inset-0 bg-[rgba(6,14,26,0.68)]" />
+			<div className="fixed inset-0 bg-[radial-gradient(circle_at_top_left,rgba(34,197,94,0.18),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(56,189,248,0.16),transparent_26%)]" />
 
 			<div className="relative z-10">
-				<header className="sticky top-0 z-20 border-b border-white/8 bg-[rgba(8,14,28,0.18)] backdrop-blur-xl">
-					<div className="mx-auto flex h-16 w-full max-w-7xl items-center justify-between px-6">
-						<div className="flex items-center gap-2">
-							<Plane className="h-5 w-5 text-white" />
-							<span className="text-[15px] font-semibold tracking-tight text-white">
+				{/* ------------------------------------------------------------------ */}
+				{/* Header */}
+				{/* ------------------------------------------------------------------ */}
+				<header className={`sticky top-0 z-20 border-b border-white/8 bg-[rgba(7,16,30,0.42)] backdrop-blur-2xl transition-transform duration-300 ease-in-out ${navVisible ? "translate-y-0" : "-translate-y-full"}`}>
+					<div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
+						<button
+							onClick={() => router.push("/")}
+							className="flex items-center gap-2"
+						>
+							<div className="flex h-9 w-9 items-center justify-center rounded-2xl border border-white/12 bg-white/8 backdrop-blur-xl">
+								<Plane className="h-4 w-4 text-white" />
+							</div>
+							<span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/65">
 								MyTravelWallet
 							</span>
-						</div>
+						</button>
+
+						<nav className="hidden items-center gap-8 md:flex">
+							<button
+								onClick={() =>
+									storyOuterRef.current?.scrollIntoView({ behavior: "smooth" })
+								}
+								className="text-sm text-white/65 transition hover:text-white"
+							>
+								How it works
+							</button>
+							<button
+								onClick={() => setShowTrySearch((prev) => !prev)}
+								className="text-sm text-white/65 transition hover:text-white"
+							>
+								Try a search
+							</button>
+						</nav>
 
 						<div className="flex items-center gap-2">
 							<button
-								onClick={handleAuthorizedTesterAccess}
-								className="inline-flex items-center gap-2 rounded-full border border-white/14 bg-white/7 px-4 py-2 text-sm font-semibold text-white/78 transition hover:bg-white/12 hover:text-white"
+								onClick={() => handleAuthRoute("/login")}
+								className="hidden rounded-full border border-white/12 bg-white/6 px-4 py-2 text-sm font-medium text-white/80 transition hover:bg-white/10 hover:text-white sm:inline-flex"
 							>
-								Authorized Testers
-								<ArrowRight className="h-4 w-4" />
+								Sign in
 							</button>
-
 							<button
-								onClick={scrollToForm}
-								className="inline-flex items-center gap-2 rounded-full border border-[rgba(34,197,94,0.28)] bg-[rgba(34,197,94,0.12)] px-4 py-2 text-sm font-semibold text-[#86EFAC] transition hover:bg-[rgba(34,197,94,0.18)]"
+								onClick={() => handleAuthRoute("/signup")}
+								className="inline-flex items-center gap-2 rounded-full bg-[#22C55E] px-4 py-2 text-sm font-semibold text-[#07101E] transition hover:bg-[#16A34A]"
 							>
-								Join Waitlist
+								Get started
 								<ArrowRight className="h-4 w-4" />
 							</button>
 						</div>
 					</div>
 				</header>
 
-				<main className="mx-auto flex min-h-[calc(100vh-64px)] w-full max-w-7xl items-center px-6 py-12 sm:py-16">
-					<div className="grid w-full items-start gap-10 lg:grid-cols-[1.08fr_0.92fr] lg:gap-16">
-						<section className="max-w-2xl">
-							{accessDenied ? (
-								<div className="mb-5 rounded-2xl border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm text-amber-50 backdrop-blur-xl">
-									That account does not have access to MyTravelWallet.
-								</div>
-							) : null}
-
-							<div className="mb-5 inline-flex items-center gap-2 rounded-full border border-[rgba(34,197,94,0.24)] bg-[rgba(34,197,94,0.1)] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#86EFAC]">
-								<Sparkles className="h-3.5 w-3.5" />
-								Early Access Now Open
+				<main>
+					{/* ---------------------------------------------------------------- */}
+					{/* Hero */}
+					{/* ---------------------------------------------------------------- */}
+					<section className="mx-auto max-w-7xl px-6 pb-10 pt-6 sm:pt-10">
+						{accessDenied ? (
+							<div className="mb-8 max-w-3xl rounded-2xl border border-amber-300/20 bg-amber-300/10 px-5 py-4 text-sm text-amber-50 backdrop-blur-xl">
+								That account is not approved for access right now. Please use a
+								permitted email or contact the team.
 							</div>
+						) : null}
 
-							<h1 className="max-w-3xl text-4xl font-bold leading-[1.02] tracking-[-0.04em] text-white sm:text-5xl lg:text-6xl">
-								Travel smarter.
-								<br />
-								Spend wiser.
-								<br />
-								<span className="text-[#86EFAC]">One verdict.</span>
-							</h1>
+						{/* Two-column hero on desktop */}
+						<div className="grid items-center gap-12 lg:grid-cols-[1fr_400px]">
+							{/* Left: copy */}
+							<div>
+								<div className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/8 px-4 py-2 text-sm text-white/80 backdrop-blur-xl">
+									<Sparkles className="h-4 w-4 text-[#86EFAC]" />
+									Know when to pay cash, use points, or wait.
+								</div>
 
-							<p className="mt-6 max-w-xl text-base leading-7 text-white/72 sm:text-lg">
-								MyTravelWallet reads your full rewards wallet across cards,
-								airlines, and hotels, then tells you the smartest move in
-								seconds — use points, pay cash, or save them for later.
-							</p>
+								<h1 className="mt-6 text-5xl font-semibold leading-[1.05] tracking-tight text-white sm:text-6xl lg:text-7xl">
+									Travel smarter with the rewards you already have.
+								</h1>
 
-							<div className="mt-8 flex flex-wrap gap-3">
+								<p className="mt-6 max-w-xl text-lg leading-8 text-white/70 sm:text-xl">
+									MyTravelWallet compares points versus cash, helps you understand
+									your rewards balances, and gives you one clean booking verdict
+									before you commit.
+								</p>
+
+								<div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+									<button
+										onClick={() => handleAuthRoute("/signup")}
+										className="inline-flex items-center justify-center gap-2 rounded-full bg-[#22C55E] px-6 py-3.5 text-sm font-semibold text-[#07101E] transition hover:bg-[#16A34A]"
+									>
+										Create your account
+										<ArrowRight className="h-4 w-4" />
+									</button>
+									<button
+										onClick={() => handleAuthRoute("/login")}
+										className="inline-flex items-center justify-center rounded-full border border-white/12 bg-white/7 px-6 py-3.5 text-sm font-medium text-white/80 transition hover:bg-white/12 hover:text-white"
+									>
+										Sign in
+									</button>
+								</div>
+
 								<button
-									onClick={scrollToForm}
-									className="inline-flex items-center gap-2 rounded-full bg-[#22C55E] px-5 py-3 text-sm font-semibold text-[#08111F] transition hover:bg-[#16A34A]"
+									onClick={() => setShowTrySearch((prev) => !prev)}
+									className="mt-5 inline-flex items-center gap-2 text-sm font-medium text-[#86EFAC] transition hover:text-[#bbf7d0]"
 								>
-									Get Started
-									<ArrowRight className="h-4 w-4" />
+									<Search className="h-4 w-4" />
+									Or try a search first — no signup needed
+									<ChevronDown
+										className={`h-4 w-4 transition-transform duration-300 ${showTrySearch ? "rotate-180" : ""}`}
+									/>
 								</button>
-
-								<div className="inline-flex items-center rounded-full border border-white/14 bg-white/6 px-4 py-3 text-sm text-white/70">
-									Early Access has now begun!
-								</div>
 							</div>
 
-							{/* <div className="mt-10 max-w-xl rounded-2xl border border-white/12 bg-[rgba(8,14,28,0.74)] p-5 shadow-2xl shadow-black/25 backdrop-blur-2xl">
-								<div className="mb-3 text-[10px] font-bold uppercase tracking-[0.16em] text-white/28">
-									Example verdict
-								</div>
+							{/* Right: floating verdict card — desktop only */}
+							<div className="hidden lg:flex lg:items-center lg:self-stretch">
+								<div className="relative w-full overflow-hidden rounded-[28px] border border-white/10 bg-[rgba(7,16,30,0.48)] p-6 shadow-[0_8px_64px_rgba(0,0,0,0.35)] backdrop-blur-3xl">
+									{/* Subtle top glow */}
+									<div className="pointer-events-none absolute inset-x-0 top-0 h-36 bg-[radial-gradient(ellipse_at_top,rgba(134,239,172,0.12),transparent_70%)]" />
+									{/* Subtle bottom-right accent */}
+									<div className="pointer-events-none absolute bottom-0 right-0 h-32 w-32 rounded-full bg-sky-400/8 blur-3xl" />
 
-								<div className="mb-3 rounded-xl border border-white/8 bg-white/4 px-4 py-3 font-mono text-sm text-white/76">
-									&quot;NYC to London, business, Feb 14–21&quot;
-								</div>
-
-								<div className="grid gap-3 sm:grid-cols-2">
-									<div className="rounded-xl border border-[rgba(34,197,94,0.16)] bg-[rgba(34,197,94,0.06)] p-4">
-										<div className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-[#86EFAC]">
-											Award
-										</div>
-										<div className="text-sm font-semibold text-white">
-											United Polaris
-										</div>
-										<div className="mt-1 text-sm text-white/68">
-											84,000 miles + $56
-										</div>
-										<div className="mt-2 text-xs font-medium text-[#86EFAC]">
-											1.8¢/pt · $1,512 value
-										</div>
-									</div>
-
-									<div className="rounded-xl border border-white/8 bg-white/4 p-4">
-										<div className="mb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-white/28">
-											Cash
-										</div>
-										<div className="text-sm font-semibold text-white">
-											British Airways
-										</div>
-										<div className="mt-1 text-sm text-white/68">
-											$1,847 · nonstop
-										</div>
-										<div className="mt-2 text-xs text-white/42">
-											7h 5m direct
-										</div>
-									</div>
-								</div>
-
-								<div className="mt-4 flex items-start gap-3 rounded-xl border border-[rgba(34,197,94,0.22)] bg-[rgba(34,197,94,0.08)] px-4 py-3">
-									<div className="mt-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-[#22C55E]/16">
-										<Check className="h-3.5 w-3.5 text-[#86EFAC]" />
-									</div>
-									<div>
-										<div className="text-sm font-semibold text-[#86EFAC]">
-											Use your miles — save about $1,400
-										</div>
-										<div className="mt-1 text-xs text-[#bbf7d0]/70">
-											1.8¢/pt is above your 1.0¢ floor, so the points booking is
-											the stronger move.
-										</div>
-									</div>
-								</div>
-							</div> */}
-
-							<div className="mt-8 grid max-w-2xl gap-3 sm:grid-cols-3">
-								<div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-xl">
-									<div className="text-2xl font-bold text-white">$48B</div>
-									<div className="mt-1 text-[11px] uppercase tracking-[0.12em] text-white/34">
-										Points expire yearly
-									</div>
-								</div>
-
-								<div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-xl">
-									<div className="text-2xl font-bold text-white">73%</div>
-									<div className="mt-1 text-[11px] uppercase tracking-[0.12em] text-white/34">
-										Unsure what&apos;s worth using
-									</div>
-								</div>
-
-								<div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-xl">
-									<div className="text-2xl font-bold text-white">&lt;3s</div>
-									<div className="mt-1 text-[11px] uppercase tracking-[0.12em] text-white/34">
-										To your decision
-									</div>
-								</div>
-							</div>
-						</section>
-
-						<section ref={formRef} className="w-full lg:pt-6">
-							<div className="rounded-[26px] border border-white/12 bg-[rgba(8,14,28,0.74)] p-6 shadow-2xl shadow-black/30 backdrop-blur-2xl sm:p-8">
-								{submitState === "success" ? (
-									<div className="flex flex-col items-center text-center">
-										<div className="mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-[rgba(34,197,94,0.24)] bg-[rgba(34,197,94,0.08)]">
-											<Check className="h-6 w-6 text-[#22C55E]" />
-										</div>
-
-										<h2 className="text-2xl font-bold tracking-tight text-white">
-											You&apos;re in! 🎉
-										</h2>
-
-										<p className="mt-2 text-sm font-medium text-[#86EFAC]">
-											Welcome, {firstName.trim()} 👋
-										</p>
-
-										<p className="mt-3 max-w-sm text-sm leading-6 text-white/68">
-											Welcome to MyTravelWallet. Get ready to stop leaving
-											points and miles on the table.
-										</p>
-
-										<div className="mt-6 w-full rounded-2xl border border-white/10 bg-white/4 p-5 text-left">
-											<div className="mb-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#86EFAC]">
-												What happens next
-											</div>
-
-											<div className="space-y-3 text-sm text-white/72">
-												<div className="flex items-center gap-3">
-													<div className="flex h-6 w-6 items-center justify-center rounded-full border border-[rgba(34,197,94,0.24)] bg-[rgba(34,197,94,0.08)] text-[11px] font-semibold text-[#86EFAC]">
-														1
-													</div>
-													<span>Confirmation lands in your inbox</span>
-												</div>
-
-												<div className="flex items-center gap-3">
-													<div className="flex h-6 w-6 items-center justify-center rounded-full border border-[rgba(34,197,94,0.24)] bg-[rgba(34,197,94,0.08)] text-[11px] font-semibold text-[#86EFAC]">
-														2
-													</div>
-													<span>
-														We send your access link when your spot opens
-													</span>
-												</div>
-
-												<div className="flex items-center gap-3">
-													<div className="flex h-6 w-6 items-center justify-center rounded-full border border-[rgba(34,197,94,0.24)] bg-[rgba(34,197,94,0.08)] text-[11px] font-semibold text-[#86EFAC]">
-														3
-													</div>
-													<span>
-														Log in, connect your wallet, get your first verdict
-													</span>
-												</div>
-											</div>
-										</div>
-
-										{positionNumber ? (
-											<div className="mt-5 rounded-full border border-[rgba(34,197,94,0.2)] bg-[rgba(34,197,94,0.08)] px-4 py-2 font-mono text-xs text-[#86EFAC]">
-												Position #{positionNumber} secured
-											</div>
-										) : null}
-									</div>
-								) : (
-									<>
-										<div className="mb-6">
-											<div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#86EFAC]">
-												Join the waitlist
-											</div>
-											<h2 className="mt-2 text-2xl font-bold tracking-tight text-white sm:text-[30px]">
-												Secure your spot.
-											</h2>
-											<p className="mt-3 text-sm leading-6 text-white/68">
-												We&apos;ll reach out as soon as
-												you&apos;re ready to explore.
+									{/* Card header */}
+									<div className="relative mb-5 flex items-start justify-between gap-3">
+										<div>
+											<p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#86EFAC]/70">
+												Sample verdict
 											</p>
+											<h3 className="mt-1 text-xl font-semibold tracking-tight text-white">
+												EWR → MIA · Business
+											</h3>
 										</div>
+										<span className="mt-1 shrink-0 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-300">
+											Use Points
+										</span>
+									</div>
 
-										<form onSubmit={handleSubmit} className="space-y-4">
+									{/* Metric row */}
+									<div className="relative grid grid-cols-3 gap-2.5">
+										<div className="rounded-2xl border border-white/8 bg-white/[0.04] p-3.5">
+											<p className="text-[10px] uppercase tracking-[0.12em] text-white/38">Cash</p>
+											<p className="mt-1.5 text-lg font-semibold text-white">$3,240</p>
+										</div>
+										<div className="rounded-2xl border border-white/8 bg-white/[0.04] p-3.5">
+											<p className="text-[10px] uppercase tracking-[0.12em] text-white/38">Points</p>
+											<p className="mt-1.5 text-lg font-semibold text-white">65k</p>
+										</div>
+										<div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/[0.06] p-3.5">
+											<p className="text-[10px] uppercase tracking-[0.12em] text-emerald-400/60">Value</p>
+											<p className="mt-1.5 text-lg font-semibold text-emerald-200">4.9¢</p>
+										</div>
+									</div>
+
+									{/* Verdict explanation */}
+									<div className="relative mt-3 rounded-2xl border border-white/6 bg-white/[0.03] p-4">
+										<p className="text-sm font-medium text-white/90">Your points look strong here.</p>
+										<p className="mt-1.5 text-xs leading-5 text-white/48">
+											For premium-cabin redemptions like this, your points are likely delivering outsized value compared with paying cash.
+										</p>
+									</div>
+
+									{/* Program chips */}
+									<div className="relative mt-4 flex flex-wrap gap-2">
+										{["Chase UR", "United", "Amex MR"].map((p) => (
+											<span
+												key={p}
+												className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1 text-xs font-medium text-white/55"
+											>
+												{p}
+											</span>
+										))}
+									</div>
+
+									{/* Divider hint */}
+									<div className="relative mt-5 flex items-center gap-2 text-[10px] text-white/28">
+										<div className="h-px flex-1 bg-white/6" />
+										<span>your wallet · your trip · one verdict</span>
+										<div className="h-px flex-1 bg-white/6" />
+									</div>
+								</div>
+							</div>
+						</div>
+
+						{/* Teaser search form */}
+						{(showTrySearch || searching || teaserResult) ? (
+							<div
+								ref={trySearchRef}
+								className="mt-10 overflow-hidden rounded-[32px] border border-white/12 bg-[rgba(7,16,30,0.72)] shadow-2xl shadow-black/30 backdrop-blur-2xl"
+							>
+								<div className="border-b border-white/8 px-6 py-5 sm:px-8">
+									<p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#86EFAC]/90">
+										No signup teaser
+									</p>
+									<h3 className="mt-2 text-2xl font-semibold tracking-tight text-white">
+										Try a trip search first
+									</h3>
+									<p className="mt-2 max-w-2xl text-sm leading-6 text-white/62">
+										Get a preview verdict first. When you are ready, create an
+										account to unlock the full experience.
+									</p>
+								</div>
+
+								<div className="p-6 sm:p-8">
+									{!searching && !teaserResult ? (
+										<div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
 											<div className="grid gap-4 sm:grid-cols-2">
 												<div>
 													<label
-														htmlFor="firstName"
+														htmlFor="origin"
 														className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.14em] text-[#86EFAC]/80"
 													>
-														First Name
+														From
 													</label>
 													<input
-														id="firstName"
-														type="text"
-														value={firstName}
-														onChange={(e) => setFirstName(e.target.value)}
-														placeholder="First name"
-														autoComplete="given-name"
-														className="w-full rounded-xl border border-white/12 bg-white/7 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/24 focus:border-[rgba(34,197,94,0.45)] focus:bg-white/10"
+														id="origin"
+														value={origin}
+														onChange={(e) => setOrigin(e.target.value)}
+														placeholder="Newark or EWR"
+														className="w-full rounded-2xl border border-white/12 bg-white/7 px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-white/25 focus:border-[rgba(34,197,94,0.45)] focus:bg-white/10"
 													/>
 												</div>
-
 												<div>
 													<label
-														htmlFor="lastName"
+														htmlFor="destination"
 														className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.14em] text-[#86EFAC]/80"
 													>
-														Last Name
+														To
 													</label>
 													<input
-														id="lastName"
-														type="text"
-														value={lastName}
-														onChange={(e) => setLastName(e.target.value)}
-														placeholder="Last name"
-														autoComplete="family-name"
-														className="w-full rounded-xl border border-white/12 bg-white/7 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/24 focus:border-[rgba(34,197,94,0.45)] focus:bg-white/10"
+														id="destination"
+														value={destination}
+														onChange={(e) => setDestination(e.target.value)}
+														placeholder="Miami or MIA"
+														className="w-full rounded-2xl border border-white/12 bg-white/7 px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-white/25 focus:border-[rgba(34,197,94,0.45)] focus:bg-white/10"
 													/>
+												</div>
+												<div>
+													<label
+														htmlFor="dates"
+														className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.14em] text-[#86EFAC]/80"
+													>
+														Dates
+													</label>
+													<input
+														id="dates"
+														value={dates}
+														onChange={(e) => setDates(e.target.value)}
+														placeholder="Next month or Jul 10–15"
+														className="w-full rounded-2xl border border-white/12 bg-white/7 px-4 py-3.5 text-sm text-white outline-none transition placeholder:text-white/25 focus:border-[rgba(34,197,94,0.45)] focus:bg-white/10"
+													/>
+												</div>
+												<div className="grid grid-cols-2 gap-4">
+													<div>
+														<label
+															htmlFor="cabin"
+															className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.14em] text-[#86EFAC]/80"
+														>
+															Cabin
+														</label>
+														<select
+															id="cabin"
+															value={cabin}
+															onChange={(e) => setCabin(e.target.value as Cabin)}
+															className="w-full rounded-2xl border border-white/12 bg-white/7 px-4 py-3.5 text-sm text-white outline-none transition focus:border-[rgba(34,197,94,0.45)] focus:bg-white/10"
+														>
+															<option value="economy">Economy</option>
+															<option value="business">Business</option>
+															<option value="first">First</option>
+														</select>
+													</div>
+													<div>
+														<label
+															htmlFor="travelers"
+															className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.14em] text-[#86EFAC]/80"
+														>
+															Travelers
+														</label>
+														<select
+															id="travelers"
+															value={travelers}
+															onChange={(e) => setTravelers(e.target.value)}
+															className="w-full rounded-2xl border border-white/12 bg-white/7 px-4 py-3.5 text-sm text-white outline-none transition focus:border-[rgba(34,197,94,0.45)] focus:bg-white/10"
+														>
+															{[1, 2, 3, 4].map((n) => (
+																<option key={n} value={n}>{n}</option>
+															))}
+														</select>
+													</div>
+												</div>
+												<div className="sm:col-span-2">
+													<button
+														onClick={handleSearch}
+														disabled={!origin.trim() || !destination.trim()}
+														className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#22C55E] px-5 py-3.5 text-sm font-semibold text-[#07101E] transition hover:bg-[#16A34A] disabled:cursor-not-allowed disabled:bg-white/12 disabled:text-white/35"
+													>
+														See my preview verdict
+														<ArrowRight className="h-4 w-4" />
+													</button>
+												</div>
+											</div>
+											<div className="rounded-[28px] border border-white/10 bg-white/6 p-5">
+												<p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/40">
+													What you will see
+												</p>
+												<ul className="mt-4 space-y-3 text-sm text-white/70">
+													{[
+														"A quick verdict preview for your route",
+														"Estimated cash price and points value",
+														"A simple explanation of why the verdict makes sense",
+													].map((item) => (
+														<li key={item} className="flex items-start gap-3">
+															<span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-400/14 text-emerald-100">
+																<Check className="h-3.5 w-3.5" />
+															</span>
+															<span>{item}</span>
+														</li>
+													))}
+												</ul>
+												<p className="mt-5 text-xs leading-5 text-white/42">
+													This is a teaser preview. Create an account to unlock
+													the full product experience.
+												</p>
+											</div>
+										</div>
+									) : null}
+
+									{searching ? (
+										<SearchProgress
+											origin={origin}
+											destination={destination}
+											cabin={cabin}
+											travelers={travelers}
+											programs="Chase UR, Amex MR, United, Delta, Marriott, Hilton"
+										/>
+									) : null}
+
+									{teaserResult ? (
+										<div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+											<div className="rounded-[28px] border border-emerald-400/16 bg-[linear-gradient(180deg,rgba(34,197,94,0.10),rgba(255,255,255,0.04))] p-6">
+												<div className="flex flex-wrap items-center justify-between gap-3">
+													<div>
+														<p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#86EFAC]/90">
+															Preview verdict
+														</p>
+														<h4 className="mt-2 text-2xl font-semibold tracking-tight text-white">
+															{origin || "Your route"} →{" "}
+															{destination || "Destination"}
+														</h4>
+													</div>
+													<span
+														className={`rounded-full px-3 py-1 text-xs font-semibold ${
+															teaserResult.verdict === "Pay Cash"
+																? "border border-sky-300/25 bg-sky-300/12 text-sky-50"
+																: teaserResult.verdict === "Use Points"
+																	? "border border-emerald-300/25 bg-emerald-300/12 text-emerald-50"
+																	: "border border-amber-300/25 bg-amber-300/12 text-amber-50"
+														}`}
+													>
+														{teaserResult.verdict}
+													</span>
+												</div>
+												<div className="mt-6 grid gap-4 sm:grid-cols-3">
+													<div className="rounded-2xl border border-white/10 bg-white/6 p-4">
+														<p className="text-xs uppercase tracking-[0.14em] text-white/40">Cash price</p>
+														<p className="mt-2 text-xl font-semibold text-white">
+															{formatCurrency(teaserResult.cashPrice)}
+														</p>
+													</div>
+													<div className="rounded-2xl border border-white/10 bg-white/6 p-4">
+														<p className="text-xs uppercase tracking-[0.14em] text-white/40">Points estimate</p>
+														<p className="mt-2 text-xl font-semibold text-white">
+															{teaserResult.pointsPrice.toLocaleString()} pts
+														</p>
+													</div>
+													<div className="rounded-2xl border border-white/10 bg-white/6 p-4">
+														<p className="text-xs uppercase tracking-[0.14em] text-white/40">Estimated value</p>
+														<p className="mt-2 text-xl font-semibold text-white">
+															{teaserResult.cpp.toFixed(1)}¢
+														</p>
+													</div>
+												</div>
+												<div className="mt-6 rounded-2xl border border-white/10 bg-white/6 p-5">
+													<p className="text-lg font-semibold text-white">
+														{teaserResult.headline}
+													</p>
+													<p className="mt-3 text-sm leading-6 text-white/68">
+														{teaserResult.description}
+													</p>
+													<p className="mt-4 text-sm font-medium text-[#86EFAC]">
+														{teaserResult.savingsLabel}
+													</p>
+												</div>
+											</div>
+											<div className="rounded-[28px] border border-white/10 bg-white/6 p-6">
+												<p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-white/40">
+													Unlock more in MyTravelWallet
+												</p>
+												<ul className="mt-4 space-y-3 text-sm text-white/70">
+													{[
+														"Save your search and continue inside the app",
+														"Track program balances and wallet value",
+														"Get full points-versus-cash verdicts on future trips",
+													].map((item) => (
+														<li key={item} className="flex items-start gap-3">
+															<span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-400/14 text-emerald-100">
+																<Check className="h-3.5 w-3.5" />
+															</span>
+															<span>{item}</span>
+														</li>
+													))}
+												</ul>
+												<div className="mt-6 space-y-3">
+													<button
+														onClick={() => handleAuthRoute("/signup")}
+														className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-[#22C55E] px-5 py-3.5 text-sm font-semibold text-[#07101E] transition hover:bg-[#16A34A]"
+													>
+														Create free account
+														<ArrowRight className="h-4 w-4" />
+													</button>
+													<button
+														onClick={() => handleAuthRoute("/login")}
+														className="inline-flex w-full items-center justify-center rounded-2xl border border-white/12 bg-white/6 px-5 py-3.5 text-sm font-medium text-white/82 transition hover:bg-white/10 hover:text-white"
+													>
+														I already have an account
+													</button>
+													<button
+														onClick={() => {
+															setTeaserResult(null);
+															setShowTrySearch(true);
+														}}
+														className="inline-flex w-full items-center justify-center rounded-2xl border border-transparent px-5 py-3 text-sm font-medium text-white/55 transition hover:text-white"
+													>
+														Edit search
+													</button>
+												</div>
+											</div>
+										</div>
+									) : null}
+								</div>
+							</div>
+						) : null}
+					</section>
+
+					{/* ---------------------------------------------------------------- */}
+					{/* Scroll-driven product flow — DESKTOP ONLY                        */}
+					{/*                                                                  */}
+					{/* How this works:                                                  */}
+					{/* • storyOuterRef div has height = TOTAL_SCROLL + 100vh.           */}
+					{/*   That extra height IS the scroll budget. As the user scrolls    */}
+					{/*   through those px, the sticky inner panel stays pinned.         */}
+					{/* • We read getBoundingClientRect().top each scroll event and      */}
+					{/*   map it to 0–1 progress. Fully passive — no wheel hijacking.   */}
+					{/* • CSS transitions on opacity/transform drive the visual.         */}
+					{/* ---------------------------------------------------------------- */}
+					<div
+						ref={storyOuterRef}
+						className="relative hidden lg:block"
+						style={{ height: `calc(${TOTAL_SCROLL}px + 100vh)` }}
+						aria-label="Product flow"
+					>
+						{/* Sticky panel — stays in the viewport while you scroll the outer */}
+						<div className="sticky top-0 h-screen">
+							<div className="mx-auto flex h-full max-w-7xl flex-col justify-center px-6">
+
+								{/* Section header */}
+								<div className="mb-10">
+									<p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#86EFAC]/90">
+										Scroll through the product flow
+									</p>
+									<h2 className="mt-2 text-4xl font-semibold tracking-tight text-white">
+										From rewards to verdict — in four steps.
+									</h2>
+								</div>
+
+								<div className="grid grid-cols-[0.9fr_1.1fr] items-start gap-12">
+									{/* ---- Left: step list ---- */}
+									<div className="space-y-4">
+										{STORY_STEPS.map((step, index) => {
+											const Icon = step.icon;
+											const isActive = index === activeStoryIndex;
+											const isPast = index < activeStoryIndex;
+
+											return (
+												<div
+													key={step.label}
+													className={`rounded-[24px] border px-5 py-4 backdrop-blur-xl transition-all duration-500 ease-out ${
+														isActive
+															? "border-white/16 bg-white/10 shadow-xl shadow-black/20"
+															: isPast
+																? "border-white/8 bg-white/[0.035] opacity-70"
+																: "border-white/6 bg-white/[0.02] opacity-40"
+													}`}
+												>
+													<div className="flex items-start gap-4">
+														<div
+															className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl transition-all duration-500 ${
+																isActive
+																	? `${step.accentBg} border`
+																	: isPast
+																		? "border border-white/10 bg-white/6 text-white/50"
+																		: "border border-white/8 bg-white/4 text-white/30"
+															}`}
+														>
+															<Icon
+																className={`h-4 w-4 transition-colors duration-500 ${
+																	isActive ? step.accentColor : ""
+																}`}
+															/>
+														</div>
+														<div>
+															<p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40">
+																{step.label}
+															</p>
+															<h3
+																className={`mt-0.5 text-lg font-semibold transition-colors duration-500 ${isActive ? "text-white" : "text-white/60"}`}
+															>
+																{step.title}
+															</h3>
+															{isActive && (
+																<p className="mt-2 text-sm leading-6 text-white/60">
+																	{step.description}
+																</p>
+															)}
+														</div>
+													</div>
+
+													{/* Chips */}
+													{isActive && (
+														<div className="mt-4 flex flex-wrap gap-2 pl-[52px]">
+															{step.chips.map((chip, i) => (
+																<span
+																	key={chip}
+																	className={`rounded-full border px-3 py-1 text-xs font-medium text-white/75 transition-all duration-300 ${step.accentBg}`}
+																	style={{
+																		transitionDelay: `${i * 60}ms`,
+																	}}
+																>
+																	{chip}
+																</span>
+															))}
+														</div>
+													)}
+												</div>
+											);
+										})}
+
+										{/* Step progress dots */}
+										<div className="flex items-center gap-2 pl-2 pt-1">
+											{STORY_STEPS.map((_, i) => (
+												<div
+													key={i}
+													className={`rounded-full transition-all duration-500 ${
+														i < activeStoryIndex
+															? "h-1.5 w-4 bg-emerald-400/60"
+															: i === activeStoryIndex
+																? "h-1.5 w-8 bg-emerald-400"
+																: "h-1.5 w-1.5 bg-white/20"
+													}`}
+												/>
+											))}
+										</div>
+									</div>
+
+									{/* ---- Right: glassmorphism panel ---- */}
+									<div className="relative">
+										<div className="relative overflow-hidden rounded-[32px] border border-white/12 bg-[rgba(7,16,30,0.74)] p-7 shadow-2xl shadow-black/30 backdrop-blur-2xl">
+											{/* Ambient glow that shifts per step */}
+											<div
+												className="pointer-events-none absolute inset-x-0 top-0 h-48 transition-all duration-700"
+												style={{
+													background:
+														activeStoryIndex === 0
+															? "radial-gradient(circle at top, rgba(134,239,172,0.18), transparent 65%)"
+															: activeStoryIndex === 1
+																? "radial-gradient(circle at top, rgba(56,189,248,0.18), transparent 65%)"
+																: activeStoryIndex === 2
+																	? "radial-gradient(circle at top, rgba(167,139,250,0.18), transparent 65%)"
+																	: "radial-gradient(circle at top, rgba(251,191,36,0.18), transparent 65%)",
+												}}
+											/>
+
+											{/* Panel header */}
+											<div className="relative mb-6 flex items-start justify-between">
+												<div>
+													<p
+														className={`text-[11px] font-semibold uppercase tracking-[0.16em] transition-colors duration-500 ${activeStory.accentColor}`}
+													>
+														Live flow preview
+													</p>
+													<h3 className="mt-1.5 text-2xl font-semibold tracking-tight text-white">
+														{activeStory.panelTitle}
+													</h3>
+												</div>
+												<div className="rounded-full border border-white/10 bg-white/6 px-3 py-1 text-xs font-medium text-white/50">
+													{activeStoryIndex + 1} / {STORY_STEPS.length}
 												</div>
 											</div>
 
-											<div>
-												<label
-													htmlFor="email"
-													className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.14em] text-[#86EFAC]/80"
-												>
-													Email Address
-												</label>
-												<input
-													id="email"
-													type="email"
-													value={email}
-													onChange={(e) => setEmail(e.target.value)}
-													placeholder="you@example.com"
-													autoComplete="email"
-													className="w-full rounded-xl border border-white/12 bg-white/7 px-4 py-3 text-sm text-white outline-none transition placeholder:text-white/24 focus:border-[rgba(34,197,94,0.45)] focus:bg-white/10"
-												/>
-											</div>
-
-											<button
-												type="submit"
-												disabled={submitState === "submitting"}
-												className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#22C55E] px-5 py-3.5 text-sm font-semibold text-[#08111F] transition hover:bg-[#16A34A] disabled:cursor-not-allowed disabled:opacity-70"
+											{/* Active step detail card */}
+											<div
+												key={activeStoryIndex}
+												className="relative rounded-[24px] border border-white/10 bg-white/6 p-5"
+												style={{
+													animation: "fadeSlideIn 0.4s ease-out both",
+												}}
 											>
-												{submitState === "submitting" ? (
-													<>
-														<Loader2 className="h-4 w-4 animate-spin" />
-														Securing your spot...
-													</>
-												) : (
-													<>
-														Get Started
-														<ArrowRight className="h-4 w-4" />
-													</>
-												)}
-											</button>
-										</form>
-
-										{submitState === "error" && errorMessage ? (
-											<div className="mt-4 rounded-xl border border-red-400/22 bg-red-400/8 px-4 py-3 text-sm text-red-100">
-												{errorMessage}
+												<div className="flex items-start gap-4">
+													<div
+														className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${activeStory.accentBg}`}
+													>
+														<ActiveStoryIcon
+															className={`h-4 w-4 ${activeStory.accentColor}`}
+														/>
+													</div>
+													<div className="min-w-0">
+														<p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40">
+															{activeStory.label}
+														</p>
+														<h4 className="mt-0.5 text-lg font-semibold text-white">
+															{activeStory.title}
+														</h4>
+														<p className="mt-2 text-sm leading-6 text-white/62">
+															{activeStory.panelDescription}
+														</p>
+													</div>
+												</div>
+												<div className="mt-4 flex flex-wrap gap-2">
+													{activeStory.chips.map((chip) => (
+														<span
+															key={chip}
+															className={`rounded-full border px-3 py-1 text-xs font-medium ${activeStory.accentBg} text-white/80`}
+														>
+															{chip}
+														</span>
+													))}
+												</div>
 											</div>
-										) : null}
 
-										<p className="mt-4 text-center text-xs leading-5 text-white/40">
-											No spam, ever. You&apos;ll only hear from us when your
-											spot is ready.
-										</p>
+											{/* Progress pipeline — 3 mini cards showing wallet / trip / analysis */}
+											<div className="relative mt-5 grid grid-cols-3 gap-3">
+												{[
+													{ label: "Wallet", color: "emerald" },
+													{ label: "Trip", color: "sky" },
+													{ label: "Analysis", color: "violet" },
+												].map(({ label, color }, i) => {
+													const isLit = activeStoryIndex >= i;
+													return (
+														<div
+															key={label}
+															className={`rounded-2xl border p-4 transition-all duration-500 ${
+																isLit
+																	? color === "emerald"
+																		? "border-emerald-300/18 bg-emerald-300/10"
+																		: color === "sky"
+																			? "border-sky-300/18 bg-sky-300/10"
+																			: "border-violet-300/18 bg-violet-300/10"
+																	: "border-white/8 bg-white/4"
+															}`}
+														>
+															<p className="text-[10px] uppercase tracking-[0.14em] text-white/42">
+																{label}
+															</p>
+															<div
+																className={`mt-2 h-1.5 w-full rounded-full bg-white/10 transition-all duration-700 delay-100`}
+															>
+																<div
+																	className={`h-full rounded-full transition-all duration-700 ${
+																		isLit
+																			? color === "emerald"
+																				? "bg-emerald-400"
+																				: color === "sky"
+																					? "bg-sky-400"
+																					: "bg-violet-400"
+																			: "w-0"
+																	}`}
+																	style={{ width: isLit ? "100%" : "0%" }}
+																/>
+															</div>
+														</div>
+													);
+												})}
+											</div>
 
-										<div className="mt-3 text-center text-[11px] text-white/26">
-											Responses saved securely to Google Sheets
+											{/* Final verdict row — lights up on last step */}
+											<div
+												className={`mt-4 rounded-[22px] border p-5 transition-all duration-700 ${
+													activeStoryIndex === STORY_STEPS.length - 1
+														? "border-amber-300/20 bg-[linear-gradient(160deg,rgba(251,191,36,0.12),rgba(255,255,255,0.03))] shadow-[0_0_40px_rgba(251,191,36,0.07)]"
+														: "border-white/8 bg-white/4"
+												}`}
+											>
+												<p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/40">
+													Final outcome
+												</p>
+												<p
+													className={`mt-1.5 text-xl font-semibold transition-all duration-500 ${
+														activeStoryIndex === STORY_STEPS.length - 1
+															? "text-white"
+															: "text-white/35"
+													}`}
+												>
+													Pay Cash · Use Points · Wait
+												</p>
+												<p className="mt-1.5 text-sm leading-5 text-white/50">
+													One clean recommendation, built around your wallet.
+												</p>
+											</div>
 										</div>
-									</>
-								)}
+									</div>
+								</div>
 							</div>
-						</section>
+						</div>
 					</div>
+
+					{/* ---------------------------------------------------------------- */}
+					{/* Mobile: stacked product flow (no scroll locking)                 */}
+					{/* ---------------------------------------------------------------- */}
+					<section className="mx-auto max-w-7xl px-6 py-10 lg:hidden">
+						<div className="rounded-[32px] border border-white/10 bg-[rgba(7,16,30,0.58)] p-6 backdrop-blur-2xl">
+							<p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#86EFAC]/90">
+								Product flow
+							</p>
+							<h2 className="mt-3 text-3xl font-semibold tracking-tight text-white">
+								How it all comes together.
+							</h2>
+							<div className="mt-6 space-y-4">
+								{STORY_STEPS.map((step) => {
+									const Icon = step.icon;
+									return (
+										<div
+											key={step.label}
+											className="rounded-[24px] border border-white/10 bg-white/6 p-5"
+										>
+											<div className="flex items-start gap-4">
+												<div
+													className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border ${step.accentBg}`}
+												>
+													<Icon className={`h-4 w-4 ${step.accentColor}`} />
+												</div>
+												<div>
+													<p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/42">
+														{step.label}
+													</p>
+													<h3 className="mt-0.5 text-lg font-semibold text-white">
+														{step.title}
+													</h3>
+													<p className="mt-2 text-sm leading-6 text-white/62">
+														{step.description}
+													</p>
+													<div className="mt-3 flex flex-wrap gap-2">
+														{step.chips.map((chip) => (
+															<span
+																key={chip}
+																className={`rounded-full border px-2.5 py-1 text-[11px] font-medium text-white/72 ${step.accentBg}`}
+															>
+																{chip}
+															</span>
+														))}
+													</div>
+												</div>
+											</div>
+										</div>
+									);
+								})}
+							</div>
+						</div>
+					</section>
+
+					{/* ---------------------------------------------------------------- */}
+					{/* Why MyTravelWallet */}
+					{/* ---------------------------------------------------------------- */}
+					<section className="mx-auto max-w-7xl px-6 py-16">
+						<div className="mx-auto max-w-3xl text-center">
+							<p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#86EFAC]/90">
+								Why MyTravelWallet
+							</p>
+							<h2 className="mt-3 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+								Designed to make travel rewards actually useful.
+							</h2>
+							<p className="mt-4 text-base leading-7 text-white/65">
+								Instead of juggling award charts, transfer partners, and cash
+								prices on your own, you get a calmer, cleaner decision experience.
+							</p>
+						</div>
+						<div className="mt-10 grid gap-5 lg:grid-cols-3">
+							{FEATURE_CARDS.map(({ icon: Icon, title, description }) => (
+								<div
+									key={title}
+									className="rounded-[28px] border border-white/10 bg-[rgba(7,16,30,0.55)] p-6 backdrop-blur-xl"
+								>
+									<div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/8 text-[#86EFAC]">
+										<Icon className="h-5 w-5" />
+									</div>
+									<h3 className="mt-5 text-xl font-semibold text-white">
+										{title}
+									</h3>
+									<p className="mt-3 text-sm leading-6 text-white/62">
+										{description}
+									</p>
+								</div>
+							))}
+						</div>
+					</section>
 				</main>
 
-				<footer className="border-t border-white/8">
-					<div className="mx-auto flex w-full max-w-7xl flex-col gap-3 px-6 py-5 text-sm text-white/34 sm:flex-row sm:items-center sm:justify-between">
-						<p>© 2026 MyTravelWallet · One verdict, not 47 options.</p>
-						<a
-							href="https://www.linkedin.com/company/mytravelwallet-ai/"
-							target="_blank"
-							rel="noreferrer"
-							className="transition hover:text-[#86EFAC]"
-						>
-							LinkedIn
-						</a>
+				{/* ------------------------------------------------------------------ */}
+				{/* Footer */}
+				{/* ------------------------------------------------------------------ */}
+				<footer className="border-t border-white/8 bg-[rgba(7,16,30,0.35)]">
+					<div className="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-8 text-sm text-white/48 sm:flex-row sm:items-center sm:justify-between">
+						<p>© 2026 MyTravelWallet. One verdict, not 47 tabs.</p>
+						<div className="flex items-center gap-5">
+							<button
+								onClick={() => router.push("/about")}
+								className="transition hover:text-white/80"
+							>
+								About
+							</button>
+							<button
+								onClick={() => handleAuthRoute("/login")}
+								className="transition hover:text-white/80"
+							>
+								Sign in
+							</button>
+						</div>
 					</div>
 				</footer>
 			</div>
+
+			{/* Global keyframe for step card entrance */}
+			<style>{`
+				@keyframes fadeSlideIn {
+					from {
+						opacity: 0;
+						transform: translateY(10px);
+					}
+					to {
+						opacity: 1;
+						transform: translateY(0);
+					}
+				}
+				@media (prefers-reduced-motion: reduce) {
+					* {
+						animation-duration: 0.01ms !important;
+						transition-duration: 0.01ms !important;
+					}
+				}
+			`}</style>
 		</div>
-	);
-}
-
-
-export default function LandingPage() {
-	return (
-		<Suspense
-			fallback={
-				<div className="relative min-h-screen overflow-hidden bg-[#080E1C] text-white">
-					<div
-						className="absolute inset-0 bg-cover bg-center"
-						style={{ backgroundImage: "url('/beach-hero.png')" }}
-					/>
-					<div className="absolute inset-0 bg-[rgba(8,14,28,0.38)]" />
-					<div className="relative z-10 flex min-h-screen items-center justify-center px-6">
-						<div className="flex items-center gap-3 rounded-full border border-white/12 bg-[rgba(8,14,28,0.74)] px-5 py-3 text-sm text-white/80 backdrop-blur-xl">
-							<Loader2 className="h-4 w-4 animate-spin" />
-							Loading...
-						</div>
-					</div>
-				</div>
-			}
-		>
-			<LandingPageInner />
-		</Suspense>
 	);
 }

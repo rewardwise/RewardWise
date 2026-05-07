@@ -34,6 +34,7 @@ function LoginPageInner() {
 	const [submittingGoogle, setSubmittingGoogle] = useState(false);
 
 	const callbackError = searchParams.get("error");
+	const accessDenied = searchParams.get("access") === "denied";
 
 	const callbackMessage = useMemo(() => {
 		if (callbackError === "auth_callback_error") {
@@ -44,8 +45,12 @@ function LoginPageInner() {
 			return "That Google account is not approved for MyTravelWallet access.";
 		}
 
+		if (accessDenied) {
+			return "That account is not approved for access right now.";
+		}
+
 		return "";
-	}, [callbackError]);
+	}, [accessDenied, callbackError]);
 
 	useEffect(() => {
 		if (!authLoading && user) {
@@ -68,8 +73,8 @@ function LoginPageInner() {
 		return Object.keys(nextErrors).length === 0;
 	};
 
-	const handleEmailSubmit = async (e: FormEvent<HTMLFormElement>) => {
-		e.preventDefault();
+	const handleEmailSubmit = async (event: FormEvent<HTMLFormElement>) => {
+		event.preventDefault();
 
 		if (!validate()) return;
 
@@ -147,11 +152,11 @@ function LoginPageInner() {
 					</div>
 
 					<h1 className="text-3xl font-bold tracking-tight text-white">
-						Authorized User Login
+						Welcome back
 					</h1>
 
 					<p className="mt-2 text-sm leading-6 text-white/65">
-						Sign in with your approved email to access the app.
+						Sign in to access your wallet, search trips, and get your points-versus-cash verdicts.
 					</p>
 
 					{callbackMessage ? (
@@ -160,18 +165,18 @@ function LoginPageInner() {
 						</div>
 					) : null}
 
-					{Object.keys(errors).length > 0 && (
+					{Object.keys(errors).length > 0 ? (
 						<div
 							role="alert"
 							className="mt-5 rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3"
 						>
 							<ul className="space-y-1 text-sm text-red-100">
-								{Object.values(errors).map((error, i) => (
-									<li key={i}>{error}</li>
+								{Object.values(errors).map((error, index) => (
+									<li key={index}>{error}</li>
 								))}
 							</ul>
 						</div>
-					)}
+					) : null}
 
 					<div className="mt-6">
 						<button
@@ -217,7 +222,7 @@ function LoginPageInner() {
 									id="email"
 									type="email"
 									value={email}
-									onChange={(e) => setEmail(e.target.value)}
+									onChange={(event) => setEmail(event.target.value)}
 									placeholder="name@example.com"
 									autoComplete="email"
 									className={`w-full rounded-xl border bg-white/7 py-3 pl-10 pr-4 text-sm text-white outline-none transition placeholder:text-white/24 focus:bg-white/10 ${
@@ -243,7 +248,7 @@ function LoginPageInner() {
 									id="password"
 									type={showPassword ? "text" : "password"}
 									value={password}
-									onChange={(e) => setPassword(e.target.value)}
+									onChange={(event) => setPassword(event.target.value)}
 									placeholder="Enter your password"
 									autoComplete="current-password"
 									className={`w-full rounded-xl border bg-white/7 py-3 pl-10 pr-12 text-sm text-white outline-none transition placeholder:text-white/24 focus:bg-white/10 ${
@@ -289,20 +294,25 @@ function LoginPageInner() {
 									Signing in...
 								</>
 							) : (
-								"Log In"
+								"Sign in"
 							)}
 						</button>
 					</form>
 
-					<p className="mt-5 text-center text-xs leading-5 text-white/38">
-						No public sign up is available.
+					<p className="mt-5 text-center text-sm text-white/45">
+						Don’t have an account?{" "}
+						<button
+							onClick={() => router.push("/signup")}
+							className="font-medium text-[#86EFAC] transition hover:text-[#bbf7d0]"
+						>
+							Create one
+						</button>
 					</p>
 				</div>
 			</div>
 		</div>
 	);
 }
-
 
 export default function LoginPage() {
 	return (
