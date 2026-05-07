@@ -130,7 +130,7 @@ export default function ZoePricingCards({
 						Unlock Verdict Search + Zoe for 24 hours.
 					</p>
 					<div className="mb-5">
-						<p className="text-3xl font-bold text-stone-900">$2.99</p>
+						<p className="text-3xl font-bold text-stone-900">$0.99</p>
 						<p className="text-stone-500 text-xs mt-1">
 							one time · 24-hour access
 						</p>
@@ -161,7 +161,7 @@ export default function ZoePricingCards({
 								Redirecting…
 							</>
 						) : (
-							"Get 24h pass - $2.99"
+							"Get 24h pass - $0.99"
 						)}
 					</button>
 					<p className="text-xs text-stone-500 text-center mt-3">
@@ -191,7 +191,7 @@ export default function ZoePricingCards({
 						</p>
 						<div className="mb-5">
 							<p className="text-3xl font-bold text-stone-900">
-								$9.99
+								$3.99
 								<span className="text-lg font-semibold"> /month</span>
 							</p>
 							<p className="text-stone-500 text-xs mt-1">
@@ -224,7 +224,7 @@ export default function ZoePricingCards({
 									Redirecting…
 								</>
 							) : (
-								"Subscribe - $9.99/mo"
+								"Subscribe - $3.99/mo"
 							)}
 						</button>
 					</div>

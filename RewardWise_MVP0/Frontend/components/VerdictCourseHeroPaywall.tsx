@@ -115,10 +115,10 @@ export default function VerdictCourseHeroPaywall({
 					onClick={goToPlans}
 					className="relative mt-4 inline-flex items-center justify-center rounded-lg bg-white px-8 py-2.5 text-sm font-semibold text-emerald-900 shadow-md transition hover:bg-emerald-50"
 				>
-					Get 24h pass - $2.99
+					Get 24h pass - $0.99
 				</button>
 				<p className="relative mt-2 text-xs text-emerald-100/95">
-					$2.99 one time - Verdict Search + Zoe for 24 hours
+					$0.99 one time - Verdict Search + Zoe for 24 hours
 				</p>
 			</div>
 
@@ -141,7 +141,7 @@ export default function VerdictCourseHeroPaywall({
 				<p className="mt-4 text-center text-[11px] sm:text-xs text-slate-500 leading-relaxed max-w-lg mx-auto">
 					Use the button above to open{" "}
 					<span className="text-slate-400">
-						Your search is ready - pick 24-hour pass ($2.99), monthly ($9.99/mo),
+						Your search is ready - pick 24-hour pass ($0.99), monthly ($3.99/mo),
 						or Concierge.
 					</span>
 				</p>

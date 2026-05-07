@@ -231,7 +231,7 @@ export async function POST(request: Request) {
 					.update({ status: "active", updated_at: new Date().toISOString() })
 					.eq("user_id", subRow.user_id);
 
-				const amount = amountPaid ? `$${(amountPaid / 100).toFixed(2)}` : "$9.99";
+				const amount = amountPaid ? `$${(amountPaid / 100).toFixed(2)}` : "$3.99";
 				await supabase.from("payment_notifications").insert({
 					user_id: subRow.user_id,
 					type: "renewal_success",
