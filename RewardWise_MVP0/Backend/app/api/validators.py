@@ -41,6 +41,7 @@ class SearchParams(BaseModel):
     @classmethod
     def validate_airport_code(cls, v: str) -> str:
         code = v.strip().upper()
+        # Force Render rebuild 2026-05-08 — validators.py was missing in deploy despite being on main
         if not re.fullmatch(r"[A-Z]{3}(,[A-Z]{3}){0,4}", code):
             raise ValueError(
                 "Airport code must be 1-5 comma-separated 3-letter codes (e.g. JFK or JFK,LGA,EWR)"
