@@ -17,6 +17,7 @@ import { createClient } from "@/utils/supabase/client";
 import TropicalBackground from "@/components/TropicalBackground";
 import { useAuth } from "@/context/AuthProvider";
 import { AVAILABLE_CARDS } from "@/data/cards";
+import { fmtMoney } from "@/utils/format";
 
 type SavedCard = {
   id: string;
@@ -478,7 +479,7 @@ export default function WalletSetupPage() {
                           />
                           {bal > 0 && (
                             <span className="text-emerald-400 text-xs font-medium bg-emerald-500/10 px-2 py-1 rounded flex-shrink-0">
-                              ~${(bal * 0.015).toFixed(0)}
+                              ~{fmtMoney(bal * 0.015)}
                             </span>
                           )}
                         </div>
