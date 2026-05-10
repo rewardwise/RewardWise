@@ -445,7 +445,8 @@ export default function ZoeChat({ isOpen, setIsOpen, onFillSearch, verdictContex
 					onMouseLeave={() => listening && stopListening()}
 					onTouchStart={startListening}
 					onTouchEnd={stopListening}
-					className={`flex-shrink-0 rounded-xl border px-3 py-${compact ? "2" : "3"} transition ${
+					aria-label={listening ? "Stop listening" : "Hold to speak"}
+					className={`flex-shrink-0 inline-flex items-center justify-center min-h-11 min-w-11 rounded-xl border px-3 py-${compact ? "2" : "3"} transition ${
 						listening
 							? "border-rose-400 bg-rose-500/20 text-rose-200"
 							: "border-white/10 bg-white/[0.03] text-slate-400 hover:bg-white/[0.06]"
@@ -464,7 +465,8 @@ export default function ZoeChat({ isOpen, setIsOpen, onFillSearch, verdictContex
 				<button
 					onClick={() => void sendText(input)}
 					disabled={!input.trim() || typing}
-					className={`flex-shrink-0 rounded-xl bg-emerald-500 px-${compact ? "3" : "4"} py-${compact ? "2" : "3"} text-white transition hover:bg-emerald-400 disabled:bg-slate-700`}
+					aria-label="Send message"
+					className={`flex-shrink-0 inline-flex items-center justify-center min-h-11 min-w-11 rounded-xl bg-emerald-500 px-${compact ? "3" : "4"} py-${compact ? "2" : "3"} text-white transition hover:bg-emerald-400 disabled:bg-slate-700`}
 				>
 					<Send className="h-4 w-4" />
 				</button>
@@ -521,10 +523,10 @@ export default function ZoeChat({ isOpen, setIsOpen, onFillSearch, verdictContex
 							</div>
 						</div>
 						<div className="flex items-center gap-1.5">
-							<button onClick={() => setExpanded(true)} title="Expand" className="hidden sm:inline-flex rounded-xl p-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-white">
+							<button onClick={() => setExpanded(true)} aria-label="Expand chat" title="Expand" className="hidden sm:inline-flex items-center justify-center min-h-11 min-w-11 rounded-xl p-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-white">
 								<Maximize2 className="h-4 w-4" />
 							</button>
-							<button onClick={() => setIsOpen(false)} className="rounded-xl p-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-white">
+							<button onClick={() => setIsOpen(false)} aria-label="Close chat" className="inline-flex items-center justify-center min-h-11 min-w-11 rounded-xl p-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-white">
 								<X className="h-4 w-4" />
 							</button>
 						</div>
@@ -569,7 +571,7 @@ export default function ZoeChat({ isOpen, setIsOpen, onFillSearch, verdictContex
 							</div>
 							<span className="font-semibold text-white">Zoe</span>
 						</div>
-						<button onClick={startNewConversation} title="New conversation" className="rounded-lg p-1.5 text-slate-400 transition hover:bg-white/[0.06] hover:text-white">
+						<button onClick={startNewConversation} aria-label="New conversation" title="New conversation" className="inline-flex items-center justify-center min-h-11 min-w-11 rounded-lg p-1.5 text-slate-400 transition hover:bg-white/[0.06] hover:text-white">
 							<Edit3 className="h-4 w-4" />
 						</button>
 					</div>
@@ -636,7 +638,8 @@ export default function ZoeChat({ isOpen, setIsOpen, onFillSearch, verdictContex
 														e.stopPropagation();
 														setOpenMenuId(openMenuId === conv.id ? null : conv.id);
 													}}
-													className="rounded-lg p-1.5 text-slate-500 hover:bg-white/[0.08] hover:text-slate-300"
+													aria-label="Conversation actions"
+													className="inline-flex items-center justify-center min-h-11 min-w-11 rounded-lg p-1.5 text-slate-500 hover:bg-white/[0.08] hover:text-slate-300"
 												>
 													<MoreHorizontal className="h-3.5 w-3.5" />
 												</button>
@@ -678,10 +681,10 @@ export default function ZoeChat({ isOpen, setIsOpen, onFillSearch, verdictContex
 							<p className="text-xs text-emerald-300">Your travel agent</p>
 						</div>
 						<div className="flex items-center gap-2">
-							<button onClick={() => setExpanded(false)} className="rounded-xl p-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-white" title="Compact view">
+							<button onClick={() => setExpanded(false)} aria-label="Compact view" className="inline-flex items-center justify-center min-h-11 min-w-11 rounded-xl p-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-white" title="Compact view">
 								<Minimize2 className="h-5 w-5" />
 							</button>
-							<button onClick={() => { setIsOpen(false); setExpanded(false); }} className="rounded-xl p-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-white">
+							<button onClick={() => { setIsOpen(false); setExpanded(false); }} aria-label="Close chat" className="inline-flex items-center justify-center min-h-11 min-w-11 rounded-xl p-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-white">
 								<X className="h-5 w-5" />
 							</button>
 						</div>
