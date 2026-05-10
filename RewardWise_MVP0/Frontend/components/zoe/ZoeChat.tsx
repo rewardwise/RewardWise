@@ -110,7 +110,7 @@ export default function ZoeChat({ isOpen, setIsOpen, onFillSearch, verdictContex
 	const dragStartYRef = useRef<number | null>(null);
 
 	// ── NVIDIA Voice Mode ─────────────────────────────────────────────────────
-	const { voiceMode, voiceState, toggleVoiceMode, interrupt } = useZoeVoice({
+	const { voiceMode, voiceState, liveTranscript, toggleVoiceMode, interrupt } = useZoeVoice({
 		conversationId,
 		history: messages.map((m) => ({ role: m.role, content: m.content })),
 		onTurn: ({ transcript, reply, prefill: prefillRaw }) => {
@@ -166,6 +166,7 @@ export default function ZoeChat({ isOpen, setIsOpen, onFillSearch, verdictContex
 
 	useEffect(() => {
 		if (isOpen) setTimeout(() => inputRef.current?.focus(), 100);
+		        fetch("/api/zoe-warm", { method: "GET", cache: "no-store" }).catch(() => {});
 	}, [isOpen]);
 
 	useEffect(() => {
@@ -425,6 +426,12 @@ export default function ZoeChat({ isOpen, setIsOpen, onFillSearch, verdictContex
 
 				{/* Status */}
 				<p className="text-sm text-slate-400">{voiceStatusLabel(voiceState)}</p>
+
+				{liveTranscript && (
+					<p className="max-w-[85%] rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-center text-xs text-slate-300">
+						Heard: “{liveTranscript}”
+					</p>
+				)}
 
 				{/* Interrupt button — only show when Zoe is speaking */}
 				{voiceState === "responding" && (

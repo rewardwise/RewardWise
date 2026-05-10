@@ -3,10 +3,8 @@
  * /app/api/zoe/voice/route.ts
  *
  * Proxies voice turns to FastAPI:
- *   - Receives: transcript text (from browser Web Speech API)
- *   - Returns: WAV audio (NVIDIA Magpie TTS) + X-Reply / X-Prefill headers
- *
- * Branch: feature/zoe-voice-nvidia-nim
+ *   - Receives: transcript text from browser Web Speech API
+ *   - Returns: optional WAV audio + encoded reply metadata headers
  */
 
 import { createRouteHandlerClient } from "@/utils/supabase/route-handler";
@@ -28,7 +26,6 @@ export async function POST(req: Request) {
 		const session = await supabase.auth.getSession();
 		const accessToken = session.data.session?.access_token;
 
-		// Read form from browser and inject user_id
 		const formData = await req.formData();
 		formData.set("user_id", user.id);
 
@@ -41,19 +38,21 @@ export async function POST(req: Request) {
 				...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
 			},
 			body: formData,
-			signal: AbortSignal.timeout(45_000),
+			signal: AbortSignal.timeout(120_000),
 		});
 
-		const exposeHeaders = "X-Reply, X-Prefill";
+		const exposeHeaders = "X-Reply-B64, X-Reply, X-Prefill";
+		const metadataHeaders = {
+			"X-Reply-B64": backendRes.headers.get("X-Reply-B64") || "",
+			"X-Reply": backendRes.headers.get("X-Reply") || "",
+			"X-Prefill": backendRes.headers.get("X-Prefill") || "",
+			"Access-Control-Expose-Headers": exposeHeaders,
+		};
 
 		if (backendRes.status === 204) {
 			return new NextResponse(null, {
 				status: 204,
-				headers: {
-					"X-Reply": backendRes.headers.get("X-Reply") || "",
-					"X-Prefill": backendRes.headers.get("X-Prefill") || "",
-					"Access-Control-Expose-Headers": exposeHeaders,
-				},
+				headers: metadataHeaders,
 			});
 		}
 
@@ -71,10 +70,8 @@ export async function POST(req: Request) {
 		return new NextResponse(audioBuffer, {
 			status: 200,
 			headers: {
-				"Content-Type": "audio/wav",
-				"X-Reply": backendRes.headers.get("X-Reply") || "",
-				"X-Prefill": backendRes.headers.get("X-Prefill") || "",
-				"Access-Control-Expose-Headers": exposeHeaders,
+				"Content-Type": backendRes.headers.get("Content-Type") || "audio/wav",
+				...metadataHeaders,
 			},
 		});
 	} catch (err) {
