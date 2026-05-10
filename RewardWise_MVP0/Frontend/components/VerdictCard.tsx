@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { useAlerts } from "@/context/AlertContext";
 import { createClient } from "@/utils/supabase/client";
+import { fmtMoney } from "@/utils/format";
 
 const supabase = createClient();
 
@@ -218,11 +219,6 @@ function fmtDuration(mins?: number) {
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
-}
-
-function fmtMoney(value?: number | null, digits = 0) {
-  if (value == null || Number.isNaN(Number(value))) return "—";
-  return `$${Number(value).toFixed(digits)}`;
 }
 
 function fmtShortDateTime(value?: string | null) {
@@ -505,7 +501,7 @@ export default function VerdictCard({
       const context = [
         `Verdict for ${origin} → ${destination}, ${(cabin || "economy").replace(/_/g, " ")}, ${travelers} traveler${travelers !== 1 ? "s" : ""}.`,
         `Verdict: ${verdict.verdict_label ?? (verdict.pay_cash ? "Pay Cash" : "Use Points")}.`,
-        verdict.metrics?.cash_price != null ? `Cash fare: $${Math.round(verdict.metrics.cash_price)}.` : null,
+        verdict.metrics?.cash_price != null ? `Cash fare: ${fmtMoney(Math.round(verdict.metrics.cash_price))}.` : null,
         verdict.winner?.points && verdict.winner?.program
           ? `Best award: ${verdict.winner.points.toLocaleString()} points via ${verdict.winner.program.replace(/_/g, " ")}.`
           : null,
@@ -1014,11 +1010,11 @@ export default function VerdictCard({
                       type="button"
                       onClick={() => {
                         if (!onAskZoe) return;
-                        const cashStr = displayCashPrice != null ? `$${Math.round(displayCashPrice)}` : null;
+                        const cashStr = displayCashPrice != null ? fmtMoney(Math.round(displayCashPrice)) : null;
                         const ptsStr = displayPoints != null ? `${Number(displayPoints).toLocaleString()} points` : null;
                         const progStr = winner?.program ? winner.program.replace(/_/g, " ") : null;
                         const cppStr = winner?.cpp != null ? `${winner.cpp.toFixed(2)} cents per point` : null;
-                        const savingsStr = displaySavings != null ? `saving roughly $${Math.round(displaySavings)}` : null;
+                        const savingsStr = displaySavings != null ? `saving roughly ${fmtMoney(Math.round(displaySavings))}` : null;
                         const parts = [
                           `The search returned a verdict for ${origin} → ${destination}`,
                           `on ${departDate}${returnDate ? ` returning ${returnDate}` : ""}, ${travelers} traveler${travelers !== 1 ? "s" : ""}, ${(cabin || "economy").replace(/_/g, " ")} class.`,

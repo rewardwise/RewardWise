@@ -5,6 +5,7 @@ import TropicalBackground from "@/components/TropicalBackground";
 import AirportSearch from "@/components/AirportSearch";
 import { useAuth } from "@/context/AuthProvider";
 import { createClient } from "@/utils/supabase/client";
+import { fmtMoney } from "@/utils/format";
 import { CheckCircle, Coffee, Loader2, Sparkles } from "lucide-react";
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -293,7 +294,7 @@ function ConciergeStandardInner() {
 	const st = confirmed ? statusUi(confirmed.status) : { text: "", cls: "" };
 	const price =
 		confirmed?.quoted_price != null
-			? `${confirmed.currency ?? "USD"} $${Number(confirmed.quoted_price).toFixed(0)}`
+			? `${confirmed.currency ?? "USD"} ${fmtMoney(confirmed.quoted_price)}`
 			: "$39";
 
 	return (
