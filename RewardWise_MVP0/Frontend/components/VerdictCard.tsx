@@ -23,6 +23,9 @@ import {
 import { useAlerts } from "@/context/AlertContext";
 import { createClient } from "@/utils/supabase/client";
 import { fmtMoney } from "@/utils/format";
+import { isDeepLinkable, airlineDisplayName } from "@/utils/airlines";
+import { logHandoffClick } from "@/utils/analytics";
+import VerdictBookingFallback from "@/components/VerdictBookingFallback";
 
 const supabase = createClient();
 
@@ -993,15 +996,78 @@ export default function VerdictCard({
                     <button onClick={speak} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-medium text-slate-200 hover:bg-white/[0.06]">
                       {speaking ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />} {speaking ? "Stop" : "Listen"}
                     </button>
-                    {bookingUrl ? (
-                      <a href={bookingUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-xl bg-emerald-400 px-5 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-300">
-                        Book / verify <ExternalLink className="h-4 w-4" />
-                      </a>
-                    ) : (
-                      <a href={googleFlightsUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 rounded-xl bg-emerald-400 px-5 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-300">
-                        Search fares <Search className="h-4 w-4" />
-                      </a>
-                    )}
+                    {(() => {
+                      const verdictType: "cash" | "points" | null =
+                        recommendation === "pay_cash"
+                          ? "cash"
+                          : recommendation === "use_points"
+                            ? "points"
+                            : null;
+                      const program = winner?.program ?? null;
+
+                      if (verdictType === "cash" && program && isDeepLinkable(program) && bookingUrl) {
+                        return (
+                          <a
+                            href={bookingUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={() =>
+                              logHandoffClick({
+                                program,
+                                origin,
+                                destination,
+                                depart_date: departDate,
+                                return_date: returnDate ?? null,
+                                travelers,
+                                cabin,
+                                verdict_type: "cash",
+                                amount_cash: displayCashPrice ?? undefined,
+                              })
+                            }
+                            className="flex items-center gap-2 rounded-xl bg-emerald-400 px-5 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-300"
+                          >
+                            Book on {airlineDisplayName(program)} <ExternalLink className="h-4 w-4" />
+                          </a>
+                        );
+                      }
+
+                      if (verdictType && program && bookingUrl) {
+                        const airlineDomain = bookingUrl
+                          .replace(/^https?:\/\//, "")
+                          .replace(/^www\./, "")
+                          .replace(/\/.*$/, "");
+                        return (
+                          <VerdictBookingFallback
+                            airlineName={airlineDisplayName(program)}
+                            airlineDomain={airlineDomain}
+                            origin={origin}
+                            destination={destination}
+                            departDate={departDate}
+                            returnDate={returnDate}
+                            travelers={travelers}
+                            cabin={cabin}
+                            verdictType={verdictType}
+                            amountCash={verdictType === "cash" ? displayCashPrice ?? undefined : undefined}
+                            amountPoints={verdictType === "points" ? displayPoints ?? undefined : undefined}
+                            pointsProgram={airlineDisplayName(program)}
+                            taxes={displayTaxes ?? undefined}
+                            airlineUrl={bookingUrl}
+                            program={program}
+                          />
+                        );
+                      }
+
+                      return (
+                        <a
+                          href={googleFlightsUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex items-center gap-2 rounded-xl bg-emerald-400 px-5 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-300"
+                        >
+                          Search fares <Search className="h-4 w-4" />
+                        </a>
+                      );
+                    })()}
                     <button
                       onClick={handleSetAlert}
                       disabled={alreadyWatching || justAdded}
