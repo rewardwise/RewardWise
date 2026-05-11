@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { createClient as createSupabaseAdminClient } from "@supabase/supabase-js";
 import { createClient as createUserClient } from "@/utils/supabase/server";
 import { isPmTesterEmail } from "@/utils/auth/pm-testers";
+import { fmtMoney } from "@/utils/format";
 import AnalyticsChartsDashboard from "./AnalyticsChartsDashboard";
 
 type SearchParams = Record<string, string | string[] | undefined>;
@@ -479,7 +480,7 @@ export default async function AnalyticsAdminPage({ searchParams }: { searchParam
 		cabin: titleCase(event.search_cabin),
 		travelers: event.search_travelers ? String(event.search_travelers) : "-",
 		verdict: titleCase(event.verdict_recommendation),
-		price: event.cash_price ? `$${Math.round(event.cash_price)}` : "-",
+		price: event.cash_price ? fmtMoney(Math.round(event.cash_price)) : "-",
 		source: event.search_trigger_source || "manual",
 	}));
 

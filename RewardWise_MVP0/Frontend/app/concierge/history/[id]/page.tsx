@@ -10,6 +10,7 @@ import {
 	turnaroundLabel,
 } from "@/utils/concierge-display";
 import { createClient } from "@/utils/supabase/client";
+import { fmtMoney } from "@/utils/format";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -118,7 +119,7 @@ export default function ConciergeRequestDetailPage() {
 	const st = row ? statusUi(row.status) : null;
 	const price =
 		row?.quoted_price != null
-			? `${row.currency ?? "USD"} $${Number(row.quoted_price).toFixed(0)}`
+			? `${row.currency ?? "USD"} ${fmtMoney(row.quoted_price)}`
 			: "—";
 
 	return (
@@ -217,7 +218,7 @@ export default function ConciergeRequestDetailPage() {
 										<dt className="text-gray-500 text-xs">Budget (cash)</dt>
 										<dd>
 											{row.budget_cash != null
-												? `${row.currency ?? "USD"} $${row.budget_cash}`
+												? `${row.currency ?? "USD"} ${fmtMoney(row.budget_cash)}`
 												: "—"}
 										</dd>
 									</div>

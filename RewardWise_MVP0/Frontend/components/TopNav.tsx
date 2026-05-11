@@ -144,7 +144,7 @@ export default function TopNav() {
 							onClick={() => setDrawerOpen(true)}
 							aria-label="Open navigation menu"
 							aria-expanded={drawerOpen}
-							className="sm:hidden p-2 -ml-2 text-gray-300 hover:text-white rounded-lg"
+							className="sm:hidden inline-flex items-center justify-center min-h-11 min-w-11 p-2 -ml-2 text-gray-300 hover:text-white rounded-lg"
 						>
 							<Menu className="w-5 h-5" />
 						</button>
@@ -167,7 +167,7 @@ export default function TopNav() {
 									<button
 										key={tab.id}
 										onClick={() => router.push(tab.page)}
-										className={`flex items-center gap-1.5 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+										className={`inline-flex items-center justify-center gap-1.5 min-h-11 px-3 py-2.5 rounded-lg text-sm transition-colors ${
 											active
 												? "text-emerald-400 bg-emerald-500/10"
 												: "text-gray-400 hover:text-white hover:bg-gray-800/50"
@@ -183,7 +183,8 @@ export default function TopNav() {
 						<div className="relative">
 							<button
 								onClick={() => setShowAlerts(!showAlerts)}
-								className="relative px-3 py-2.5 text-gray-400 hover:text-white"
+								aria-label="Notifications"
+								className="relative inline-flex items-center justify-center min-h-11 min-w-11 px-3 py-2.5 text-gray-400 hover:text-white"
 							>
 								<Bell className="w-4 h-4" />
 
@@ -301,7 +302,7 @@ export default function TopNav() {
 							type="button"
 							onClick={() => setDrawerOpen(false)}
 							aria-label="Close navigation menu"
-							className="p-2 -mr-2 text-gray-400 hover:text-white rounded-lg"
+							className="inline-flex items-center justify-center min-h-11 min-w-11 p-2 -mr-2 text-gray-400 hover:text-white rounded-lg"
 						>
 							<X className="w-5 h-5" />
 						</button>
