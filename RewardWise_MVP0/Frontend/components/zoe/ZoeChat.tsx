@@ -366,7 +366,7 @@ export default function ZoeChat({ isOpen, setIsOpen, onFillSearch, verdictContex
 					<Sparkles className="h-3.5 w-3.5 text-emerald-300" />
 				</div>
 			)}
-			<div className={`${compact ? "max-w-[88%]" : "max-w-[78%]"} ${
+			<div className={`${compact ? "max-w-[88%]" : "max-w-[78%]"} break-words ${
 				msg.role === "user"
 					? "rounded-2xl bg-emerald-500 px-4 py-3 text-white"
 					: "rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-slate-200"

@@ -2,7 +2,7 @@
 
 import { WalletProvider } from "@/context/WalletContext";
 import { AlertProvider } from "@/context/AlertContext";
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AuthProvider } from "@/context/AuthProvider";
@@ -27,6 +27,13 @@ export const metadata: Metadata = {
 	title: "MyTravelWallet",
 	description:
 		"Travel smarter. Spend wiser. Join the MyTravelWallet early access waitlist.",
+};
+
+export const viewport: Viewport = {
+	width: "device-width",
+	initialScale: 1,
+	viewportFit: "cover",
+	themeColor: "#0f172a",
 };
 
 export default function RootLayout({
