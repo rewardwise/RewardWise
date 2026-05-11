@@ -460,7 +460,7 @@ export default function ZoeChat({ isOpen, setIsOpen, onFillSearch, verdictContex
 					onChange={e => setInput(e.target.value)}
 					onKeyDown={e => { if (e.key === "Enter") void sendText(input); }}
 					placeholder={listening ? "Listening…" : "Tell Zoe about your trip…"}
-					className={`flex-1 rounded-xl border border-white/10 bg-white/[0.03] px-${compact ? "3" : "5"} py-${compact ? "2" : "3"} text-${compact ? "sm" : "base"} text-white placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500`}
+					className={`flex-1 rounded-xl border border-white/10 bg-white/[0.03] px-${compact ? "3" : "5"} py-${compact ? "2" : "3"} text-base text-white placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500`}
 				/>
 				<button
 					onClick={() => void sendText(input)}
@@ -615,7 +615,7 @@ export default function ZoeChat({ isOpen, setIsOpen, onFillSearch, verdictContex
 														if (e.key === "Escape") setRenamingId(null);
 													}}
 													onBlur={() => void commitRename(conv.id)}
-													className="flex-1 rounded-lg border border-emerald-500/40 bg-slate-900 px-2 py-1 text-xs text-white focus:outline-none"
+													className="flex-1 rounded-lg border border-emerald-500/40 bg-slate-900 px-2 py-1 text-base text-white focus:outline-none"
 												/>
 											</div>
 										) : (
