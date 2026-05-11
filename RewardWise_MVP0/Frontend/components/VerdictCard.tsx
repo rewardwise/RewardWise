@@ -796,9 +796,14 @@ export default function VerdictCard({
                 <div className="mt-8 flex flex-wrap items-baseline gap-x-4 gap-y-2">
                   <h2 className="text-4xl font-extrabold tracking-tight text-white md:text-5xl">{recommendationLabel}</h2>
                   {displayCashPrice != null && (
-                    <span className="text-4xl font-extrabold tracking-tight text-emerald-400 md:text-5xl">
-                      {fmtMoney(displayCashPrice, displayCashPrice % 1 === 0 ? 0 : 2)}
-                    </span>
+                    <>
+                      {recommendation === "use_points" && (
+                        <span className="text-sm font-semibold text-slate-400">· Cash fare</span>
+                      )}
+                      <span className="text-4xl font-extrabold tracking-tight text-emerald-400 md:text-5xl">
+                        {fmtMoney(displayCashPrice, displayCashPrice % 1 === 0 ? 0 : 2)}
+                      </span>
+                    </>
                   )}
                 </div>
                 <p className="mt-5 max-w-4xl text-lg font-medium leading-8 text-slate-300 md:text-xl">
