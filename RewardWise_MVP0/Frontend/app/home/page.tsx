@@ -740,6 +740,7 @@ export default function HomePage() {
 						isOpen={isChatOpen}
 						setIsOpen={setIsChatOpen}
 						onFillSearch={handleFillSearch}
+						onAutoSearch={handleTriggerSearch}
 						verdictContext={verdictContext}
 					/>
 				</main>

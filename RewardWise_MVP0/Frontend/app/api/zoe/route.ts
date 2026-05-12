@@ -1,4 +1,13 @@
 /** @format */
+/**
+ * /app/api/zoe/route.ts
+ *
+ * Next.js proxy between ZoeChat and FastAPI.
+ * Changes from original:
+ *   - Forwards `verdict_context` and `wallet` from the request body to FastAPI
+ *   - Forwards `is_voice` flag when present
+ *   - Everything else (auth, DB persistence, GET) is unchanged
+ */
 
 import { createRouteHandlerClient } from "@/utils/supabase/route-handler";
 import { NextResponse } from "next/server";
@@ -26,9 +35,15 @@ export async function POST(req: Request) {
 			return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
 		}
 
-		const { conversation_id, message, history } = body;
+		const {
+			conversation_id,
+			message,
+			history,
+			wallet,
+			verdict_context,
+			is_voice,
+		} = body;
 
-		// Forward to backend with user_id injected
 		const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 		const session = await supabase.auth.getSession();
 		const accessToken = session.data.session?.access_token;
@@ -39,30 +54,34 @@ export async function POST(req: Request) {
 				"Content-Type": "application/json",
 				...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
 			},
-			body: JSON.stringify({ ...body, user_id: user.id }),
-			signal: AbortSignal.timeout(45_000),
+			body: JSON.stringify({
+				message,
+				history: history || [],
+				conversation_id: conversation_id || null,
+				user_id: user.id,
+				wallet: wallet || [],
+				verdict_context: verdict_context || null,
+				is_voice: is_voice || false,
+			}),
+			signal: AbortSignal.timeout(90_000),
 		});
+
+		if (!res.ok && res.status !== 200) {
+			console.error("Backend Zoe error:", res.status);
+		}
 
 		const data = await res.json();
 
-		// Persist conversation to Supabase if we have a conversation_id
-		if (conversation_id && message && data.message) {
+		// DB persistence — save message + reply to zoe_messages (best-effort)
+		const shouldPersist = conversation_id && message && data?.message;
+		if (shouldPersist) {
 			try {
-				// Save user message
-				await supabase.from("zoe_messages").insert({
-					conversation_id,
-					role: "user",
-					content: message,
-				});
+				await supabase.from("zoe_messages").insert([
+					{ conversation_id, role: "user",      content: message },
+					{ conversation_id, role: "assistant", content: data.message },
+				]);
 
-				// Save assistant reply
-				await supabase.from("zoe_messages").insert({
-					conversation_id,
-					role: "assistant",
-					content: data.message,
-				});
-
-				// Auto-title the conversation from the first user message (if title is still default)
+				// Auto-title the conversation from the first user message
 				const { data: conv } = await supabase
 					.from("zoe_conversations")
 					.select("title")
@@ -89,7 +108,7 @@ export async function POST(req: Request) {
 	}
 }
 
-// GET — load messages for a conversation
+// GET — load messages for a conversation (unchanged)
 export async function GET(req: Request) {
 	try {
 		const supabase = await createRouteHandlerClient();
@@ -100,7 +119,6 @@ export async function GET(req: Request) {
 		const conversationId = searchParams.get("conversation_id");
 		if (!conversationId) return NextResponse.json({ error: "Missing conversation_id" }, { status: 400 });
 
-		// Verify ownership
 		const { data: conv } = await supabase
 			.from("zoe_conversations")
 			.select("id")

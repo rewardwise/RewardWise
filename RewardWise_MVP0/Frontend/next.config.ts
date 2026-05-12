@@ -7,6 +7,7 @@ const ContentSecurityPolicy = `
 	style-src 'self' 'unsafe-inline';
 	img-src 'self' blob: data: https://*.stripe.com;
 	font-src 'self' data:;
+	media-src 'self' blob: data:;
 	frame-src https://js.stripe.com https://checkout.stripe.com;
 	connect-src 'self' https://*.supabase.co https://api.stripe.com https://*.stripe.com wss://*.supabase.co https://script.google.com https://script.googleusercontent.com ${process.env.NEXT_PUBLIC_API_URL || ""};
 	object-src 'none';

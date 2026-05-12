@@ -20,6 +20,7 @@ import {
 	Send,
 	Sparkles,
 	Trash2,
+	Volume2,
 	X,
 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
@@ -52,6 +53,8 @@ interface ZoeChatProps {
 		cabin?: string;
 		tripType?: string;
 	}) => void;
+	/** Called when Zoe fills the form AND is ready to search — auto-triggers search */
+	onAutoSearch?: () => void;
 }
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
@@ -81,14 +84,20 @@ const WELCOME_MESSAGE =
 function voiceStatusLabel(state: VoiceState): string {
 	switch (state) {
 		case "listening": return "Listening…";
-		case "speaking": return "I hear you…";
+		case "speaking":  return "I hear you…";
 		case "processing": return "Thinking…";
 		case "responding": return "Speaking…";
 		default: return "Your travel agent";
 	}
 }
 
-export default function ZoeChat({ isOpen, setIsOpen, onFillSearch, verdictContext }: ZoeChatProps) {
+export default function ZoeChat({
+	isOpen,
+	setIsOpen,
+	onFillSearch,
+	onAutoSearch,
+	verdictContext,
+}: ZoeChatProps) {
 	const { user } = useAuth();
 	const { cards } = useWallet();
 
@@ -103,13 +112,19 @@ export default function ZoeChat({ isOpen, setIsOpen, onFillSearch, verdictContex
 	const [renamingId, setRenamingId] = useState<string | null>(null);
 	const [renameValue, setRenameValue] = useState("");
 	const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+	/** Whether the Listen audio is playing for the latest verdict */
+	const [isListening, setIsListening] = useState(false);
+	const listenUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
 	const inputRef = useRef<HTMLInputElement>(null);
 	const renameInputRef = useRef<HTMLInputElement>(null);
 	const endRef = useRef<HTMLDivElement>(null);
 	const dragStartYRef = useRef<number | null>(null);
 
+	
+
 	// ── NVIDIA Voice Mode ─────────────────────────────────────────────────────
+	// ALL mic logic lives here — the old startListening/stopListening is removed.
 	const { voiceMode, voiceState, liveTranscript, toggleVoiceMode, interrupt } = useZoeVoice({
 		conversationId,
 		history: messages.map((m) => ({ role: m.role, content: m.content })),
@@ -123,37 +138,44 @@ export default function ZoeChat({ isOpen, setIsOpen, onFillSearch, verdictContex
 					{ role: "assistant", content: reply, prefilled: !!prefillRaw },
 				]);
 			}
-			if (prefillRaw && onFillSearch) {
-				try { onFillSearch(JSON.parse(prefillRaw)); } catch { /* not a prefill */ }
-			}
-			if (expanded) loadConversations();
+			// ✅ FIXED — parse it first
+if (prefillRaw && onFillSearch) {
+    let prefill: any = null;
+    try { prefill = typeof prefillRaw === "string" ? JSON.parse(prefillRaw) : prefillRaw; } catch { prefill = null; }
+    if (prefill) {
+        onFillSearch({
+            origin: prefill.origin,
+            destination: prefill.destination,
+            date: prefill.date,
+            return_date: prefill.return_date,
+            travelers: prefill.travelers,
+            cabin: prefill.cabin,
+            tripType: prefill.tripType,
+        });
+        if (prefill.origin && prefill.destination && prefill.date && onAutoSearch) {
+            setTimeout(() => onAutoSearch(), 400);
+        }
+    }
+}
 		},
 		onError: (msg) => {
-			setMessages((prev) => [...prev, { role: "assistant", content: msg }]);
+			setMessages((prev) => [...prev, { role: "assistant", content: `⚠️ ${msg}` }]);
 		},
 	});
 
-	// ── Drag handle ───────────────────────────────────────────────────────────
-	const handleDragHandleTouchStart = (e: React.TouchEvent) => {
-		dragStartYRef.current = e.touches[0].clientY;
-	};
-	const handleDragHandleTouchEnd = (e: React.TouchEvent) => {
-		if (dragStartYRef.current === null) return;
-		const deltaY = e.changedTouches[0].clientY - dragStartYRef.current;
-		dragStartYRef.current = null;
-		if (deltaY > 60) setIsOpen(false);
-	};
-
+	// ── Scroll ────────────────────────────────────────────────────────────────
 	useEffect(() => {
 		endRef.current?.scrollIntoView({ behavior: "smooth" });
 	}, [messages, typing]);
 
+	// ── Welcome message ───────────────────────────────────────────────────────
 	useEffect(() => {
 		if (isOpen && messages.length === 0 && !conversationId && !verdictContext) {
 			setMessages([{ role: "assistant", content: WELCOME_MESSAGE }]);
 		}
 	}, [isOpen, messages.length, conversationId, verdictContext]);
 
+	// ── Verdict context injection ─────────────────────────────────────────────
 	useEffect(() => {
 		if (!verdictContext) return;
 		setConversationId(null);
@@ -161,12 +183,12 @@ export default function ZoeChat({ isOpen, setIsOpen, onFillSearch, verdictContex
 			role: "assistant",
 			content: `I can see the result from your search. ${verdictContext} What would you like to know about it?`,
 		}]);
-		// eslint-disable-next-line react-hooks/exhaustive-deps
+	// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [verdictContext]);
 
+	// ── Focus / keyboard ──────────────────────────────────────────────────────
 	useEffect(() => {
 		if (isOpen) setTimeout(() => inputRef.current?.focus(), 100);
-		        fetch("/api/zoe-warm", { method: "GET", cache: "no-store" }).catch(() => {});
 	}, [isOpen]);
 
 	useEffect(() => {
@@ -179,13 +201,10 @@ export default function ZoeChat({ isOpen, setIsOpen, onFillSearch, verdictContex
 	}, [isOpen, setIsOpen]);
 
 	useEffect(() => {
-		return () => {
-			if (typeof window !== "undefined" && "speechSynthesis" in window) {
-				window.speechSynthesis.cancel();
-			}
-		};
+		return () => { window.speechSynthesis?.cancel(); };
 	}, []);
 
+	// ── Close menu outside click ──────────────────────────────────────────────
 	useEffect(() => {
 		if (!openMenuId) return;
 		const handler = () => setOpenMenuId(null);
@@ -197,7 +216,18 @@ export default function ZoeChat({ isOpen, setIsOpen, onFillSearch, verdictContex
 		if (renamingId) setTimeout(() => renameInputRef.current?.focus(), 50);
 	}, [renamingId]);
 
-	// ── Sidebar ───────────────────────────────────────────────────────────────
+	// ── Drag handle (mobile) ──────────────────────────────────────────────────
+	const handleDragHandleTouchStart = (e: React.TouchEvent) => {
+		dragStartYRef.current = e.touches[0].clientY;
+	};
+	const handleDragHandleTouchEnd = (e: React.TouchEvent) => {
+		if (dragStartYRef.current === null) return;
+		const deltaY = e.changedTouches[0].clientY - dragStartYRef.current;
+		dragStartYRef.current = null;
+		if (deltaY > 60) setIsOpen(false);
+	};
+
+	// ── Sidebar conversations ─────────────────────────────────────────────────
 	const loadConversations = useCallback(async () => {
 		if (!user) return;
 		setLoadingConvs(true);
@@ -314,6 +344,7 @@ export default function ZoeChat({ isOpen, setIsOpen, onFillSearch, verdictContex
 					message: trimmed,
 					history: messages,
 					conversation_id: convId,
+					verdict_context: verdictContext || null,
 					wallet: (cards || []).map((c: any) => ({
 						program: c.program_name,
 						points: c.points_balance,
@@ -336,13 +367,37 @@ export default function ZoeChat({ isOpen, setIsOpen, onFillSearch, verdictContex
 					cabin: prefill.cabin,
 					tripType: prefill.tripType,
 				});
+
+				// ── Auto-trigger search when Zoe has all required fields ──────
+				// Ticket: "User has to click on search flights — shouldn't Zoe do it?"
+				if (prefill.origin && prefill.destination && prefill.date && onAutoSearch) {
+					setTimeout(() => onAutoSearch(), 500);
+				}
 			}
+
 			if (expanded) loadConversations();
 		} catch {
 			setMessages(prev => [...prev, { role: "assistant", content: "Network error — please try again." }]);
 		} finally {
 			setTyping(false);
 		}
+	};
+
+	// ── Listen button (verdict audio) ─────────────────────────────────────────
+	// Ticket: "Reposition Listen control above verdict headline"
+	// The Listen button is rendered ABOVE the verdict message content (see renderMessage).
+	const handleListen = (content: string) => {
+		if (isListening) {
+			window.speechSynthesis?.cancel();
+			setIsListening(false);
+			return;
+		}
+		const utterance = new SpeechSynthesisUtterance(content.replace(/[*_#`>~\[\]()]/g, ""));
+		utterance.onend = () => setIsListening(false);
+		utterance.onerror = () => setIsListening(false);
+		listenUtteranceRef.current = utterance;
+		window.speechSynthesis?.speak(utterance);
+		setIsListening(true);
 	};
 
 	// ── Closed FAB ────────────────────────────────────────────────────────────
@@ -359,210 +414,54 @@ export default function ZoeChat({ isOpen, setIsOpen, onFillSearch, verdictContex
 	}
 
 	// ── Message bubble ────────────────────────────────────────────────────────
-	const renderMessage = (msg: Message, i: number, compact: boolean) => (
-		<div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-			{msg.role === "assistant" && !compact && (
-				<div className="mr-3 mt-1 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full border border-emerald-400/20 bg-emerald-500/15">
-					<Sparkles className="h-3.5 w-3.5 text-emerald-300" />
-				</div>
-			)}
-			<div className={`${compact ? "max-w-[88%]" : "max-w-[78%]"} break-words ${
-				msg.role === "user"
-					? "rounded-2xl bg-emerald-500 px-4 py-3 text-white"
-					: "rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-slate-200"
-			}`}>
-				{msg.role === "user" ? (
-					<p className={`leading-6 ${compact ? "text-sm" : ""}`}>{msg.content}</p>
-				) : (
-					<>
-						<ReactMarkdown
-							components={{
-								p: ({ ...props }) => <p className={`mb-1.5 last:mb-0 leading-6 ${compact ? "text-sm" : "leading-7"}`} {...props} />,
-								strong: ({ ...props }) => <strong className="font-semibold text-white" {...props} />,
-								ul: ({ ...props }) => <ul className="my-2 ml-4 list-disc space-y-1" {...props} />,
-								li: ({ ...props }) => <li className="text-slate-200" {...props} />,
-							}}
-						>
-							{msg.content}
-						</ReactMarkdown>
-						{msg.prefilled && (
-							<div className="mt-2 flex items-center gap-1.5 rounded-lg border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1.5">
-								<Check className="h-3 w-3 text-emerald-300 flex-shrink-0" />
-								<span className="text-xs text-emerald-200 font-medium">Search form filled — hit Search when ready</span>
-							</div>
-						)}
-					</>
-				)}
-			</div>
-		</div>
-	);
-
-	// ── Voice mode overlay ────────────────────────────────────────────────────
-	const renderVoiceOverlay = () => {
-		if (!voiceMode) return null;
-
-		const orbColor =
-			voiceState === "speaking" ? "bg-rose-500/20 ring-4 ring-rose-400/50 animate-pulse" :
-			voiceState === "responding" ? "bg-emerald-500/20 ring-4 ring-emerald-400/50 animate-pulse" :
-			voiceState === "processing" ? "bg-amber-500/20 ring-4 ring-amber-400/30" :
-			"bg-white/5 ring-1 ring-white/10 animate-pulse";
-
-		const iconColor =
-			voiceState === "speaking" ? "text-rose-300" :
-			voiceState === "responding" ? "text-emerald-300" :
-			voiceState === "processing" ? "text-amber-300" :
-			"text-slate-400";
+	const renderMessage = (msg: Message, i: number, compact: boolean) => {
+		const isAssistant = msg.role === "assistant";
+		const isPrefilled = isAssistant && !!msg.prefilled;
 
 		return (
-			<div className="flex flex-col items-center justify-center gap-3 border-t border-white/10 py-5">
-				{/* Animated orb */}
-				<div className={`relative flex h-16 w-16 items-center justify-center rounded-full transition-all duration-300 ${orbColor}`}>
-					{voiceState === "processing" ? (
-						<span className="block h-6 w-6 animate-spin rounded-full border-2 border-amber-300 border-t-transparent" />
-					) : (
-						<Sparkles className={`h-7 w-7 transition-colors ${iconColor}`} />
+			<div key={i} className={`flex ${isAssistant ? "justify-start" : "justify-end"}`}>
+				{isAssistant && !compact && (
+					<div className="mr-3 mt-1 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full border border-emerald-400/20 bg-emerald-500/15">
+						<Sparkles className="h-3.5 w-3.5 text-emerald-300" />
+					</div>
+				)}
+<div className={`max-w-[85%] break-words ${compact ? "max-w-full" : ""}`}>					{/* ── Listen button ABOVE content (Ticket: reposition above headline) ── */}
+					{isAssistant && isPrefilled && (
+						<button
+							onClick={() => handleListen(msg.content)}
+							aria-label="Listen"
+							className="mb-1 flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-300 transition hover:bg-emerald-500/20"
+						>
+							<Volume2 className="h-3 w-3" />
+							{isListening ? "Stop" : "Listen"}
+						</button>
 					)}
-				</div>
-
-				{/* Status */}
-				<p className="text-sm text-slate-400">{voiceStatusLabel(voiceState)}</p>
-
-				{liveTranscript && (
-					<p className="max-w-[85%] rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-center text-xs text-slate-300">
-						Heard: “{liveTranscript}”
-					</p>
-				)}
-
-				{/* Interrupt button — only show when Zoe is speaking */}
-				{voiceState === "responding" && (
-					<button
-						onClick={interrupt}
-						className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2 text-xs text-slate-300 transition hover:bg-white/[0.08] hover:text-white"
+					<div
+						className={`rounded-2xl border px-4 ${compact ? "py-2" : "py-3"} ${
+							isAssistant
+								? isPrefilled
+									? "border-emerald-400/30 bg-emerald-500/10 text-emerald-100"
+									: "border-white/10 bg-white/[0.04] text-slate-200"
+								: "border-blue-500/30 bg-blue-500/15 text-white"
+						} text-sm leading-relaxed`}
 					>
-						Interrupt
-					</button>
-				)}
-
-				<p className="text-[11px] text-slate-600">
-					{voiceState === "responding" ? "Tap interrupt or just start talking" : "Just talk — Zoe listens automatically"}
-				</p>
+						{isAssistant ? (
+							<ReactMarkdown
+								components={{
+									p: ({ children }) => <p className="mb-1 last:mb-0">{children}</p>,
+									strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
+								}}
+							>
+								{msg.content}
+							</ReactMarkdown>
+						) : (
+							<span>{msg.content}</span>
+						)}
+					</div>
+				</div>
 			</div>
 		);
 	};
-
-	// ── Input bar ─────────────────────────────────────────────────────────────
-	const renderInput = (compact: boolean) => (
-		<div className={`border-t border-white/10 ${compact ? "p-3" : "p-4"}`}>
-			<div className={`flex gap-2 ${!compact ? "mx-auto max-w-2xl" : ""}`}>
-				{/* Mic indicator — shows state in voice mode, non-interactive */}
-				{voiceMode ? (
-					<div className={`flex flex-shrink-0 items-center justify-center rounded-xl border px-3 ${compact ? "py-2" : "py-3"} ${
-						voiceState === "speaking"
-							? "animate-pulse border-rose-400/50 bg-rose-500/10 text-rose-300"
-							: voiceState === "responding"
-							? "border-emerald-400/50 bg-emerald-500/10 text-emerald-300"
-							: voiceState === "processing"
-							? "border-amber-400/50 bg-amber-500/10 text-amber-300"
-							: "border-emerald-500/30 bg-emerald-500/5 text-emerald-400"
-					}`}>
-						{voiceState === "processing" ? (
-							<span className="block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
-						) : voiceState === "speaking" ? (
-							<MicOff className="h-4 w-4" />
-						) : (
-							<Mic className="h-4 w-4" />
-						)}
-					</div>
-				) : null}
-
-				<input
-					ref={inputRef}
-					value={input}
-					onChange={e => setInput(e.target.value)}
-					onKeyDown={e => { if (e.key === "Enter") void sendText(input); }}
-					placeholder={
-						voiceState === "speaking" ? "I hear you…" :
-						voiceState === "responding" ? "Zoe is speaking…" :
-						voiceState === "processing" ? "Thinking…" :
-						voiceMode ? "Or type here…" :
-						"Tell Zoe about your trip…"
-					}
-					className={`flex-1 rounded-xl border border-white/10 bg-white/[0.03] ${compact ? "px-3 py-2 text-sm" : "px-5 py-3 text-base"} text-white placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500`}
-				/>
-				<button
-					onClick={() => void sendText(input)}
-					disabled={!input.trim() || typing}
-					aria-label="Send message"
-					className={`flex-shrink-0 inline-flex items-center justify-center min-h-11 min-w-11 rounded-xl bg-emerald-500 px-${compact ? "3" : "4"} py-${compact ? "2" : "3"} text-white transition hover:bg-emerald-400 disabled:bg-slate-700`}
-				>
-					<Send className="h-4 w-4" />
-				</button>
-			</div>
-			<p className={`mt-2 text-center text-[11px] text-slate-600 ${!compact ? "mx-auto max-w-2xl" : ""}`}>
-				{compact ? (
-					<>
-						<button onClick={() => setExpanded(true)} className="hidden sm:inline text-emerald-600 hover:text-emerald-400">Expand</button>
-						<span className="hidden sm:inline"> for full view · </span>
-						{voiceMode ? "Voice mode active — just talk" : "Tap the 📡 icon to talk with Zoe"}
-					</>
-				) : (
-					voiceMode ? "Voice mode active — just talk · text still works too" : "Tap the 📡 icon to have a natural voice conversation with Zoe"
-				)}
-			</p>
-		</div>
-	);
-
-	// ── Header (shared) ───────────────────────────────────────────────────────
-	const renderHeader = (compact: boolean) => (
-		<div className="flex items-center justify-between border-b border-white/10 px-4 py-3.5">
-			<div className="flex items-center gap-3">
-				<div className={`flex h-9 w-9 items-center justify-center rounded-full border transition-all duration-300 ${
-					voiceState === "responding"
-						? "animate-pulse border-emerald-400/40 bg-emerald-500/25"
-						: voiceState === "speaking"
-						? "animate-pulse border-rose-400/30 bg-rose-500/15"
-						: "border-emerald-400/20 bg-emerald-500/15"
-				}`}>
-					<Sparkles className={`h-4 w-4 transition-colors ${
-						voiceState === "responding" ? "text-emerald-300" :
-						voiceState === "speaking" ? "text-rose-300" :
-						"text-emerald-300"
-					}`} />
-				</div>
-				<div>
-					<p className="font-semibold text-white leading-none">Zoe</p>
-					<p className="text-[11px] mt-0.5 text-emerald-300">{voiceStatusLabel(voiceState)}</p>
-				</div>
-			</div>
-			<div className="flex items-center gap-1">
-				{/* Voice toggle */}
-				<button
-					onClick={toggleVoiceMode}
-					title={voiceMode ? "Exit voice mode" : "Start voice conversation"}
-					className={`flex h-8 w-8 items-center justify-center rounded-full transition ${
-						voiceMode ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/30" : "text-slate-400 hover:text-slate-200"
-					}`}
-				>
-					<Radio className="h-4 w-4" />
-				</button>
-				{compact && (
-					<button
-						onClick={() => setExpanded(true)}
-						className="rounded-xl p-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
-						title="Expand"
-					>
-						<Maximize2 className="h-4 w-4" />
-					</button>
-				)}
-				<button
-					onClick={() => { setIsOpen(false); setExpanded(false); }}
-					className="rounded-xl p-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
-				>
-					<X className="h-4 w-4" />
-				</button>
-			</div>
-		</div>
-	);
 
 	// ── Typing dots ───────────────────────────────────────────────────────────
 	const renderTypingDots = (withAvatar: boolean) => (
@@ -582,174 +481,294 @@ export default function ZoeChat({ isOpen, setIsOpen, onFillSearch, verdictContex
 		</div>
 	);
 
-	// ── Compact popup ─────────────────────────────────────────────────────────
+	// ── Voice orb (full voice mode panel) ────────────────────────────────────
+	const renderVoiceOrb = () => {
+		const orbColor =
+			voiceState === "speaking"   ? "bg-rose-500/20 ring-4 ring-rose-400/30" :
+			voiceState === "responding" ? "bg-emerald-500/20 ring-4 ring-emerald-400/30 animate-pulse" :
+			voiceState === "processing" ? "bg-amber-500/20 ring-4 ring-amber-400/30" :
+			"bg-white/5 ring-1 ring-white/10 animate-pulse";
+
+		return (
+			<div className="flex flex-col items-center justify-center gap-3 border-t border-white/10 py-5">
+				<div className={`relative flex h-16 w-16 items-center justify-center rounded-full transition-all duration-300 ${orbColor}`}>
+					{voiceState === "processing" ? (
+						<span className="block h-6 w-6 animate-spin rounded-full border-2 border-amber-300 border-t-transparent" />
+					) : (
+						<Sparkles className={`h-7 w-7 ${
+							voiceState === "responding" ? "text-emerald-300" :
+							voiceState === "speaking"   ? "text-rose-300" : "text-slate-400"
+						}`} />
+					)}
+				</div>
+				<p className="text-sm text-slate-400">{voiceStatusLabel(voiceState)}</p>
+				{liveTranscript && (
+					<p className="max-w-[85%] rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-center text-xs text-slate-300">
+						Heard: "{liveTranscript}"
+					</p>
+				)}
+				{voiceState === "responding" && (
+					<button
+						onClick={interrupt}
+						className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-2 text-xs text-slate-300 transition hover:bg-white/[0.08] hover:text-white"
+					>
+						Interrupt
+					</button>
+				)}
+				<p className="text-[11px] text-slate-600">
+					{voiceState === "responding" ? "Tap interrupt or just start talking" : "Just talk — Zoe listens automatically"}
+				</p>
+			</div>
+		);
+	};
+
+	// ── Input bar ─────────────────────────────────────────────────────────────
+	const renderInput = (compact: boolean) => (
+		<div className={`border-t border-white/10 ${compact ? "p-3" : "p-4"}`}>
+			<div className={`flex gap-2 ${!compact ? "mx-auto max-w-2xl" : ""}`}>
+				{/* Mic — uses useZoeVoice exclusively. Clicking toggles voice mode. */}
+				<button
+					onClick={toggleVoiceMode}
+					title={voiceMode ? "Exit voice mode" : "Start voice conversation"}
+					className={`flex flex-shrink-0 items-center justify-center rounded-xl border px-3 ${compact ? "py-2" : "py-3"} transition ${
+						voiceMode
+							? voiceState === "speaking"   ? "animate-pulse border-rose-400/50 bg-rose-500/10 text-rose-300"
+							: voiceState === "responding" ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-300"
+							: voiceState === "processing" ? "border-amber-400/50 bg-amber-500/10 text-amber-300"
+							: "border-emerald-500/30 bg-emerald-500/5 text-emerald-400"
+							: "border-white/10 bg-white/[0.03] text-slate-500 hover:text-slate-300"
+					}`}
+					aria-label={voiceMode ? "Exit voice mode" : "Start voice conversation"}
+				>
+					{voiceMode
+						? voiceState === "processing"
+							? <span className="block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent" />
+							: voiceState === "speaking" ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />
+						: <Radio className="h-4 w-4" />
+					}
+				</button>
+
+				<input
+					ref={inputRef}
+					value={input}
+					onChange={e => setInput(e.target.value)}
+					onKeyDown={e => { if (e.key === "Enter") void sendText(input); }}
+					placeholder={
+						voiceState === "speaking"   ? "I hear you…" :
+						voiceState === "responding" ? "Zoe is speaking…" :
+						voiceState === "processing" ? "Thinking…" :
+						voiceMode ? "Or type here…" :
+						"Tell Zoe about your trip…"
+					}
+					className={`flex-1 rounded-xl border border-white/10 bg-white/[0.03] ${compact ? "px-3 py-2 text-sm" : "px-5 py-3 text-base"} text-white placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500`}
+				/>
+				<button
+					onClick={() => void sendText(input)}
+					disabled={!input.trim() || typing}
+					className={`flex-shrink-0 rounded-xl bg-emerald-500 ${compact ? "px-3 py-2" : "px-4 py-3"} text-white transition hover:bg-emerald-400 disabled:bg-slate-700`}
+				>
+					<Send className="h-4 w-4" />
+				</button>
+			</div>
+			<p className={`mt-2 text-center text-[11px] text-slate-600 ${!compact ? "mx-auto max-w-2xl" : ""}`}>
+				{voiceMode ? "Voice mode active — just talk · text still works too" : "Tap the mic icon to have a voice conversation with Zoe"}
+			</p>
+		</div>
+	);
+
+	// ── Header ────────────────────────────────────────────────────────────────
+	// Ticket: "Zoe close and expand buttons not visible at 90%/100% zoom"
+	// Fixed: Use flex-shrink-0 on button container + min-w-0 on title to prevent overflow.
+	const renderHeader = (compact: boolean) => (
+		<div className="flex items-center justify-between border-b border-white/10 px-4 py-3.5">
+			<div className="flex min-w-0 items-center gap-3">
+				<div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full border transition-all duration-300 ${
+					voiceState === "responding" ? "animate-pulse border-emerald-400/40 bg-emerald-500/25" :
+					voiceState === "speaking"   ? "animate-pulse border-rose-400/30 bg-rose-500/15" :
+					"border-emerald-400/20 bg-emerald-500/15"
+				}`}>
+					<Sparkles className={`h-4 w-4 transition-colors ${
+						voiceState === "responding" ? "text-emerald-300" :
+						voiceState === "speaking"   ? "text-rose-300" : "text-emerald-300"
+					}`} />
+				</div>
+				<div className="min-w-0">
+					<p className="truncate font-semibold leading-none text-white">Zoe</p>
+					<p className="mt-0.5 truncate text-[11px] text-emerald-300">{voiceStatusLabel(voiceState)}</p>
+				</div>
+			</div>
+
+			{/* Button row — flex-shrink-0 ensures buttons NEVER get pushed out at any zoom level */}
+			<div className="flex flex-shrink-0 items-center gap-1 pl-2">
+				<button
+					onClick={toggleVoiceMode}
+					title={voiceMode ? "Exit voice mode" : "Start voice conversation"}
+					className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition ${
+						voiceMode ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/30" : "text-slate-400 hover:text-slate-200"
+					}`}
+					aria-label={voiceMode ? "Exit voice mode" : "Start voice conversation"}
+				>
+					<Radio className="h-4 w-4" />
+				</button>
+				{compact && (
+					<button
+						onClick={() => setExpanded(true)}
+						className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
+						aria-label="Expand"
+						title="Expand"
+					>
+						<Maximize2 className="h-4 w-4" />
+					</button>
+				)}
+				{!compact && (
+					<button
+						onClick={() => setExpanded(false)}
+						className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
+						aria-label="Collapse"
+						title="Collapse"
+					>
+						<Minimize2 className="h-4 w-4" />
+					</button>
+				)}
+				<button
+					onClick={() => { setIsOpen(false); setExpanded(false); }}
+					className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
+					aria-label="Close Zoe"
+					title="Close"
+				>
+					<X className="h-4 w-4" />
+				</button>
+			</div>
+		</div>
+	);
+
+	// ── Compact panel ─────────────────────────────────────────────────────────
 	if (!expanded) {
 		return (
-			<>
-				<div onClick={() => setIsOpen(false)} className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm sm:hidden" aria-hidden="true" />
+			<div
+				className="fixed bottom-6 right-6 z-50 flex w-[min(420px,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0f1117] shadow-2xl"
+				style={{ maxHeight: "min(520px, calc(100dvh - 5rem))" }}
+			>
 				<div
-					role="dialog"
-					aria-modal="true"
-					aria-label="Zoe chat"
-					className="fixed z-50 flex flex-col border border-white/10 bg-slate-950/95 shadow-2xl backdrop-blur inset-x-0 bottom-0 h-[75vh] rounded-t-3xl sm:inset-auto sm:bottom-6 sm:right-6 sm:h-[560px] sm:w-[390px] sm:rounded-3xl"
+					className="flex justify-center py-2 sm:hidden"
+					onTouchStart={handleDragHandleTouchStart}
+					onTouchEnd={handleDragHandleTouchEnd}
 				>
-					<div onTouchStart={handleDragHandleTouchStart} onTouchEnd={handleDragHandleTouchEnd} className="flex justify-center pt-2 pb-1 sm:hidden touch-none" aria-hidden="true">
-						<div className="h-1 w-12 rounded-full bg-white/20" />
-					</div>
-
-					{/* Header */}
-					<div className="flex items-center justify-between border-b border-white/10 px-4 py-3.5">
-						<div className="flex items-center gap-3">
-							<div className="flex h-9 w-9 items-center justify-center rounded-full border border-emerald-400/20 bg-emerald-500/15">
-								<Sparkles className="h-4 w-4 text-emerald-300" />
-							</div>
-							<div>
-								<p className="font-semibold leading-none text-white">Zoe</p>
-								<p className="mt-0.5 text-xs text-emerald-300">Your travel agent</p>
-							</div>
-						</div>
-						<div className="flex items-center gap-1.5">
-							<button onClick={() => setExpanded(true)} aria-label="Expand chat" title="Expand" className="hidden sm:inline-flex items-center justify-center min-h-11 min-w-11 rounded-xl p-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-white">
-								<Maximize2 className="h-4 w-4" />
-							</button>
-							<button onClick={() => setIsOpen(false)} aria-label="Close chat" className="inline-flex items-center justify-center min-h-11 min-w-11 rounded-xl p-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-white">
-								<X className="h-4 w-4" />
-							</button>
-						</div>
-					</div>
-
-					<div className="flex-1 overflow-y-auto px-4 py-4">
-						<div className="space-y-3">
-							{messages.map((m, i) => renderMessage(m, i, true))}
-							{typing && renderTypingDots(false)}
-							<div ref={endRef} />
-						</div>
-					</div>
-
-					{renderVoiceOverlay()}
-					{renderInput(true)}
+					<div className="h-1 w-10 rounded-full bg-white/20" />
 				</div>
-			</>
+
+				{renderHeader(true)}
+
+				{voiceMode ? (
+					renderVoiceOrb()
+				) : (
+					<div className="flex-1 space-y-3 overflow-y-auto p-4 text-sm">
+						{messages.map((msg, i) => renderMessage(msg, i, true))}
+						{typing && renderTypingDots(false)}
+						<div ref={endRef} />
+					</div>
+				)}
+
+				{renderInput(true)}
+			</div>
 		);
 	}
 
-	// ── Expanded view ─────────────────────────────────────────────────────────
+	// ── Expanded panel (with sidebar) ─────────────────────────────────────────
 	return (
-		<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-			<div className="flex h-[85vh] w-[88vw] max-w-[1200px] overflow-hidden rounded-3xl border border-white/10 bg-slate-950 shadow-2xl">
+		<div className="fixed inset-0 z-50 flex items-end justify-end p-0 sm:items-center sm:justify-center sm:p-6">
+			<div className="flex h-full w-full flex-col overflow-hidden rounded-none border border-white/10 bg-[#0f1117] shadow-2xl sm:h-[min(700px,90dvh)] sm:w-[min(900px,95vw)] sm:rounded-2xl">
+				{renderHeader(false)}
 
-				{/* Sidebar */}
-				<div className="flex w-[260px] flex-shrink-0 flex-col border-r border-white/10 bg-slate-950">
-					<div className="flex items-center justify-between border-b border-white/10 px-4 py-4">
-						<div className="flex items-center gap-2">
-							<div className="flex h-7 w-7 items-center justify-center rounded-lg border border-emerald-400/20 bg-emerald-500/15">
-								<Sparkles className="h-3.5 w-3.5 text-emerald-300" />
-							</div>
-							<span className="font-semibold text-white">Zoe</span>
+				<div className="flex flex-1 overflow-hidden">
+					{/* Sidebar */}
+					<div className="hidden w-64 flex-shrink-0 flex-col border-r border-white/10 sm:flex">
+						<div className="flex items-center justify-between px-4 py-3">
+							<span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Conversations</span>
+							<button
+								onClick={startNewConversation}
+								className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 hover:bg-white/[0.06] hover:text-white"
+								title="New conversation"
+							>
+								<Plus className="h-3.5 w-3.5" />
+							</button>
 						</div>
-						<button onClick={startNewConversation} aria-label="New conversation" title="New conversation" className="inline-flex items-center justify-center min-h-11 min-w-11 rounded-lg p-1.5 text-slate-400 transition hover:bg-white/[0.06] hover:text-white">
-							<Edit3 className="h-4 w-4" />
-						</button>
-					</div>
-
-					<div className="px-3 pt-3">
-						<button onClick={startNewConversation} className="flex w-full items-center gap-2 rounded-xl border border-white/10 px-3 py-2.5 text-sm text-slate-300 transition hover:bg-white/[0.06] hover:text-white">
-							<Plus className="h-4 w-4" />
-							New conversation
-						</button>
-					</div>
-
-					<div className="mt-3 flex-1 overflow-y-auto px-2 pb-4">
-						{loadingConvs ? (
-							<div className="flex justify-center py-6"><Loader2 className="h-4 w-4 animate-spin text-slate-500" /></div>
-						) : conversations.length === 0 ? (
-							<p className="px-2 py-4 text-xs text-slate-600">No conversations yet.</p>
-						) : (
-							<div className="space-y-0.5">
-								{conversations.map(conv => (
-									<div key={conv.id} className={`group relative flex items-center rounded-xl transition ${conversationId === conv.id ? "bg-white/[0.08]" : "hover:bg-white/[0.04]"}`}>
+						<div className="flex-1 overflow-y-auto">
+							{loadingConvs ? (
+								<div className="flex items-center justify-center py-8">
+									<Loader2 className="h-4 w-4 animate-spin text-slate-500" />
+								</div>
+							) : conversations.length === 0 ? (
+								<p className="px-4 py-3 text-xs text-slate-600">No conversations yet</p>
+							) : (
+								conversations.map(conv => (
+									<div
+										key={conv.id}
+										onClick={() => loadConversation(conv)}
+										className={`group relative flex cursor-pointer items-center gap-2 px-4 py-2.5 hover:bg-white/[0.04] ${
+											conv.id === conversationId ? "bg-white/[0.06]" : ""
+										}`}
+									>
 										{renamingId === conv.id ? (
-											<div className="flex flex-1 items-center gap-1 px-3 py-2">
-												<input
-													ref={renameInputRef}
-													value={renameValue}
-													onChange={e => setRenameValue(e.target.value)}
-													onKeyDown={e => {
-														if (e.key === "Enter") void commitRename(conv.id);
-														if (e.key === "Escape") setRenamingId(null);
-													}}
-													onBlur={() => void commitRename(conv.id)}
-													className="flex-1 rounded-lg border border-emerald-500/40 bg-slate-900 px-2 py-1 text-xs text-white focus:outline-none"
-												/>
-											</div>
+											<input
+												ref={renameInputRef}
+												value={renameValue}
+												onChange={e => setRenameValue(e.target.value)}
+												onBlur={() => commitRename(conv.id)}
+												onKeyDown={e => {
+													if (e.key === "Enter") commitRename(conv.id);
+													if (e.key === "Escape") setRenamingId(null);
+												}}
+												onClick={e => e.stopPropagation()}
+												className="flex-1 rounded border border-emerald-500/50 bg-transparent px-1 py-0.5 text-xs text-white outline-none"
+											/>
 										) : (
-											<button onClick={() => loadConversation(conv)} className="flex-1 min-w-0 px-3 py-2.5 text-left">
-												<p className={`truncate text-sm font-medium leading-snug ${conversationId === conv.id ? "text-white" : "text-slate-400"}`}>{conv.title}</p>
-												<p className="mt-0.5 text-[11px] text-slate-600">{timeAgo(conv.updated_at)}</p>
-											</button>
-										)}
-										{renamingId !== conv.id && (
-											<div className="relative flex-shrink-0 pr-1 opacity-0 group-hover:opacity-100 transition-opacity">
+											<>
+												<span className="flex-1 truncate text-xs text-slate-300">{conv.title}</span>
+												<span className="flex-shrink-0 text-[10px] text-slate-600">{timeAgo(conv.updated_at)}</span>
 												<button
-													onClick={e => {
-														e.stopPropagation();
-														setOpenMenuId(openMenuId === conv.id ? null : conv.id);
-													}}
-													aria-label="Conversation actions"
-													className="inline-flex items-center justify-center min-h-11 min-w-11 rounded-lg p-1.5 text-slate-500 hover:bg-white/[0.08] hover:text-slate-300"
+													onClick={e => { e.stopPropagation(); setOpenMenuId(openMenuId === conv.id ? null : conv.id); }}
+													className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition"
 												>
-													<MoreHorizontal className="h-3.5 w-3.5" />
+													<MoreHorizontal className="h-3.5 w-3.5 text-slate-500" />
 												</button>
-												{openMenuId === conv.id && (
-													<div className="absolute right-0 top-8 z-10 min-w-[120px] rounded-xl border border-white/10 bg-slate-900 py-1 shadow-2xl">
-														<button onClick={e => startRename(conv, e)} className="flex w-full items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-white/[0.06] hover:text-white">
-															<Edit3 className="h-3.5 w-3.5" /> Rename
-														</button>
-														<button onClick={e => void deleteConversation(conv.id, e)} className="flex w-full items-center gap-2 px-3 py-2 text-sm text-rose-400 hover:bg-rose-500/10">
-															<Trash2 className="h-3.5 w-3.5" /> Delete
-														</button>
-													</div>
-												)}
+											</>
+										)}
+										{openMenuId === conv.id && (
+											<div className="absolute right-2 top-8 z-10 rounded-lg border border-white/10 bg-[#1a1d27] py-1 shadow-xl">
+												<button onClick={e => startRename(conv, e)} className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-slate-300 hover:bg-white/[0.06]">
+													<Edit3 className="h-3 w-3" /> Rename
+												</button>
+												<button onClick={e => deleteConversation(conv.id, e)} className="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-red-400 hover:bg-white/[0.06]">
+													<Trash2 className="h-3 w-3" /> Delete
+												</button>
 											</div>
 										)}
 									</div>
-								))}
-							</div>
-						)}
-					</div>
-				</div>
-
-				{/* Main chat */}
-				<div className="flex flex-1 flex-col">
-					<div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
-						<div>
-							<p className="font-semibold text-white">{conversations.find(c => c.id === conversationId)?.title || "Zoe"}</p>
-							<p className="text-xs text-emerald-300">{voiceStatusLabel(voiceState)}</p>
-						</div>
-						<div className="flex items-center gap-2">
-							<button onClick={() => setExpanded(false)} aria-label="Compact view" className="inline-flex items-center justify-center min-h-11 min-w-11 rounded-xl p-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-white" title="Compact view">
-								<Minimize2 className="h-5 w-5" />
-							</button>
-							<button onClick={() => { setIsOpen(false); setExpanded(false); }} aria-label="Close chat" className="inline-flex items-center justify-center min-h-11 min-w-11 rounded-xl p-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-white">
-								<X className="h-5 w-5" />
-							</button>
+								))
+							)}
 						</div>
 					</div>
 
-					<div className="flex-1 overflow-y-auto px-6 py-6">
-						{loadingMessages ? (
-							<div className="flex justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-slate-500" /></div>
+					{/* Main chat area */}
+					<div className="flex flex-1 flex-col overflow-hidden">
+						{voiceMode ? (
+							renderVoiceOrb()
 						) : (
-							<div className="mx-auto max-w-2xl space-y-4">
-								{messages.map((m, i) => renderMessage(m, i, false))}
+							<div className="flex-1 space-y-4 overflow-y-auto p-6">
+								{loadingMessages ? (
+									<div className="flex items-center justify-center py-12">
+										<Loader2 className="h-5 w-5 animate-spin text-slate-500" />
+									</div>
+								) : (
+									messages.map((msg, i) => renderMessage(msg, i, false))
+								)}
 								{typing && renderTypingDots(true)}
 								<div ref={endRef} />
 							</div>
 						)}
+						{renderInput(false)}
 					</div>
-
-					{renderVoiceOverlay()}
-					{renderInput(false)}
 				</div>
 			</div>
 		</div>
