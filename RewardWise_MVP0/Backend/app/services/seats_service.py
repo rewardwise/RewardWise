@@ -198,7 +198,6 @@ async def get_trip_detail(trip_id: str) -> dict:
 
     return {
         "trips": trips,
-        "booking_links": data.get("booking_links", []),
         "origin_coords": data.get("origin_coordinates"),
         "destination_coords": data.get("destination_coordinates"),
     }
