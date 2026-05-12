@@ -553,7 +553,7 @@ if (prefillRaw && onFillSearch) {
 					value={input}
 					onChange={e => setInput(e.target.value)}
 					onKeyDown={e => { if (e.key === "Enter") void sendText(input); }}
-					placeholder={listening ? "Listening…" : "Tell Zoe about your trip…"}
+					placeholder={isListening ? "Listening…" : "Tell Zoe about your trip…"}
 					className={`flex-1 rounded-xl border border-white/10 bg-white/[0.03] px-${compact ? "3" : "5"} py-${compact ? "2" : "3"} text-base text-white placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500`}
 				/>
 				<button
