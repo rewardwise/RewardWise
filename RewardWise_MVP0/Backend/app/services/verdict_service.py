@@ -1,5 +1,6 @@
 import logging
 from typing import Optional
+from urllib.parse import urlencode
 
 from app.services.seats_service import get_trip_detail
 
@@ -60,6 +61,97 @@ def _get_booking_link(program: Optional[str], trip_ids: list) -> dict:
         "airline_link": airline_url,
         "preferred": "airline" if program else "none",
     }
+
+
+def _united_url(
+    *,
+    origin: str,
+    destination: str,
+    depart_date: str,
+    return_date: Optional[str],
+    travelers: int,
+    is_award: bool,
+) -> str:
+    """Build United search-results URL for cash or award handoff.
+
+    Cash: omits `at` and `rm`; sets tqp=R.
+    Award: at=1, rm=1, tqp=A. Anonymous users redirect to login with params
+           preserved; logged-in users see award inventory directly.
+
+    Round-trip: includes r, includes newHP=True, omits tt, sc has comma form.
+    One-way: omits r, omits newHP, sets tt=1, sc has single value.
+
+    Cabin: hard-coded to economy (sc=7). Cabin pass-through deferred.
+    """
+    base = "https://www.united.com/en/us/fsr/choose-flights"
+    is_roundtrip = return_date is not None
+
+    params: dict[str, str] = {
+        "f": origin.upper(),
+        "t": destination.upper(),
+        "d": depart_date,
+        "px": str(travelers),
+        "taxng": "1",
+        "clm": "7",
+        "st": "bestmatches",
+        "tqp": "A" if is_award else "R",
+    }
+
+    if is_roundtrip:
+        params["r"] = return_date  # type: ignore[assignment]
+        params["sc"] = "7,7"
+        params["newHP"] = "True"
+    else:
+        params["sc"] = "7"
+        params["tt"] = "1"
+
+    if is_award:
+        params["at"] = "1"
+        params["rm"] = "1"
+
+    return f"{base}?{urlencode(params)}"
+
+
+def _get_booking_link_for_verdict(
+    program: Optional[str],
+    trip_ids: list,
+    *,
+    origin: Optional[str],
+    destination: Optional[str],
+    depart_date: Optional[str],
+    return_date: Optional[str],
+    travelers: Optional[int],
+    recommendation: str,
+) -> dict:
+    """Return booking_link dict, using templated URL when program is deep-linkable.
+
+    Currently templated: United (cash + award). All other programs fall through
+    to homepage handoff via the existing _get_booking_link.
+
+    Extending to more programs: add cases here, do NOT modify _get_booking_link.
+    """
+    if (
+        program
+        and program.lower().strip() == "united"
+        and recommendation in {"pay_cash", "use_points"}
+        and origin
+        and destination
+        and depart_date
+        and travelers
+    ):
+        return {
+            "seats_aero_link": None,
+            "airline_link": _united_url(
+                origin=origin,
+                destination=destination,
+                depart_date=depart_date,
+                return_date=return_date,
+                travelers=travelers,
+                is_award=(recommendation == "use_points"),
+            ),
+            "preferred": "airline",
+        }
+    return _get_booking_link(program, trip_ids)
 
 
 def _pick_booking_link(booking_links: list, winner_program: str) -> Optional[str]:
@@ -264,7 +356,7 @@ async def generate_verdict(
     return_award_options: list,
     user_programs: Optional[list] = None,
 ) -> dict:
-    del date, is_roundtrip, return_date, return_award_options  # reserved for future richer copy
+    del is_roundtrip, return_award_options  # reserved for future richer copy
 
     # When origin/destination came in as a metro CSV (e.g. "JFK,LGA,EWR"),
     # use the first airport as a fallback for prompts that need a single code,
@@ -382,7 +474,6 @@ async def generate_verdict(
     remaining_seats = int(winner.get("remaining_seats") or 0)
     program_label = _fmt(program)
     trip_ids = winner.get("trip_ids", []) if isinstance(winner, dict) else []
-    booking_link = _get_booking_link(program, trip_ids)
     winner_origin = winner.get("origin_airport") or display_origin
     winner_destination = winner.get("destination_airport") or display_destination
     winner_payload = {
@@ -405,7 +496,16 @@ async def generate_verdict(
             confidence="low",
             confidence_reason="Award availability was found, but live cash pricing was unavailable.",
             booking_note=f"If you want to use points, verify the award on {program_label}'s site before transferring.",
-            booking_link=booking_link,
+            booking_link=_get_booking_link_for_verdict(
+                program,
+                trip_ids,
+                origin=display_origin,
+                destination=display_destination,
+                depart_date=date,
+                return_date=return_date,
+                travelers=travelers,
+                recommendation="wait",
+            ),
             winner=winner_payload,
             cash_price=cash_price,
             data_quality=data_quality,
@@ -442,7 +542,16 @@ async def generate_verdict(
             confidence="high" if cpp < 1.0 or cash_price <= 200 else "medium",
             confidence_reason="Live cash pricing is low relative to the best award option available.",
             booking_note="Pay cash and keep your points for a higher-value redemption.",
-            booking_link=booking_link,
+            booking_link=_get_booking_link_for_verdict(
+                program,
+                trip_ids,
+                origin=display_origin,
+                destination=display_destination,
+                depart_date=date,
+                return_date=return_date,
+                travelers=travelers,
+                recommendation="pay_cash",
+            ),
             winner=winner_payload,
             cash_price=cash_price,
             data_quality=data_quality,
@@ -484,7 +593,20 @@ async def generate_verdict(
             confidence="high",
             confidence_reason="Live cash pricing and matching award availability were both found, and the cents-per-point value is strong.",
             booking_note=f"Verify the award on {program_label}'s site before you transfer any points.",
-            booking_link=await _resolve_use_points_booking_link(program, trip_ids, booking_link),
+            booking_link=await _resolve_use_points_booking_link(
+                program,
+                trip_ids,
+                _get_booking_link_for_verdict(
+                    program,
+                    trip_ids,
+                    origin=winner_origin,
+                    destination=winner_destination,
+                    depart_date=date,
+                    return_date=return_date,
+                    travelers=travelers,
+                    recommendation="use_points",
+                ),
+            ),
             winner=winner_payload,
             cash_price=cash_price,
             data_quality=data_quality,
@@ -517,7 +639,16 @@ async def generate_verdict(
             confidence="medium",
             confidence_reason="Both cash and award data were found, but the value gap is not wide enough to be decisive.",
             booking_note="Try shifting the date or cabin to see if better award value opens up.",
-            booking_link=booking_link,
+            booking_link=_get_booking_link_for_verdict(
+                program,
+                trip_ids,
+                origin=display_origin,
+                destination=display_destination,
+                depart_date=date,
+                return_date=return_date,
+                travelers=travelers,
+                recommendation="wait",
+            ),
             winner=winner_payload,
             cash_price=cash_price,
             data_quality=data_quality,
@@ -547,7 +678,16 @@ async def generate_verdict(
         confidence="low",
         confidence_reason="The result landed in a fallback decision path.",
         booking_note="Retry with a nearby date for a stronger answer.",
-        booking_link=booking_link,
+        booking_link=_get_booking_link_for_verdict(
+            program,
+            trip_ids,
+            origin=display_origin,
+            destination=display_destination,
+            depart_date=date,
+            return_date=return_date,
+            travelers=travelers,
+            recommendation="wait",
+        ),
         winner=winner_payload,
         cash_price=cash_price,
         data_quality=data_quality,

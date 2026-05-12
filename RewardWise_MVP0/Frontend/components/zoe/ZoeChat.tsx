@@ -553,14 +553,8 @@ if (prefillRaw && onFillSearch) {
 					value={input}
 					onChange={e => setInput(e.target.value)}
 					onKeyDown={e => { if (e.key === "Enter") void sendText(input); }}
-					placeholder={
-						voiceState === "speaking"   ? "I hear you…" :
-						voiceState === "responding" ? "Zoe is speaking…" :
-						voiceState === "processing" ? "Thinking…" :
-						voiceMode ? "Or type here…" :
-						"Tell Zoe about your trip…"
-					}
-					className={`flex-1 rounded-xl border border-white/10 bg-white/[0.03] ${compact ? "px-3 py-2 text-sm" : "px-5 py-3 text-base"} text-white placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500`}
+					placeholder={listening ? "Listening…" : "Tell Zoe about your trip…"}
+					className={`flex-1 rounded-xl border border-white/10 bg-white/[0.03] px-${compact ? "3" : "5"} py-${compact ? "2" : "3"} text-base text-white placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500`}
 				/>
 				<button
 					onClick={() => void sendText(input)}
@@ -710,18 +704,19 @@ if (prefillRaw && onFillSearch) {
 										}`}
 									>
 										{renamingId === conv.id ? (
-											<input
-												ref={renameInputRef}
-												value={renameValue}
-												onChange={e => setRenameValue(e.target.value)}
-												onBlur={() => commitRename(conv.id)}
-												onKeyDown={e => {
-													if (e.key === "Enter") commitRename(conv.id);
-													if (e.key === "Escape") setRenamingId(null);
-												}}
-												onClick={e => e.stopPropagation()}
-												className="flex-1 rounded border border-emerald-500/50 bg-transparent px-1 py-0.5 text-xs text-white outline-none"
-											/>
+											<div className="flex flex-1 items-center gap-1 px-3 py-2">
+												<input
+													ref={renameInputRef}
+													value={renameValue}
+													onChange={e => setRenameValue(e.target.value)}
+													onKeyDown={e => {
+														if (e.key === "Enter") void commitRename(conv.id);
+														if (e.key === "Escape") setRenamingId(null);
+													}}
+													onBlur={() => void commitRename(conv.id)}
+													className="flex-1 rounded-lg border border-emerald-500/40 bg-slate-900 px-2 py-1 text-base text-white focus:outline-none"
+												/>
+											</div>
 										) : (
 											<>
 												<span className="flex-1 truncate text-xs text-slate-300">{conv.title}</span>
