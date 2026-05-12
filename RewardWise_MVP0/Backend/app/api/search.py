@@ -486,6 +486,7 @@ async def public_search(
     origin = params.origin
     destination = params.destination
     departure_date = params.date
+    departure_date_end = params.date_end
     cabin = params.cabin.value
     travelers = params.travelers
     return_date = params.return_date
@@ -502,6 +503,7 @@ async def public_search(
             "origin": origin,
             "destination": destination,
             "departure_date": departure_date,
+            "departure_date_end": departure_date_end,
             "return_date": return_date,
             "passengers": travelers,
             "cabin": cabin,
