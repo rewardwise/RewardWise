@@ -541,7 +541,6 @@ export default function VerdictCard({
       verdict.explanation || verdict.verdict || "",
       verdict.confidence ? `${confidence.charAt(0).toUpperCase() + confidence.slice(1)} confidence.` : "",
       verdict.confidence_reason || "",
-      verdict.next_step?.label ? `Next step: ${verdict.next_step.label}.` : "",
     ].filter(Boolean);
     return pieces.join(" ");
   }, [confidence, recommendationLabel, verdict]);
@@ -958,15 +957,6 @@ export default function VerdictCard({
     </div>
   </div>
 )}
-
-            {/* Next step — full-app only */}
-            {!publicPreview && verdict.next_step?.label && (
-              <div className="mt-5 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-4">
-                <p className="mb-1 text-[11px] uppercase tracking-[0.14em] text-emerald-300">Next step</p>
-                <p className="font-semibold text-white">{verdict.next_step.label}</p>
-                {verdict.next_step.prompt && <p className="mt-1 text-sm text-slate-300">Try asking: "{verdict.next_step.prompt}"</p>}
-              </div>
-            )}
 
             {/* Missing data */}
             {verdict.missing_sources && verdict.missing_sources.length > 0 && (
