@@ -33,7 +33,6 @@ const PAD_Y = MAP_HEIGHT * 0.20; // 20% → dots in ~60–240 px vertically
 function cabinLabel(cabin?: string) {
   const labels: Record<string, string> = {
     economy: "economy",
-    premium_economy: "premium economy",
     business: "business",
     first: "first class",
   };

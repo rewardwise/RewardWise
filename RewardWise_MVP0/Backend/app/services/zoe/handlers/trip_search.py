@@ -54,7 +54,7 @@ Good collection examples:
 - "ATL to Vancouver, nice. When do you want to fly?"
 - "Love it. Is this one-way or round trip?"
 - "Easy. How many travelers?"
-- "Solo trip, nice. What cabin are we looking at — economy, premium economy, business, or first?"
+- "Solo trip, nice. What cabin are we looking at — economy, business, or first?"
 - "Perfect — ATL to YVR next weekend, one-way in economy. I’m running that search now."
 
 Bad collection examples:
@@ -115,7 +115,7 @@ def _collecting_reply(decision: SlotDecision) -> str:
         return "How many travelers?"
 
     if slot == "cabin":
-        return "What cabin class do you want — economy, premium economy, business, or first?"
+        return "What cabin class do you want — economy, business, or first?"
 
     return decision.fallback_question or "Tell me one more detail for the search."
 

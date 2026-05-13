@@ -57,7 +57,7 @@ Read the user's message and extract structured data. Return ONLY valid JSON — 
     "date_text":         "<what the user said about departure date>" | null,
     "return_date_text":  "<what the user said about return date>"   | null,
     "trip_type":         "oneway" | "roundtrip" | null,
-    "cabin":             "economy" | "business" | "first" | "premium_economy" | null,
+    "cabin":             "economy" | "business" | "first" | null,
     "travelers":         <integer> | null
   }
 }"""

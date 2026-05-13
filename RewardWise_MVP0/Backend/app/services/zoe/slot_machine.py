@@ -41,7 +41,7 @@ _SLOT_PROMPT: dict[str, str] = {
     "trip_type": "Is this a one-way trip or round-trip?",
     "return_date": "And when are you coming back?",
     "travelers": "How many travelers?",
-    "cabin": "What cabin class do you want — economy, premium economy, business, or first?",
+    "cabin": "What cabin class do you want — economy, business, or first?",
 }
 
 
@@ -497,10 +497,6 @@ def _normalize_cabin(value) -> Optional[str]:
         "business class": "business",
         "first": "first",
         "first class": "first",
-        "premium economy": "premium_economy",
-        "premium": "premium_economy",
-        "premium_economy": "premium_economy",
-        "premiumeconomy": "premium_economy",
     }
     return cabin_map.get(text)
 

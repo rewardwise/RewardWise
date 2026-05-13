@@ -298,7 +298,7 @@ export default function ConciergePage() {
 									{[
 										"Optimal flight award redemption",
 										"Points transfer path optimization",
-										"Economy & Premium Economy focus",
+										"Economy focus",
 										"Email support",
 										"24-48hr turnaround",
 										"1 round of revisions",

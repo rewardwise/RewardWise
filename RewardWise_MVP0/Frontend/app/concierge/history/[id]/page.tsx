@@ -48,7 +48,6 @@ function cabinLabel(cabin?: string | null) {
 	if (!cabin) return "—";
 	const labels: Record<string, string> = {
 		economy: "Economy",
-		premium: "Premium Economy",
 		business: "Business",
 		first: "First",
 	};
