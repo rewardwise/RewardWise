@@ -31,7 +31,6 @@ Key invariants:
 
 from __future__ import annotations
 
-import re
 from typing import Any, Dict, Optional
 
 from app.db.client import get_db_client
@@ -46,25 +45,7 @@ from app.services.zoe.handlers import (
     destination,
     wallet_support,
     off_topic,
-)
-
-
-# ── Greeting detection (no LLM call needed) ───────────────────────────────────
-
-_GREETING_RE = re.compile(
-    r"^(?:"
-    r"hi[!. ]*|hey[!. ]*|hello[!. ]*|howdy[!. ]*|"
-    r"(?:hi|hey|hello)\s+(?:zoe|there|everyone|all|guys?)[!. ]*|"
-    r"(?:hi|hey|hello)[,\s]+\w{1,20}[,\s]+(?:hi|hey|hello)[,\s]+\w{1,20}[!. ]*|"
-    r"good\s+(?:morning|afternoon|evening|day)[!. ]*|"
-    r"what'?s\s+up[!. ]*|sup[!. ]*|yo[!. ]*|start"
-    r")$",
-    re.IGNORECASE,
-)
-
-_WELCOME = (
-    "Hey! I'm Zoe — I can help you plan a trip, figure out if your points are worth using, "
-    "or answer any travel questions. What's on your mind?"
+    small_talk,
 )
 
 
@@ -155,9 +136,16 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
     if not text:
         return _reply("Hey! What trip are you thinking about?", intent="trip")
 
-    # ── Guard: pure greeting — no LLM needed ─────────────────────────────────
-    if _GREETING_RE.match(text):
-        return _reply(_WELCOME, intent="trip")
+    # ── Guard: casual greeting / small talk only ──────────────────────────────
+    # This intentionally runs before the full pipeline, but small_talk.is_small_talk()
+    # excludes real trip/search/verdict requests like "hey I want to go to Vancouver".
+    if small_talk.is_small_talk(text):
+        result = await small_talk.handle(
+            text,
+            frontend_history,
+            is_voice=is_voice,
+        )
+        return _reply(result["message"], intent="small_talk")
 
     # ─────────────────────────────────────────────────────────────────────────
     # STEP 1: Load session state from Redis
@@ -187,17 +175,40 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
     intent: str = parse_result.get("intent", "trip")
     entities: dict = parse_result.get("entities", {})
 
+    # If Zoe just asked for a specific slot, the next reply is part of trip collection.
+    # This prevents the parse LLM from misrouting answers like:
+    # "economy sounds good" -> verdict_strategy
+    # "just me" -> off_topic/wallet/etc.
+    # "MIA" -> destination
+    if session.last_asked:
+        if intent != "trip":
+            print(f"🧭 ZOE INTENT OVERRIDE: {intent} → trip because last_asked={session.last_asked}")
+        intent = "trip"
+
     print(f"🧭 ZOE PARSE: intent={intent} entities={list(k for k,v in entities.items() if v)}")
 
     # ─────────────────────────────────────────────────────────────────────────
     # STEP 3: Slot machine — merge entities, decide next action (pure Python)
     # ─────────────────────────────────────────────────────────────────────────
-    decision = slot_machine_run(session, intent, entities, is_voice=is_voice)
+    decision = slot_machine_run(
+        session,
+        intent,
+        entities,
+        user_message=text,
+        is_voice=is_voice,
+    )
+
+    print("🧠 ZOE STATE:", decision.trip_state.model_dump())
+    print("📝 ZOE NOTES:", decision.resolution_notes)
+    print("❓ ZOE LAST_ASKED BEFORE UPDATE:", session.last_asked)
+    print("🎰 ZOE SLOT:", decision.stage, decision.next_slot, decision.ready_to_search)
 
     session.trip_state = decision.trip_state
     session.stage = decision.stage
     if decision.next_slot:
         session.last_asked = decision.next_slot
+    else:
+        session.last_asked = None
 
     print(f"🎰 ZOE SLOT: stage={decision.stage} next={decision.next_slot} ready={decision.ready_to_search}")
 
@@ -215,7 +226,7 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
     if should_retrieve(intent):
         rag_result = await rag_retrieve(intent, text, top_k=3)
 
-    kb_chunks: list[dict]  = rag_result.get("kb_chunks", [])
+    kb_chunks: list[dict] = rag_result.get("kb_chunks", [])
     rag_examples: list[dict] = rag_result.get("examples", [])
     rag_corrections: list[dict] = rag_result.get("corrections", [])
 
@@ -274,8 +285,12 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
 
     else:
         result = await trip_search.handle(
-            text, session.history, wallet, decision,
-            verdict_context=verdict_context, is_voice=is_voice,
+            text,
+            session.history,
+            wallet,
+            decision,
+            verdict_context=verdict_context,
+            is_voice=is_voice,
         )
 
     # ─────────────────────────────────────────────────────────────────────────
@@ -284,8 +299,16 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
     message_text: str = result.get("message") or "Give me a second — something went wrong on my end."
     prefill: dict | None = result.get("prefill") or None
 
-    # Hard guard: drop prefill if any required field is missing
-    if prefill and not (prefill.get("origin") and prefill.get("destination") and prefill.get("date")):
+    # Hard guard: drop prefill if any required field is missing.
+    # Cabin and travelers are product-required, so they must be present too.
+    if prefill and not (
+        prefill.get("origin")
+        and prefill.get("destination")
+        and prefill.get("date")
+        and prefill.get("tripType")
+        and prefill.get("travelers")
+        and prefill.get("cabin")
+    ):
         prefill = None
         print("⚠️ ZOE: Prefill dropped — required fields missing")
 

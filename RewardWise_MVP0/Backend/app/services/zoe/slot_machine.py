@@ -1,23 +1,20 @@
 """
 zoe/slot_machine.py
 ────────────────────
-The slot-filling state machine. Pure Python — no LLM.
+Deterministic slot-filling state machine for Zoe.
 
-This is the mechanism that enforces the one-question-per-response guarantee.
-It decides WHAT to communicate next. The LLM decides HOW to say it.
+The LLM may parse entities, but this file is the authority for what gets
+written to trip_state. It uses session memory, last_asked, IATA lookup, and
+short-answer handling so replies like "MIA", "tomorrow", "one way", "2", or
+"economy" fill the slot Zoe just asked for.
 
-Responsibilities:
-  - Identify the next required slot to ask about
-  - Transition between stages
-  - Merge newly extracted entities into trip state
-  - Resolve text → IATA codes and normalize dates
-
-The result of run() is a SlotDecision that gets handed to the handler
-which then builds the respond-call context.
+Key product rule:
+LLM can suggest. Zoe memory decides. Slot machine writes.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Literal, Optional
 
@@ -25,22 +22,26 @@ from app.services.zoe.session import TripState, ZoeSession
 from app.services.zoe import iata, date_normalizer
 
 
-# ── Slot labels (human-readable for use in respond-call context) ──────────────
+# ── Slot labels ──────────────────────────────────────────────────────────────
 
 _SLOT_QUESTIONS: dict[str, str] = {
-    "origin":      "where they're flying from",
+    "origin": "where they're flying from",
     "destination": "where they're flying to",
     "depart_date": "what date they want to depart",
-    "trip_type":   "whether it's one-way or round-trip",
+    "trip_type": "whether it's one-way or round-trip",
     "return_date": "what date they want to return",
+    "travelers": "how many travelers are going",
+    "cabin": "what cabin class they want",
 }
 
 _SLOT_PROMPT: dict[str, str] = {
-    "origin":      "Where will you be flying from?",
+    "origin": "Where will you be flying from?",
     "destination": "Where are you headed?",
     "depart_date": "When are you looking to fly?",
-    "trip_type":   "Is this a one-way trip or round-trip?",
+    "trip_type": "Is this a one-way trip or round-trip?",
     "return_date": "And when are you coming back?",
+    "travelers": "How many travelers?",
+    "cabin": "What cabin class do you want — economy, premium economy, business, or first?",
 }
 
 
@@ -48,28 +49,13 @@ _SLOT_PROMPT: dict[str, str] = {
 class SlotDecision:
     """The output of the slot machine — what to do on this turn."""
 
-    # Updated trip state after merging entities
     trip_state: TripState
-
-    # Stage after this turn
     stage: Literal["collecting", "searching", "explaining_verdict", "off_trip", "reset"]
-
-    # The next slot to ask about, if any. None = all required fields confirmed.
     next_slot: Optional[str] = None
-
-    # Human-readable description of what we're asking for (for the LLM)
     next_slot_description: Optional[str] = None
-
-    # Fallback question string if LLM can't be reached
     fallback_question: Optional[str] = None
-
-    # True when all required fields are present and search can fire
     ready_to_search: bool = False
-
-    # Prefill dict for the frontend (only set when ready_to_search)
     prefill: Optional[dict] = None
-
-    # Any entity resolution notes (for LLM context)
     resolution_notes: list[str] = field(default_factory=list)
 
 
@@ -78,22 +64,17 @@ def run(
     intent: str,
     entities: dict,
     *,
+    user_message: str = "",
     is_voice: bool = False,
 ) -> SlotDecision:
     """
     Run the slot machine for one turn.
 
-    Args:
-        session:   Current session (loaded from Redis)
-        intent:    Classified intent from the parse call
-        entities:  Extracted entities from the parse call
-        is_voice:  True if this is a voice interaction
-
-    Returns:
-        SlotDecision describing what to do next
+    Critical rule: session.last_asked wins for short/direct answers. The LLM
+    parser can suggest values, but Zoe's memory decides where they belong.
     """
 
-    # ── Non-trip intents bypass the slot machine ──────────────────────────────
+    # ── Non-trip intents bypass trip slot filling ────────────────────────────
     if intent in ("destination", "wallet_support", "verdict_strategy", "off_topic"):
         return SlotDecision(
             trip_state=session.trip_state,
@@ -110,15 +91,25 @@ def run(
             ready_to_search=False,
         )
 
-    # ── Merge entities into current trip state ────────────────────────────────
-    resolved_entities, notes = _resolve_entities(entities)
+    # ── Resolve + merge entities using current session context ───────────────
+    resolved_entities, notes = _resolve_entities(
+        entities,
+        session=session,
+        user_message=user_message,
+    )
+
     new_state = session.trip_state.merge(resolved_entities)
 
-    # ── Determine next action ─────────────────────────────────────────────────
+    # Trip type correction: one-way means return date must be cleared.
+    # TripState.merge intentionally does not clear fields, so do it here.
+    if resolved_entities.get("trip_type") == "oneway" and new_state.return_date:
+        new_state = new_state.model_copy(update={"return_date": None})
+        notes.append("Cleared return date because trip type is one-way")
+
+    # ── Determine next action ────────────────────────────────────────────────
     missing = new_state.missing_required()
 
     if not missing:
-        # All required fields confirmed — ready to search
         prefill = new_state.to_prefill()
         return SlotDecision(
             trip_state=new_state,
@@ -129,17 +120,10 @@ def run(
             resolution_notes=notes,
         )
 
-    # Still collecting — identify the next slot
     next_slot = missing[0]
 
-    # Don't re-ask the same slot we asked last turn (unless entities changed)
-    # Only skip re-ask prevention if nothing was resolved this turn
-    if next_slot == session.last_asked and not resolved_entities:
-        # Rotate to the next missing slot if available
-        if len(missing) > 1:
-            next_slot = missing[1]
-        # Otherwise stay on the same slot — the user may have just not answered
-
+    # Do NOT rotate to another missing slot just because the user failed to
+    # answer. That is how Zoe gets out of sync with what she actually asked.
     return SlotDecision(
         trip_state=new_state,
         stage="collecting",
@@ -151,118 +135,420 @@ def run(
     )
 
 
-# ── Entity resolution ─────────────────────────────────────────────────────────
+# ── Entity resolution ────────────────────────────────────────────────────────
 
-def _resolve_entities(entities: dict) -> tuple[dict, list[str]]:
+def _resolve_entities(
+    entities: dict,
+    *,
+    session: ZoeSession | None = None,
+    user_message: str = "",
+) -> tuple[dict, list[str]]:
     """
-    Resolve raw entity values from the parse call:
-    - Airport text → IATA code (where possible)
-    - Date text → ISO 8601
+    Resolve raw parse output into safe trip_state updates.
 
-    Returns (resolved_entities, notes) where notes are human-readable
-    resolution annotations for the LLM context.
+    Priority:
+      1. Generic explicit entities from parse_call
+      2. Deterministic phrase extraction from the raw message
+      3. last_asked slot override for short/direct answers
+
+    The override is the smart part: if Zoe asked for destination and the user
+    says "MIA" or "I already told you Miami", it MUST write destination=MIA
+    even if the parser mislabeled it.
     """
     resolved: dict = {}
     notes: list[str] = []
+    raw = (user_message or "").strip()
 
-    # ── Origin ────────────────────────────────────────────────────────────────
+    # First apply parser output normally.
+    _apply_generic_entities(resolved, notes, entities)
+
+    # Then patch parser gaps with deterministic route phrase extraction.
+    _apply_raw_route_heuristics(resolved, notes, raw, session)
+
+    # Finally let session memory override parser ambiguity.
+    _apply_last_asked_override(resolved, notes, entities, raw, session)
+
+    return resolved, notes
+
+
+def _apply_generic_entities(resolved: dict, notes: list[str], entities: dict) -> None:
+    """Apply explicit parser entities before context overrides."""
+
     origin_text = entities.get("origin_text") or entities.get("origin")
-    if origin_text and origin_text not in (None, "null", ""):
-        code = iata.lookup(str(origin_text))
+    if _has_value(origin_text):
+        code = _lookup_airport(origin_text)
         if code:
             resolved["origin"] = code
-            city = iata.city_name(code)
-            if city.lower() != str(origin_text).lower():
-                notes.append(f"Resolved origin '{origin_text}' → {code} ({city})")
-            else:
-                resolved["origin"] = code
+            if iata.city_name(code).lower() != str(origin_text).lower():
+                notes.append(f"Resolved origin '{origin_text}' → {code} ({iata.city_name(code)})")
         else:
-            # Keep raw text — backend will handle it
             resolved["origin"] = str(origin_text)
 
-    # ── Destination ───────────────────────────────────────────────────────────
     dest_text = entities.get("destination_text") or entities.get("destination")
-    if dest_text and dest_text not in (None, "null", ""):
-        code = iata.lookup(str(dest_text))
+    if _has_value(dest_text):
+        code = _lookup_airport(dest_text)
         if code:
             resolved["destination"] = code
-            city = iata.city_name(code)
-            if city.lower() != str(dest_text).lower():
-                notes.append(f"Resolved destination '{dest_text}' → {code} ({city})")
+            if iata.city_name(code).lower() != str(dest_text).lower():
+                notes.append(f"Resolved destination '{dest_text}' → {code} ({iata.city_name(code)})")
         else:
             resolved["destination"] = str(dest_text)
 
-    # ── Departure date ────────────────────────────────────────────────────────
     date_text = entities.get("date_text") or entities.get("depart_date") or entities.get("date")
-    if date_text and date_text not in (None, "null", ""):
+    if _has_value(date_text):
         iso = date_normalizer.normalize(str(date_text))
         if iso:
             resolved["depart_date"] = iso
             if iso != str(date_text):
                 notes.append(f"Normalized date '{date_text}' → {iso}")
-        # If normalization fails, don't set — leave slot open
 
-    # ── Return date ───────────────────────────────────────────────────────────
     return_text = entities.get("return_date_text") or entities.get("return_date")
-    if return_text and return_text not in (None, "null", ""):
+    if _has_value(return_text):
         iso = date_normalizer.normalize(str(return_text))
         if iso:
             resolved["return_date"] = iso
 
-    # ── Trip type ─────────────────────────────────────────────────────────────
-    trip_type = entities.get("trip_type")
-    if trip_type and trip_type not in (None, "null", ""):
-        t = str(trip_type).lower().strip()
-        if t in ("roundtrip", "round-trip", "round trip", "return"):
-            resolved["trip_type"] = "roundtrip"
-        elif t in ("oneway", "one-way", "one way"):
-            resolved["trip_type"] = "oneway"
+    trip_type = _parse_trip_type(entities.get("trip_type"))
+    if trip_type:
+        resolved["trip_type"] = trip_type
 
-    # If return_date was set and trip_type wasn't, infer roundtrip
     if resolved.get("return_date") and not resolved.get("trip_type"):
-        if not _session_trip_type_already_set(entities):
+        resolved["trip_type"] = "roundtrip"
+
+    cabin = _normalize_cabin(entities.get("cabin"))
+    if cabin:
+        resolved["cabin"] = cabin
+
+    travelers = _parse_travelers(entities.get("travelers"))
+    if travelers is not None:
+        resolved["travelers"] = travelers
+
+
+def _apply_raw_route_heuristics(
+    resolved: dict,
+    notes: list[str],
+    raw: str,
+    session: ZoeSession | None,
+) -> None:
+    """
+    Deterministically recover obvious route info from raw text.
+
+    This covers cases where the parse LLM misses phrases like:
+      - "I want to go to miami"
+      - "from newark"
+      - "I already told you Miami"
+    """
+    if not raw:
+        return
+
+    current = session.trip_state if session else TripState()
+
+    # Explicit origin phrases win origin.
+    if "origin" not in resolved:
+        origin_phrase = _extract_after_marker(
+            raw,
+            markers=(
+                "from",
+                "out of",
+                "leaving from",
+                "departing from",
+                "flying from",
+                "fly from",
+            ),
+        )
+        code = _find_airport_in_text(origin_phrase) if origin_phrase else None
+        if code:
+            resolved["origin"] = code
+            notes.append(f"Resolved origin from raw message → {code} ({iata.city_name(code)})")
+
+    # Explicit destination phrases win destination.
+    if "destination" not in resolved:
+        dest_phrase = _extract_after_marker(
+            raw,
+            markers=(
+                "to",
+                "into",
+                "headed to",
+                "going to",
+                "go to",
+                "travel to",
+                "traveling to",
+                "flying to",
+                "fly to",
+                "visit",
+                "visiting",
+            ),
+        )
+        code = _find_airport_in_text(dest_phrase) if dest_phrase else None
+        if code:
+            resolved["destination"] = code
+            notes.append(f"Resolved destination from raw message → {code} ({iata.city_name(code)})")
+
+    # Memory-aware fallback: if exactly one side is missing, airport/city text
+    # in a short correction/direct answer should fill the missing side.
+    found_airport = _find_airport_in_text(raw)
+    if found_airport:
+        if current.origin and not current.destination and "destination" not in resolved:
+            resolved.pop("origin", None)
+            resolved["destination"] = found_airport
+            notes.append(f"Used memory to fill missing destination → {found_airport} ({iata.city_name(found_airport)})")
+        elif current.destination and not current.origin and "origin" not in resolved:
+            resolved.pop("destination", None)
+            resolved["origin"] = found_airport
+            notes.append(f"Used memory to fill missing origin → {found_airport} ({iata.city_name(found_airport)})")
+
+
+def _apply_last_asked_override(
+    resolved: dict,
+    notes: list[str],
+    entities: dict,
+    raw: str,
+    session: ZoeSession | None,
+) -> None:
+    """Force direct answers into the slot Zoe just asked for."""
+    if not session or not session.last_asked or not raw:
+        return
+
+    last_slot = session.last_asked
+
+    if last_slot == "origin":
+        value = (
+            entities.get("origin_text")
+            or entities.get("origin")
+            or entities.get("destination_text")
+            or entities.get("destination")
+            or raw
+        )
+        code = _find_airport_in_text(str(value)) or _find_airport_in_text(raw)
+        if code:
+            # Remove any parser-misassigned destination from this turn only.
+            resolved.pop("destination", None)
+            resolved["origin"] = code
+            notes.append(f"Used direct answer for origin → {code} ({iata.city_name(code)})")
+
+    elif last_slot == "destination":
+        value = (
+            entities.get("destination_text")
+            or entities.get("destination")
+            or entities.get("origin_text")
+            or entities.get("origin")
+            or raw
+        )
+        code = _find_airport_in_text(str(value)) or _find_airport_in_text(raw)
+        if code:
+            # Remove any parser-misassigned origin from this turn only.
+            resolved.pop("origin", None)
+            resolved["destination"] = code
+            notes.append(f"Used direct answer for destination → {code} ({iata.city_name(code)})")
+
+    elif last_slot == "depart_date":
+        value = entities.get("date_text") or entities.get("depart_date") or entities.get("date") or raw
+        iso = date_normalizer.normalize(str(value)) if value else None
+        if iso:
+            resolved["depart_date"] = iso
+            notes.append(f"Used direct answer for departure date → {iso}")
+
+    elif last_slot == "return_date":
+        value = entities.get("return_date_text") or entities.get("return_date") or entities.get("date_text") or raw
+        iso = date_normalizer.normalize(str(value)) if value else None
+        if iso:
+            resolved["return_date"] = iso
             resolved["trip_type"] = "roundtrip"
+            notes.append(f"Used direct answer for return date → {iso}")
 
-    # ── Cabin ─────────────────────────────────────────────────────────────────
-    cabin = entities.get("cabin")
-    if cabin and cabin not in (None, "null", ""):
-        c = str(cabin).lower().strip()
-        cabin_map = {
-            "economy": "economy",
-            "coach": "economy",
-            "business": "business",
-            "biz": "business",
-            "first": "first",
-            "first class": "first",
-            "premium economy": "premium_economy",
-            "premium": "premium_economy",
-            "premium_economy": "premium_economy",
-        }
-        resolved["cabin"] = cabin_map.get(c, c)
+    elif last_slot == "trip_type":
+        value = entities.get("trip_type") or raw
+        trip_type = _parse_trip_type(value)
+        if trip_type:
+            resolved["trip_type"] = trip_type
+            if trip_type == "oneway":
+                resolved.pop("return_date", None)
+            notes.append(f"Used direct answer for trip type → {trip_type}")
 
-    # ── Travelers ─────────────────────────────────────────────────────────────
-    travelers = entities.get("travelers")
-    if travelers is not None and travelers not in (None, "null", ""):
-        try:
-            n = int(travelers)
-            if 1 <= n <= 9:
-                resolved["travelers"] = n
-        except (ValueError, TypeError):
-            pass
+    elif last_slot == "travelers":
+        value = entities.get("travelers") or raw
+        travelers = _parse_travelers(value)
+        if travelers is not None:
+            resolved["travelers"] = travelers
+            notes.append(f"Used direct answer for travelers → {travelers}")
 
-    return resolved, notes
+    elif last_slot == "cabin":
+        value = entities.get("cabin") or raw
+        cabin = _normalize_cabin(value)
+        if cabin:
+            resolved["cabin"] = cabin
+            notes.append(f"Used direct answer for cabin → {cabin}")
 
 
-def _session_trip_type_already_set(entities: dict) -> bool:
-    """Check if the entity dict contained an explicit trip type."""
-    return bool(entities.get("trip_type"))
+def _has_value(value) -> bool:
+    return value is not None and value != "null" and str(value).strip() != ""
+
+
+def _strip_airport_prefix(text: str) -> str:
+    """Remove common short-answer prefixes before IATA lookup."""
+    cleaned = text.strip()
+    cleaned = re.sub(
+        r"^(?:from|leaving from|departing from|out of|to|into|headed to|going to|go to|fly(?:ing)? to|fly from|flying from|visit(?:ing)?)\s+",
+        "",
+        cleaned,
+        flags=re.I,
+    )
+    return cleaned.strip(" .,!?")
+
+
+def _extract_after_marker(text: str, *, markers: tuple[str, ...]) -> Optional[str]:
+    """Extract the phrase immediately after a route marker like 'from' or 'to'."""
+    if not text:
+        return None
+
+    # Longer markers first so "going to" beats "to".
+    ordered = sorted(markers, key=len, reverse=True)
+    marker_re = "|".join(re.escape(m) for m in ordered)
+    match = re.search(rf"\b(?:{marker_re})\b\s+(.+)$", text, re.I)
+    if not match:
+        return None
+
+    phrase = match.group(1).strip(" .,!?")
+
+    # Cut off common trailing clauses.
+    phrase = re.split(
+        r"\b(?:next|this|on|in|for|with|round\s*trip|one\s*way|economy|business|first|premium)\b",
+        phrase,
+        maxsplit=1,
+        flags=re.I,
+    )[0].strip(" .,!?")
+
+    return phrase or None
+
+
+def _lookup_airport(value) -> Optional[str]:
+    if not _has_value(value):
+        return None
+    return iata.lookup(_strip_airport_prefix(str(value)))
+
+
+def _find_airport_in_text(text: str | None) -> Optional[str]:
+    """
+    Find an airport/city anywhere inside a sentence.
+
+    iata.lookup("I already told you Miami") will not match, so this scans
+    meaningful word n-grams and direct 3-letter IATA codes.
+    """
+    if not _has_value(text):
+        return None
+
+    cleaned = _strip_airport_prefix(str(text))
+
+    # Direct whole-phrase lookup first.
+    code = iata.lookup(cleaned)
+    if code:
+        return code
+
+    # Direct IATA code inside sentence, e.g. "make it MIA".
+    for m in re.finditer(r"\b([A-Za-z]{3})\b", cleaned):
+        candidate = m.group(1).upper()
+        if iata.validate(candidate):
+            return candidate
+
+    # Scan n-grams, longest first. This catches "new york", "fort lauderdale",
+    # and simple single-token places like "Miami".
+    words = re.findall(r"[A-Za-z][A-Za-z'.-]*", cleaned)
+    stopwords = {
+        "i", "already", "told", "you", "me", "my", "the", "a", "an", "please",
+        "actually", "sorry", "meant", "mean", "it", "is", "was", "make", "change",
+        "from", "to", "into", "go", "going", "headed", "flying", "fly", "travel",
+        "want", "wanna", "need", "would", "like", "trip", "flight", "airport",
+    }
+
+    for size in range(min(4, len(words)), 0, -1):
+        for i in range(0, len(words) - size + 1):
+            chunk_words = words[i : i + size]
+            if all(w.lower() in stopwords for w in chunk_words):
+                continue
+            phrase = " ".join(chunk_words)
+            code = iata.lookup(phrase)
+            if code:
+                return code
+
+    return None
+
+
+def _parse_trip_type(value) -> Optional[Literal["oneway", "roundtrip"]]:
+    if not _has_value(value):
+        return None
+    text = str(value).lower().strip()
+    if re.search(r"\b(round\s*trip|round-trip|roundtrip|return)\b", text):
+        return "roundtrip"
+    if re.search(r"\b(one\s*way|one-way|oneway|single)\b", text):
+        return "oneway"
+    return None
+
+
+def _normalize_cabin(value) -> Optional[str]:
+    if not _has_value(value):
+        return None
+    text = str(value).lower().strip().replace("-", "_")
+    cabin_map = {
+        "economy": "economy",
+        "coach": "economy",
+        "main cabin": "economy",
+        "business": "business",
+        "biz": "business",
+        "business class": "business",
+        "first": "first",
+        "first class": "first",
+        "premium economy": "premium_economy",
+        "premium": "premium_economy",
+        "premium_economy": "premium_economy",
+        "premiumeconomy": "premium_economy",
+    }
+    return cabin_map.get(text)
+
+
+def _parse_travelers(value) -> Optional[int]:
+    if not _has_value(value):
+        return None
+
+    text = str(value).lower().strip()
+    word_map = {
+        "one": 1,
+        "solo": 1,
+        "just me": 1,
+        "me": 1,
+        "two": 2,
+        "couple": 2,
+        "three": 3,
+        "four": 4,
+        "five": 5,
+        "six": 6,
+        "seven": 7,
+        "eight": 8,
+        "nine": 9,
+    }
+
+    if text in word_map:
+        return word_map[text]
+
+    for phrase, n in word_map.items():
+        if re.search(rf"\b{re.escape(phrase)}\b", text):
+            return n
+
+    match = re.search(r"\b([1-9])\b", text)
+    if match:
+        return int(match.group(1))
+
+    try:
+        n = int(value)
+        if 1 <= n <= 9:
+            return n
+    except (ValueError, TypeError):
+        pass
+
+    return None
 
 
 def format_confirmed_state(state: TripState) -> str:
-    """
-    Format the confirmed trip state as a readable string for LLM context.
-    Used in the respond-call system prompt.
-    """
+    """Format confirmed trip state for prompt/context display."""
     lines = []
     if state.origin:
         city = iata.city_name(state.origin) if iata.validate(state.origin) else state.origin
@@ -284,9 +570,7 @@ def format_confirmed_state(state: TripState) -> str:
 
 
 def format_missing_slots(state: TripState) -> str:
-    """
-    Format missing required slots for LLM context.
-    """
+    """Format missing required slots for LLM context."""
     missing = state.missing_required()
     if not missing:
         return "none — all required fields confirmed!"

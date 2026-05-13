@@ -9,7 +9,7 @@ TTL: 2 hours (rolling — refreshed on every write)
 State structure:
   trip_state   — the fields Zoe is collecting (origin, dest, dates, etc.)
   stage        — where we are in the conversation lifecycle
-  last_asked   — which slot Zoe asked about most recently (prevents re-asking)
+  last_asked   — which slot Zoe asked about most recently
   history      — last 12 conversation turns as [{role, content}]
   conversation_mode — "standard" | "voice"
 """
@@ -22,21 +22,39 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
+
 # ── Redis client (lazy import — Redis may not be available in all envs) ───────
 
 _redis_client = None
 
 
 def _get_redis():
+    """
+    Return Redis client only when REDIS_URL is explicitly configured.
+
+    Important:
+    - Local dev should NOT try redis://localhost:6379 unless you actually set REDIS_URL.
+    - If Redis is unavailable, Zoe falls back to the in-memory store.
+    """
     global _redis_client
-    if _redis_client is None:
-        try:
-            import redis.asyncio as aioredis
-            url = os.getenv("REDIS_URL", "redis://localhost:6379")
-            _redis_client = aioredis.from_url(url, decode_responses=True)
-        except ImportError:
-            pass  # Redis not available — fall back to in-memory
-    return _redis_client
+
+    if _redis_client is not None:
+        return _redis_client
+
+    url = os.getenv("REDIS_URL")
+    if not url:
+        return None
+
+    try:
+        import redis.asyncio as aioredis
+        _redis_client = aioredis.from_url(url, decode_responses=True)
+        return _redis_client
+    except ImportError:
+        print("⚠️ Redis package not installed — using in-memory Zoe session store")
+        return None
+    except Exception as exc:
+        print(f"⚠️ Redis init error — using in-memory Zoe session store: {exc}")
+        return None
 
 
 # ── In-memory fallback (dev/test environments without Redis) ──────────────────
@@ -54,17 +72,18 @@ SESSION_TTL_SECONDS = 60 * 60 * 2  # 2 hours, rolling
 class TripState(BaseModel):
     """The fields Zoe is collecting for a flight search."""
 
-    origin: Optional[str] = None          # IATA code or city name, as user said
-    destination: Optional[str] = None     # IATA code or city name, as user said
-    depart_date: Optional[str] = None     # ISO 8601: YYYY-MM-DD
-    return_date: Optional[str] = None     # ISO 8601: YYYY-MM-DD
+    origin: Optional[str] = None
+    destination: Optional[str] = None
+    depart_date: Optional[str] = None
+    return_date: Optional[str] = None
     trip_type: Optional[Literal["oneway", "roundtrip"]] = None
-    cabin: Optional[str] = "economy"
-    travelers: Optional[int] = 1
+    cabin: Optional[str] = None
+    travelers: Optional[int] = None
 
     def missing_required(self) -> list[str]:
         """Return required fields that are not yet confirmed, in priority order."""
-        required = []
+        required: list[str] = []
+
         if not self.origin:
             required.append("origin")
         if not self.destination:
@@ -75,6 +94,11 @@ class TripState(BaseModel):
             required.append("trip_type")
         if self.trip_type == "roundtrip" and not self.return_date:
             required.append("return_date")
+        if not self.travelers:
+            required.append("travelers")
+        if not self.cabin:
+            required.append("cabin")
+
         return required
 
     def is_complete(self) -> bool:
@@ -82,62 +106,64 @@ class TripState(BaseModel):
         return len(self.missing_required()) == 0
 
     def to_prefill(self) -> dict | None:
-        """
-        Return a prefill dict for the frontend search form.
-        Returns None if any required field is missing.
-        """
+        """Return frontend prefill only when the full required search state exists."""
         if not self.is_complete():
             return None
+
         return {
             "origin": self.origin,
             "destination": self.destination,
             "date": self.depart_date,
             "return_date": self.return_date,
-            "travelers": self.travelers or 1,
-            "cabin": self.cabin or "economy",
-            "tripType": self.trip_type or "oneway",
+            "travelers": self.travelers,
+            "cabin": self.cabin,
+            "tripType": self.trip_type,
         }
 
     def merge(self, entities: dict) -> "TripState":
         """
         Return a new TripState with `entities` merged in.
+
         Only overwrites a field if the new value is non-null/non-empty.
-        Never clears a field that was already set.
+        This preserves session memory across turns.
         """
         data = self.model_dump()
+
         field_map = {
             "origin": "origin",
             "destination": "destination",
             "depart_date": "depart_date",
-            "date": "depart_date",          # alias
+            "date": "depart_date",
             "return_date": "return_date",
             "trip_type": "trip_type",
             "cabin": "cabin",
             "travelers": "travelers",
         }
+
         for key, model_key in field_map.items():
             val = entities.get(key)
             if val is not None and val != "null" and val != "":
                 data[model_key] = val
+
         return TripState(**data)
 
 
 Stage = Literal[
-    "collecting",           # gathering required trip fields
-    "searching",            # all fields collected, search in progress
-    "explaining_verdict",   # verdict returned, Zoe is explaining
-    "off_trip",             # handling non-trip intent (destination, wallet, etc.)
-    "reset",                # user wants to start fresh
+    "collecting",
+    "searching",
+    "explaining_verdict",
+    "off_trip",
+    "reset",
 ]
 
 
 class ZoeSession(BaseModel):
-    """Full session state stored in Redis."""
+    """Full session state stored in Redis or memory fallback."""
 
     user_id: Optional[str] = None
     trip_state: TripState = Field(default_factory=TripState)
     stage: Stage = "collecting"
-    last_asked: Optional[str] = None       # slot name Zoe most recently asked about
+    last_asked: Optional[str] = None
     history: list[dict] = Field(default_factory=list)
     conversation_mode: Literal["standard", "voice"] = "standard"
 
@@ -164,58 +190,67 @@ def _session_key(session_id: str) -> str:
 
 async def load(session_id: str) -> ZoeSession:
     """
-    Load session from Redis (or memory fallback).
-    Returns a fresh ZoeSession if no session exists.
+    Load session from Redis or memory fallback.
+
+    If Redis exists but fails, fall back to memory instead of losing the session.
     """
     key = _session_key(session_id)
     raw: str | None = None
 
     redis = _get_redis()
+
     if redis:
         try:
             raw = await redis.get(key)
         except Exception as exc:
-            print(f"⚠️ Redis read error ({key}):", exc)
+            print(f"⚠️ Redis read error ({key}) — falling back to memory: {exc}")
+            raw = _memory_store.get(key)
     else:
         raw = _memory_store.get(key)
 
     if not raw:
-        session = ZoeSession(user_id=session_id)
-        return session
+        return ZoeSession(user_id=session_id)
 
     try:
         data = json.loads(raw)
         return ZoeSession(**data)
     except Exception as exc:
-        print(f"⚠️ Session parse error ({key}):", exc)
+        print(f"⚠️ Session parse error ({key}) — starting fresh: {exc}")
         return ZoeSession(user_id=session_id)
 
 
 async def save(session_id: str, session: ZoeSession) -> None:
     """
-    Save session to Redis (or memory fallback) with rolling TTL.
+    Save session to Redis or memory fallback.
+
+    If Redis exists but fails, save to memory so local/dev sessions still persist
+    across turns during the current server process.
     """
     key = _session_key(session_id)
     raw = session.model_dump_json()
 
     redis = _get_redis()
+
     if redis:
         try:
             await redis.setex(key, SESSION_TTL_SECONDS, raw)
+            return
         except Exception as exc:
-            print(f"⚠️ Redis write error ({key}):", exc)
-    else:
-        _memory_store[key] = raw
+            print(f"⚠️ Redis write error ({key}) — saving to memory: {exc}")
+
+    _memory_store[key] = raw
 
 
 async def delete(session_id: str) -> None:
-    """Delete a session (used on reset)."""
+    """Delete a session from Redis or memory fallback."""
     key = _session_key(session_id)
+
     redis = _get_redis()
+
     if redis:
         try:
             await redis.delete(key)
         except Exception as exc:
-            print(f"⚠️ Redis delete error ({key}):", exc)
-    else:
-        _memory_store.pop(key, None)
+            print(f"⚠️ Redis delete error ({key}) — deleting memory fallback: {exc}")
+
+    _memory_store.pop(key, None)

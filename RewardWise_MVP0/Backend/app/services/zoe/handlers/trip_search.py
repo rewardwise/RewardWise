@@ -3,20 +3,10 @@ zoe/handlers/trip_search.py
 ────────────────────────────
 Handles trip planning conversations.
 
-NEW ARCHITECTURE:
-  This handler no longer decides what to ask or manages state extraction.
-  It receives:
-    - The confirmed trip state (from session + slot machine)
-    - The next slot to ask about (from slot machine) — or None if ready
-    - The conversation history (from session — real message objects)
-    - The wallet (for grounding)
-    - Resolution notes (from slot machine, e.g. "Resolved 'New York' → JFK")
-
-  It builds a system prompt with all ground truth injected and calls
-  call_llm_with_history() so Zoe has real conversation context.
-
-  The handler tells the LLM *what* to communicate.
-  The LLM decides *how* to say it naturally.
+Important: collection turns are deterministic. The slot machine decides the
+next slot, and this handler asks exactly that one question. We do not let the
+LLM improvise collection questions because that can desync last_asked from what
+Zoe actually says to the user.
 """
 
 from __future__ import annotations
@@ -26,28 +16,126 @@ from typing import Any
 from app.services.zoe.llm_caller import call_llm_with_history
 from app.services.zoe.grounding import build_ground_truth_block
 from app.services.zoe.slot_machine import SlotDecision, format_confirmed_state, format_missing_slots
-from app.services.zoe.session import TripState
+from app.services.zoe import iata
 
-
-# ── Personality + base instructions ──────────────────────────────────────────
-
-_BASE_SYSTEM = """You are Zoe — a warm, sharp travel friend who works for MyTravelWallet.
+_BASE_SYSTEM = """You are Zoe — a warm, sharp, excited travel friend who works for MyTravelWallet.
 You help people plan flights and figure out the best way to use their points.
 
-Your personality: knowledgeable, direct, genuinely interested in the trip.
-Not a form. Not a bot. A friend who happens to know a lot about travel.
+Your personality:
+- Knowledgeable, direct, and genuinely interested in the trip
+- Upbeat without being fake or over-the-top
+- A friend who happens to know a lot about travel, flights, points, and good redemptions
+- Not a form. Not a bot. Not a customer support script.
+
+Your vibe:
+- Make the trip feel fun, easy, and exciting
+- Briefly react to the user's destination, route, or choice when it feels natural
+- Use casual travel energy, but keep it concise
+- Avoid sounding like you are interrogating the user
+- Do not say “Got it” every turn
+- Do not overuse the same opener
+- Vary your phrasing so the conversation feels alive
 
 RESPONSE RULES:
 - Respond naturally and conversationally — like texting a well-traveled friend
-- Under 80 words for collection turns (when still gathering trip info)
-- Under 150 words for explanatory turns (when search is ready or explaining something)
+- Ask exactly one question when collecting trip info
+- Under 70 words for collection turns
+- Under 150 words for explanatory turns
 - No bullet points, no numbered lists, no markdown headers
-- No sycophantic openers ("Great choice!", "Awesome!", "Of course!")
-- Never ask more than one question per response — this is enforced, not optional
-- Never list what you still need ("I still need X and Y")
+- No sycophantic openers
+- Never ask more than one question per response
+- Never list what you still need
 - Never enumerate missing fields
-- Lead with something genuine about the trip when you have destination context
+- Never mention internal fields, slots, state, or missing_required
+- If the next field is obvious, ask for it casually and move on
+
+Good collection examples:
+- "Vancouver is a great pick — mountains, water, food, all of it. Where are you flying from?"
+- "ATL to Vancouver, nice. When do you want to fly?"
+- "Love it. Is this one-way or round trip?"
+- "Easy. How many travelers?"
+- "Solo trip, nice. What cabin are we looking at — economy, premium economy, business, or first?"
+- "Perfect — ATL to YVR next weekend, one-way in economy. I’m running that search now."
+
+Bad collection examples:
+- "Please provide your departure airport."
+- "I still need your departure date, trip type, travelers, and cabin."
+- "Got it. What is your cabin class?"
+- "To proceed, please provide the next required field."
 """
+
+
+def _city(code_or_text: str | None) -> str | None:
+    if not code_or_text:
+        return None
+    code = str(code_or_text).upper()
+    if iata.validate(code):
+        return iata.city_name(code)
+    return str(code_or_text)
+
+
+def _route_phrase(decision: SlotDecision) -> str:
+    origin = decision.trip_state.origin
+    dest = decision.trip_state.destination
+    if origin and dest:
+        return f"{origin} to {dest}"
+    if dest:
+        return _city(dest) or dest
+    if origin:
+        return f"from {origin}"
+    return "your trip"
+
+
+def _collecting_reply(decision: SlotDecision) -> str:
+    """Ask exactly the next slot. No LLM, no drift."""
+    slot = decision.next_slot
+    state = decision.trip_state
+    route = _route_phrase(decision)
+
+    if slot == "origin":
+        if state.destination:
+            return f"Got it — {_city(state.destination)}. Where are you flying from?"
+        return "Where are you flying from?"
+
+    if slot == "destination":
+        if state.origin:
+            return f"Got it — flying from {state.origin}. Where are you headed?"
+        return "Where are you headed?"
+
+    if slot == "depart_date":
+        return f"Got it — {route}. When do you want to fly?"
+
+    if slot == "trip_type":
+        return "Is this one-way or round trip?"
+
+    if slot == "return_date":
+        return "When are you coming back?"
+
+    if slot == "travelers":
+        return "How many travelers?"
+
+    if slot == "cabin":
+        return "What cabin class do you want — economy, premium economy, business, or first?"
+
+    return decision.fallback_question or "Tell me one more detail for the search."
+
+
+def _ready_reply(decision: SlotDecision) -> str:
+    state = decision.trip_state
+    trip_type = "round trip" if state.trip_type == "roundtrip" else "one way"
+    travelers = f"{state.travelers} traveler" if state.travelers == 1 else f"{state.travelers} travelers"
+    cabin = str(state.cabin).replace("_", " ") if state.cabin else ""
+
+    if state.return_date:
+        return (
+            f"Perfect — I filled in {state.origin} to {state.destination}, {trip_type}, "
+            f"{state.depart_date} to {state.return_date}, {travelers}, {cabin}. Starting the search now."
+        )
+
+    return (
+        f"Perfect — I filled in {state.origin} to {state.destination}, {trip_type}, "
+        f"{state.depart_date}, {travelers}, {cabin}. Starting the search now."
+    )
 
 
 def _build_system_prompt(
@@ -56,47 +144,19 @@ def _build_system_prompt(
     verdict_context: str | None,
     is_voice: bool,
 ) -> str:
-    """Build the full system prompt for the respond call."""
+    """Build prompt for non-collection fallback/explanatory turns."""
 
     state_str = format_confirmed_state(decision.trip_state)
     missing_str = format_missing_slots(decision.trip_state)
-
-    # Ground truth block (wallet, verdict, resolution notes)
     ground_truth = build_ground_truth_block(
         wallet=wallet,
         verdict_context=verdict_context,
         resolution_notes=decision.resolution_notes or [],
     )
 
-    # What to communicate on this turn
-    if decision.ready_to_search:
-        task = """TASK FOR THIS TURN:
-All required trip fields are now confirmed. Tell the user you've filled in the search form
-and invite them to hit Search when they're ready. Be natural — don't make it a big announcement.
-One sentence is enough. Example: "Perfect — I've filled that in, just hit Search when you're ready!"
-Do NOT ask any questions. Do NOT say "shall I search?". The user presses Search."""
-    elif decision.next_slot:
-        slot_label = {
-            "origin":      "where they're flying FROM (their departure city or airport)",
-            "destination": "where they're flying TO (their destination city or airport)",
-            "depart_date": "when they want to depart (a specific date or timeframe)",
-            "trip_type":   "whether it's a one-way trip or round-trip",
-            "return_date": "when they want to return (their return date)",
-        }.get(decision.next_slot, decision.next_slot)
-
-        task = f"""TASK FOR THIS TURN:
-The next required piece of information is: {slot_label}
-
-Ask about this ONE field naturally, woven into a genuine response.
-You may share a brief interesting fact or tip about the destination/route if you have it.
-Then ask your single question.
-
-DO NOT ask about any other fields.
-DO NOT mention what other fields are missing.
-DO NOT list or enumerate what you still need."""
-    else:
-        task = """TASK FOR THIS TURN:
-Continue the conversation naturally. The user is providing more context about their trip."""
+    task = """TASK FOR THIS TURN:
+Continue the trip conversation naturally, but do not invent trip fields.
+If a specific field is needed, ask only one question."""
 
     voice_note = "\n[VOICE MODE: plain text only, under 40 words, no markdown]" if is_voice else ""
 
@@ -113,8 +173,6 @@ STILL MISSING:
 {task}{voice_note}"""
 
 
-# ── Main handler ──────────────────────────────────────────────────────────────
-
 async def handle(
     message: str,
     history: list[dict],
@@ -124,35 +182,33 @@ async def handle(
     verdict_context: str | None = None,
     is_voice: bool = False,
 ) -> dict[str, Any]:
-    """
-    Generate Zoe's response for a trip planning turn.
+    """Generate Zoe's response for a trip planning turn."""
 
-    Args:
-        message:        The user's latest message
-        history:        Conversation history from session (real message objects)
-        wallet:         User's wallet programs and balances
-        decision:       SlotDecision from the slot machine
-        verdict_context: Active verdict if any
-        is_voice:       True for voice interactions
-
-    Returns:
-        {
-          "message": str,
-          "prefill": dict | None,
+    # Hard guarantee: if the slot machine says ask a slot, ask exactly that slot.
+    if decision.next_slot and not decision.ready_to_search:
+        return {
+            "message": _collecting_reply(decision),
+            "prefill": None,
         }
-    """
-    system = _build_system_prompt(decision, wallet, verdict_context, is_voice)
 
-    # Use call_llm_with_history so the model has real conversation context
+    # Hard guarantee: if search-ready, do not ask anything.
+    if decision.ready_to_search:
+        return {
+            "message": _ready_reply(decision),
+            "prefill": decision.prefill,
+        }
+
+    # Rare fallback only.
+    system = _build_system_prompt(decision, wallet, verdict_context, is_voice)
     reply = await call_llm_with_history(
         system,
         history,
         message,
-        temperature=0.45,
-        max_tokens=120 if (is_voice or not decision.ready_to_search) else 300,
+        temperature=0.35,
+        max_tokens=100 if is_voice else 160,
     )
 
     return {
-        "message": reply or (decision.fallback_question or "Tell me more about your trip!"),
+        "message": reply or (decision.fallback_question or "Tell me more about your trip."),
         "prefill": decision.prefill,
     }

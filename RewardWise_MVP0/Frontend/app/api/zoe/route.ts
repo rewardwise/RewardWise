@@ -1,95 +1,67 @@
 /** @format */
-/**
- * /app/api/zoe/route.ts
- *
- * Next.js proxy between ZoeChat and FastAPI.
- * Changes from original:
- *   - Forwards `verdict_context` and `wallet` from the request body to FastAPI
- *   - Forwards `is_voice` flag when present
- *   - Everything else (auth, DB persistence, GET) is unchanged
- */
 
 import { createRouteHandlerClient } from "@/utils/supabase/route-handler";
 import { NextResponse } from "next/server";
 
-const MAX_BODY_SIZE = 50_000;
+const BACKEND_URL = process.env.BACKEND_URL ?? "http://127.0.0.1:8000";
 
 export async function POST(req: Request) {
 	try {
 		const supabase = await createRouteHandlerClient();
-		const { data: { user } } = await supabase.auth.getUser();
-
-		if (!user) {
-			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-		}
-
-		const rawBody = await req.text();
-		if (rawBody.length > MAX_BODY_SIZE) {
-			return NextResponse.json({ error: "Request body too large" }, { status: 413 });
-		}
-
-		let body: any;
-		try {
-			body = JSON.parse(rawBody);
-		} catch {
-			return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
-		}
-
 		const {
-			conversation_id,
-			message,
-			history,
-			wallet,
-			verdict_context,
-			is_voice,
-		} = body;
+			data: { user },
+		} = await supabase.auth.getUser();
 
-		const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
-		const session = await supabase.auth.getSession();
-		const accessToken = session.data.session?.access_token;
+		const body = await req.json();
 
-		const res = await fetch(`${backendUrl}/api/zoe`, {
+		// Always inject the authenticated user_id so the backend can:
+		//   1. Log interactions with the correct user
+		//   2. Fetch wallet from DB if frontend didn't send it
+		const enrichedBody = {
+			...body,
+			user_id: user?.id ?? null,
+		};
+
+		const res = await fetch(`${BACKEND_URL}/api/zoe`, {
 			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
-			},
-			body: JSON.stringify({
-				message,
-				history: history || [],
-				conversation_id: conversation_id || null,
-				user_id: user.id,
-				wallet: wallet || [],
-				verdict_context: verdict_context || null,
-				is_voice: is_voice || false,
-			}),
-			signal: AbortSignal.timeout(90_000),
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(enrichedBody),
 		});
-
-		if (!res.ok && res.status !== 200) {
-			console.error("Backend Zoe error:", res.status);
-		}
 
 		const data = await res.json();
 
-		// DB persistence — save message + reply to zoe_messages (best-effort)
-		const shouldPersist = conversation_id && message && data?.message;
-		if (shouldPersist) {
+		// Persist messages to zoe_messages table (best-effort)
+		if (user && body.conversation_id && body.message) {
 			try {
-				await supabase.from("zoe_messages").insert([
-					{ conversation_id, role: "user",      content: message },
-					{ conversation_id, role: "assistant", content: data.message },
-				]);
+				const conversation_id = body.conversation_id;
 
-				// Auto-title the conversation from the first user message
-				const { data: conv } = await supabase
-					.from("zoe_conversations")
-					.select("title")
-					.eq("id", conversation_id)
-					.single();
+				// Save the user's message
+				await supabase.from("zoe_messages").insert({
+					conversation_id,
+					role: "user",
+					content: body.message,
+				});
 
-				if (conv?.title === "New conversation") {
-					const title = message.length > 60 ? message.slice(0, 57) + "…" : message;
+				// Save Zoe's reply
+				if (data.message) {
+					await supabase.from("zoe_messages").insert({
+						conversation_id,
+						role: "assistant",
+						content: data.message,
+					});
+				}
+
+				// Update conversation title on first message
+				const isFirstMessage =
+					(body.history ?? []).filter(
+						(m: { role: string }) => m.role === "user"
+					).length === 0;
+
+				if (isFirstMessage && body.message) {
+					const title =
+						body.message.length > 60
+							? body.message.slice(0, 57) + "…"
+							: body.message;
 					await supabase
 						.from("zoe_conversations")
 						.update({ title })
@@ -97,27 +69,37 @@ export async function POST(req: Request) {
 				}
 			} catch (dbErr) {
 				console.error("Zoe DB persist error:", dbErr);
-				// Don't fail the response — DB persistence is best-effort
+				// Non-fatal
 			}
 		}
 
 		return NextResponse.json(data, { status: res.status });
 	} catch (err) {
 		console.error("Zoe API error:", err);
-		return NextResponse.json({ message: "Service temporarily unavailable" }, { status: 503 });
+		return NextResponse.json(
+			{ message: "Service temporarily unavailable" },
+			{ status: 503 }
+		);
 	}
 }
 
-// GET — load messages for a conversation (unchanged)
+// GET — load messages for a conversation
 export async function GET(req: Request) {
 	try {
 		const supabase = await createRouteHandlerClient();
-		const { data: { user } } = await supabase.auth.getUser();
-		if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+		const {
+			data: { user },
+		} = await supabase.auth.getUser();
+		if (!user)
+			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
 		const { searchParams } = new URL(req.url);
 		const conversationId = searchParams.get("conversation_id");
-		if (!conversationId) return NextResponse.json({ error: "Missing conversation_id" }, { status: 400 });
+		if (!conversationId)
+			return NextResponse.json(
+				{ error: "Missing conversation_id" },
+				{ status: 400 }
+			);
 
 		const { data: conv } = await supabase
 			.from("zoe_conversations")
@@ -126,7 +108,8 @@ export async function GET(req: Request) {
 			.eq("user_id", user.id)
 			.single();
 
-		if (!conv) return NextResponse.json({ error: "Not found" }, { status: 404 });
+		if (!conv)
+			return NextResponse.json({ error: "Not found" }, { status: 404 });
 
 		const { data: messages } = await supabase
 			.from("zoe_messages")

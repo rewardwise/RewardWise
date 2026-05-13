@@ -18,8 +18,7 @@ import uuid
 from typing import Optional
 
 from app.db.client import get_db_client
-from app.services.zoe.rag import embedder
-
+from app.services.zoe.rag import embedder_fixed
 
 # ── Article CRUD ──────────────────────────────────────────────────────────────
 
@@ -47,7 +46,7 @@ async def create_article(
 
     # Generate embedding from title + content (combined gives better retrieval)
     embed_text = f"{title}\n\n{content}"
-    embedding = await embedder.embed(embed_text)
+    embedding = await embedder_fixed.embed(embed_text)
 
     row = {
         "id": str(uuid.uuid4()),
@@ -103,7 +102,7 @@ async def update_article(
         new_title = title or current["title"]
         new_content = content or current["content"]
         embed_text = f"{new_title}\n\n{new_content}"
-        new_embedding = await embedder.embed(embed_text)
+        new_embedding = await embedder_fixed.embed(embed_text)
         if new_embedding:
             updates["embedding"] = new_embedding
 
@@ -245,7 +244,7 @@ async def ingest_interaction(
     db = get_db_client()
 
     # Generate embedding for user_message (this is what retrieval queries against)
-    embedding = await embedder.embed(user_message)
+    embedding = await embedder_fixed.embed(user_message)
 
     row = {
         "interaction_id": interaction_id,

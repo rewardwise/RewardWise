@@ -22,6 +22,8 @@ import {
 	Trash2,
 	Volume2,
 	X,
+	ThumbsUp,
+	ThumbsDown,
 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import { useZoeVoice, VoiceState } from "@/hooks/useZoeVoice";
@@ -32,6 +34,8 @@ export interface Message {
 	role: "user" | "assistant";
 	content: string;
 	prefilled?: boolean;
+	interaction_id?: string | null;
+	thumbs?: "up" | "down" | null;
 }
 
 interface Conversation {
@@ -152,9 +156,16 @@ if (prefillRaw && onFillSearch) {
             cabin: prefill.cabin,
             tripType: prefill.tripType,
         });
-        if (prefill.origin && prefill.destination && prefill.date && onAutoSearch) {
-            setTimeout(() => onAutoSearch(), 400);
-        }
+        if (
+  prefill.origin &&
+  prefill.destination &&
+  prefill.date &&
+  prefill.travelers &&
+  prefill.cabin &&
+  onAutoSearch
+) {
+  setTimeout(() => onAutoSearch(), 500);
+}
     }
 }
 		},
@@ -316,6 +327,31 @@ if (prefillRaw && onFillSearch) {
 		setRenamingId(null);
 	};
 
+	const submitFeedback = async (msgIndex: number, signal: "thumbs_up" | "thumbs_down") => {
+		const msg = messages[msgIndex];
+		if (!msg || msg.role !== "assistant" || msg.thumbs) return;
+ 
+		// Optimistic UI
+		setMessages(prev =>
+			prev.map((m, i) =>
+				i === msgIndex ? { ...m, thumbs: signal === "thumbs_up" ? "up" : "down" } : m
+			)
+		);
+ 
+		if (signal === "thumbs_up" && msg.interaction_id) {
+			try {
+				const headers = await getAuthHeaders();
+				await fetch("/api/zoe/feedback", {
+					method: "POST",
+					headers,
+					body: JSON.stringify({ interaction_id: msg.interaction_id, signal: "thumbs_up" }),
+				});
+			} catch (e) {
+				console.error("Feedback error:", e);
+			}
+		}
+	};
+	
 	// ── Send text message ─────────────────────────────────────────────────────
 	const sendText = async (text: string) => {
 		if (typing || !text.trim()) return;
@@ -354,9 +390,16 @@ if (prefillRaw && onFillSearch) {
 			const data = await res.json();
 			const reply = data.message || "Something went wrong — try again.";
 			const prefill = data.prefill || null;
-
-			setMessages(prev => [...prev, { role: "assistant", content: reply, prefilled: !!prefill }]);
-
+			const interaction_id = data.interaction_id || null;
+ 
+			setMessages(prev => [...prev, {
+				role: "assistant",
+				content: reply,
+				prefilled: !!prefill,
+				interaction_id,
+				thumbs: null,
+			}]);
+ 
 			if (prefill && onFillSearch) {
 				onFillSearch({
 					origin: prefill.origin,
@@ -367,11 +410,25 @@ if (prefillRaw && onFillSearch) {
 					cabin: prefill.cabin,
 					tripType: prefill.tripType,
 				});
-
-				// ── Auto-trigger search when Zoe has all required fields ──────
-				// Ticket: "User has to click on search flights — shouldn't Zoe do it?"
-				if (prefill.origin && prefill.destination && prefill.date && onAutoSearch) {
+ 
+				if (
+					prefill.origin &&
+					prefill.destination &&
+					prefill.date &&
+					prefill.travelers &&
+					prefill.cabin &&
+					onAutoSearch
+				) {
 					setTimeout(() => onAutoSearch(), 500);
+				}
+ 
+				// Auto-record search_triggered feedback
+				if (interaction_id) {
+					fetch("/api/zoe/feedback", {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ interaction_id, signal: "search_triggered" }),
+					}).catch(() => {});
 				}
 			}
 
@@ -459,6 +516,36 @@ if (prefillRaw && onFillSearch) {
 						)}
 					</div>
 				</div>
+
+				{/* Thumbs feedback */}
+				{isAssistant && msg.interaction_id && (
+					<div className="mt-1 flex gap-1 pl-1">
+						<button
+							onClick={() => submitFeedback(i, "thumbs_up")}
+							disabled={!!msg.thumbs}
+							title="Good response"
+							className={`flex items-center justify-center rounded-md p-1 transition ${
+								msg.thumbs === "up"
+									? "text-emerald-400"
+									: "text-slate-600 hover:text-emerald-400"
+							}`}
+						>
+							<ThumbsUp className="h-3 w-3" />
+						</button>
+						<button
+							onClick={() => submitFeedback(i, "thumbs_down")}
+							disabled={!!msg.thumbs}
+							title="Bad response"
+							className={`flex items-center justify-center rounded-md p-1 transition ${
+								msg.thumbs === "down"
+									? "text-rose-400"
+									: "text-slate-600 hover:text-rose-400"
+							}`}
+						>
+							<ThumbsDown className="h-3 w-3" />
+						</button>
+					</div>
+				)}
 			</div>
 		);
 	};
