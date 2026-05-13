@@ -8,7 +8,7 @@ from app.api.zoe import router as zoe_router
 from app.api.zoe_voice import router as zoe_voice_router
 from app.api.zoe_stt import router as zoe_stt_router
 from app.api.validators import limiter
-
+from app.admin.zoe_eval_routes import router as zoe_admin_router
 
 # ✅ CREATE APP ONLY ONCE
 app = FastAPI(title="MyTravelWallet Backend")
@@ -40,3 +40,4 @@ app.include_router(verdict.router, prefix="/api")
 app.include_router(zoe_router)
 app.include_router(zoe_voice_router)
 app.include_router(zoe_stt_router)
+app.include_router(zoe_admin_router)

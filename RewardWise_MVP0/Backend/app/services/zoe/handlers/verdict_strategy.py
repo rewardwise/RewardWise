@@ -1,66 +1,68 @@
 """
 zoe/handlers/verdict_strategy.py
 ─────────────────────────────────
-Handles the merged verdict_strategy intent which covers:
-  - Verdict interpretation ("is this a good deal?", "what does this verdict mean?")
-  - Points & wallet strategy ("should I use my Chase points?", "what's the best card?")
-  - Transfer & redemption ("can I transfer Amex to Air France?", "transfer partners for Chase UR?")
-  - CPP threshold analysis
-  - Award vs revenue comparisons
+Handles verdict interpretation, points strategy, and transfer questions.
 
-These are merged into one handler because they share the same context:
-wallet data + active verdict + points knowledge. The LLM figures out
-which sub-question is being asked.
-
-Ticket coverage:
-  ✅ "Is this a good deal?" / "should I book this or wait?"
-  ✅ "Why is Zoe recommending points over cash?"
-  ✅ "Can I do better with my United miles?"
-  ✅ CPP / award vs revenue explanation
-  ✅ Transfer partner routing ("Can I transfer Amex to Air France?")
-  ✅ "I need 80k miles for JAL — how do I get there?"
-  ✅ "What's the best card to use for this trip?"
-  ✅ Voice mode: speakable, concise
+Uses call_llm_with_history() with real multi-turn message history.
+All three RAG layers injected via grounding.py.
+Grounding rule strictly enforced — no invented CPP values or partner lists.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from app.services.zoe.llm_caller import call_llm, build_messages
+from app.services.zoe.llm_caller import call_llm_with_history
+from app.services.zoe.grounding import build_ground_truth_block
 
-# ── System prompt ─────────────────────────────────────────────────────────────
 
-_SYSTEM = """You are Zoe, a sharp travel rewards expert for MyTravelWallet.
-You help users understand their verdicts, decide whether to use points or cash, and navigate award travel strategy.
+_BASE_SYSTEM = """You are Zoe — a sharp, trustworthy travel rewards advisor for MyTravelWallet.
+You're answering a question about a flight verdict, loyalty strategy, or points redemption.
 
-You know deeply:
-- CPP (cents per point) and what thresholds matter (e.g. >1.5cpp is generally good for most programs)
-- Airline alliances and which programs transfer to which
-- Transfer partners and ratios:
-    Chase UR → United 1:1, Hyatt 1:1, BA 1:1, Air France 1:1, Southwest 1:1, Singapore 1:1
-    Amex MR → Air France 1:1, BA 1:1, ANA 1:1, Singapore 1:1, Delta 1:1, Hilton 1:2, Marriott 1:1
-    Capital One → Air France 1:1, Turkish 2:1.5, Avianca 1:1, BA 1:1
-    Citi ThankYou → Turkish 1:1, Air France 1:1, Avianca 1:1, Singapore 1:1
-    Bilt → United 1:1, Hyatt 1:1, AA 1:1, Air France 1:1
-- Award sweet spots (e.g. ANA round-the-world, AA on Cathay, Flying Blue promo awards)
-- When paying cash beats using points (low CPP, no availability, etc.)
-- Opportunity cost of using points vs banking them
+PERSONALITY:
+- Direct and analytical — lead with the answer, not a preamble
+- Honest about uncertainty — never invent numbers or availability
+- Warm but precise — this is financial territory, be careful
 
-RULES:
-- Reference the user's actual wallet balances when answering. Be specific: "You have 45,000 Chase UR points..."
-- If a verdict is provided, anchor your answer to it. Don't make up numbers.
-- Be direct. Lead with the answer, not a preamble.
-- Keep replies under 120 words unless a comparison genuinely needs more.
-- Never use numbered lists unless explicitly asked for a comparison.
-- One follow-up question max, only if truly needed.
-- Voice mode: under 50 words, plain text, no markdown.
+RESPONSE RULES:
+- Anchor every number to the injected verdict data or KB chunks
+  Example: "Based on the verdict, you're getting 1.8 cpp — that's solid."
+- Never invent CPP figures, point costs, cash prices, or award availability
+- If the data isn't injected, say so and suggest running a search
+- Under 120 words for most answers
+- No numbered lists unless user explicitly asks for a comparison
+- No markdown headers
 
-When asked about transfers specifically:
-- State the ratio, any transfer minimums, and processing time if notable
-- Mention if a transfer is one-way / irreversible
-- Suggest whether the transfer makes sense given their balance and the goal
-"""
+CPP BENCHMARKS (for contextualizing verdict data — do not invent CPP values):
+  < 1.0 cpp = poor redemption
+  1.0–1.5 cpp = ok / baseline
+  1.5–2.0 cpp = good
+  > 2.0 cpp = excellent
+  > 3.0 cpp = exceptional (premium cabin sweet spots)
+
+TRANSFER RULES:
+- Only discuss transfer partners that appear in the injected KB chunks
+- Always note: transfers are almost always one-way and irreversible
+- Never confirm processing time unless it's explicitly in the KB data
+- Warn to verify space BEFORE transferring"""
+
+
+def _build_system(
+    rag_chunks: list[dict],
+    rag_examples: list[dict],
+    rag_corrections: list[dict],
+    is_voice: bool,
+) -> str:
+    ground_truth = build_ground_truth_block(
+        rag_chunks=rag_chunks or None,
+        rag_examples=rag_examples or None,
+        rag_corrections=rag_corrections or None,
+    )
+    voice_note = "\n[VOICE MODE: plain text only, under 50 words, no markdown, no lists]" if is_voice else ""
+
+    if ground_truth:
+        return f"{_BASE_SYSTEM}\n\n{ground_truth}{voice_note}"
+    return f"{_BASE_SYSTEM}{voice_note}"
 
 
 async def handle(
@@ -69,46 +71,30 @@ async def handle(
     wallet: list[dict],
     verdict_context: str | None = None,
     *,
+    rag_chunks: list[dict] | None = None,
+    rag_examples: list[dict] | None = None,
+    rag_corrections: list[dict] | None = None,
     is_voice: bool = False,
 ) -> dict[str, Any]:
-    """
-    Returns:
-      {
-        "message": str,
-        "prefill": None,   (this handler never fills the search form)
-      }
-    """
-    system = _SYSTEM
+    system = _build_system(rag_chunks or [], rag_examples or [], rag_corrections or [], is_voice)
+
+    # Wallet + verdict always injected regardless of RAG
+    ground_truth = build_ground_truth_block(
+        wallet=wallet,
+        verdict_context=verdict_context,
+        rag_chunks=rag_chunks or [],
+        rag_examples=rag_examples or [],
+        rag_corrections=rag_corrections or [],
+    )
+    full_system = f"{_BASE_SYSTEM}\n\n{ground_truth}" if ground_truth else _BASE_SYSTEM
     if is_voice:
-        system += "\n\n[VOICE MODE: max 50 words, plain text, no markdown, no lists]"
+        full_system += "\n[VOICE MODE: plain text only, under 50 words, no markdown, no lists]"
 
-    # Build the user prompt with all available context
-    sections: list[str] = []
-
-    if wallet:
-        wallet_lines = [
-            f"  - {w.get('program', 'Unknown')}: {w.get('points', 0):,} pts"
-            for w in wallet
-        ]
-        sections.append("USER WALLET:\n" + "\n".join(wallet_lines))
-
-    if verdict_context:
-        sections.append(f"CURRENT VERDICT CONTEXT:\n{verdict_context}")
-
-    history_lines = []
-    for turn in history[-8:]:
-        role = "Zoe" if turn.get("role") == "assistant" else "User"
-        content = str(turn.get("content", "")).strip()[:400]
-        if content:
-            history_lines.append(f"{role}: {content}")
-    if history_lines:
-        sections.append("RECENT CONVERSATION:\n" + "\n".join(history_lines))
-
-    sections.append(f"USER: {message}")
-
-    user_prompt = "\n\n".join(sections)
-
-    reply = await call_llm(system, user_prompt, temperature=0.5, max_tokens=300 if is_voice else 600)
+    reply = await call_llm_with_history(
+        full_system, history, message,
+        temperature=0.3,
+        max_tokens=100 if is_voice else 300,
+    )
 
     return {
         "message": reply or "I wasn't able to analyse that — try rephrasing and I'll take another look.",

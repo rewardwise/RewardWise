@@ -1,51 +1,69 @@
 """
 zoe/handlers/destination.py
 ────────────────────────────
-Handles destination knowledge questions:
-  - Things to do, hidden gems, best neighborhoods
-  - Best time to visit, weather, seasonality
-  - Visa requirements
-  - Food scene, culture, safety, local tips
-  - Can chain into trip_search: after answering, offer to search flights
+Handles destination knowledge questions and open-ended trip exploration.
 
-Ticket coverage:
-  ✅ "What's there to do in Lisbon?"
-  ✅ "Best time to visit Japan?"
-  ✅ "Do I need a visa for Thailand?"
-  ✅ "What's the food scene like in Mexico City?"
-  ✅ "Hidden gems in Southeast Asia?"
-  ✅ Chains into trip search when wallet is present
-  ✅ Voice mode: concise, conversational
+Uses call_llm_with_history() with real multi-turn message history.
+All three RAG layers are injected as ground truth via grounding.py:
+  - Layer 3 corrections (PM negative examples) — highest priority
+  - Layer 1 KB chunks (factual knowledge)
+  - Layer 2 examples (tone/format guidance)
+
+Hard boundary: never collects trip fields or touches the search form.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from app.services.zoe.llm_caller import call_llm
+from app.services.zoe.llm_caller import call_llm_with_history
+from app.services.zoe.grounding import build_ground_truth_block
 
-# ── System prompt ─────────────────────────────────────────────────────────────
 
-_SYSTEM = """You are Zoe, a knowledgeable and enthusiastic travel companion for MyTravelWallet.
-Right now you're answering destination questions — sharing insider knowledge like a well-traveled friend would.
+_BASE_SYSTEM = """You are Zoe — a knowledgeable, opinionated travel companion for MyTravelWallet.
+You're answering a destination question or helping someone figure out where to go.
 
-You know:
-- Popular and off-the-beaten-path destinations worldwide
-- Best times to visit (weather, crowds, festivals, prices)
-- Visa requirements for US passport holders (note: always recommend verifying officially)
-- Local culture, food, safety, neighborhoods, day trips
-- Practical travel tips (SIM cards, transportation, tipping, etiquette)
+Be the well-traveled friend who gives real, specific, useful advice.
+Share opinions. Be concrete. "Rajasthan in December is incredible — dry, not too hot, great light"
+beats "India is a fascinating country with many attractions."
 
-RULES:
-- Be warm, specific, and opinionated. Don't be a travel brochure.
-- Lead with the most useful insight first.
-- Keep replies under 120 words unless a comparison genuinely warrants more.
-- No bullet points unless asked for a list.
-- After answering, if the user has wallet data or it's natural, offer to search flights to that destination.
-  Example ending: "Want me to look up flights and see how your points stack up?"
-- Voice mode: under 50 words, plain text only, no markdown.
-- Never make up visa rules — if uncertain, tell them to check official sources.
-"""
+RESPONSE RULES:
+- Under 120 words unless the question genuinely needs more
+- No numbered lists unless user explicitly asked for steps
+- No markdown headers or excessive bullet points
+- No sycophantic openers ("Great question!", "Of course!")
+- Be direct — lead with the answer, not a preamble
+- If you don't know something specific, say so and suggest where to verify
+
+VISA RULE:
+Always recommend verifying visa requirements with the official embassy or State Department
+website, even when you have KB data on it. Rules change.
+
+BRIDGE RULE:
+If it feels natural, offer ONE gentle invitation to search for flights at the end.
+Example: "Want me to help you find flights there?"
+Do NOT collect trip fields or mention the search form explicitly."""
+
+
+def _build_system(
+    rag_chunks: list[dict],
+    rag_examples: list[dict],
+    rag_corrections: list[dict],
+    is_voice: bool,
+) -> str:
+    ground_truth = build_ground_truth_block(
+        rag_chunks=rag_chunks or None,
+        rag_examples=rag_examples or None,
+        rag_corrections=rag_corrections or None,
+    )
+    voice_note = "\n[VOICE MODE: plain text only, under 50 words, no markdown]" if is_voice else ""
+
+    if ground_truth:
+        return f"{_BASE_SYSTEM}\n\n{ground_truth}{voice_note}"
+    return (
+        f"{_BASE_SYSTEM}\n\nNote: No knowledge base data was retrieved. "
+        f"Answer from general knowledge and be clear about uncertainty.{voice_note}"
+    )
 
 
 async def handle(
@@ -53,50 +71,20 @@ async def handle(
     history: list[dict],
     wallet: list[dict],
     *,
+    rag_chunks: list[dict] | None = None,
+    rag_examples: list[dict] | None = None,
+    rag_corrections: list[dict] | None = None,
     is_voice: bool = False,
 ) -> dict[str, Any]:
-    """
-    Returns:
-      {
-        "message": str,
-        "prefill": None,
-        "suggest_search": bool,   (hint to frontend that a trip search offer was made)
-      }
-    """
-    system = _SYSTEM
-    if is_voice:
-        system += "\n\n[VOICE MODE: max 50 words, plain text, no markdown, no lists]"
+    system = _build_system(rag_chunks or [], rag_examples or [], rag_corrections or [], is_voice)
 
-    sections: list[str] = []
-
-    if wallet:
-        programs = [w.get("program", "") for w in wallet if w.get("program")]
-        if programs:
-            sections.append(f"USER HAS POINTS IN: {', '.join(programs)}")
-
-    history_lines = []
-    for turn in history[-6:]:
-        role = "Zoe" if turn.get("role") == "assistant" else "User"
-        content = str(turn.get("content", "")).strip()[:300]
-        if content:
-            history_lines.append(f"{role}: {content}")
-    if history_lines:
-        sections.append("RECENT CONVERSATION:\n" + "\n".join(history_lines))
-
-    sections.append(f"USER: {message}")
-
-    user_prompt = "\n\n".join(sections)
-
-    reply = await call_llm(system, user_prompt, temperature=0.7, max_tokens=250 if is_voice else 500)
-
-    # Detect if the reply ends with a search offer so frontend can track it
-    suggest_search = any(
-        phrase in (reply or "").lower()
-        for phrase in ["want me to look up flights", "want me to search", "shall i search", "should i look up"]
+    reply = await call_llm_with_history(
+        system, history, message,
+        temperature=0.5,
+        max_tokens=80 if is_voice else 280,
     )
 
     return {
-        "message": reply or "I'd love to help with that destination! Could you tell me a bit more about what you're looking for?",
+        "message": reply or "Tell me more about where you're thinking — I'd love to help you plan.",
         "prefill": None,
-        "suggest_search": suggest_search,
     }

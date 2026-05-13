@@ -1,27 +1,26 @@
 """
 zoe/router.py
 ─────────────
-Classifies an incoming user message into one of Zoe's intent categories,
-and returns which supporting context layers to inject alongside the handler.
+Classifies an incoming user message into one of Zoe's intent categories.
 
-Intent categories
-  trip_search       – flight search, dates, origin/destination, travelers
-  verdict_strategy  – verdict interpretation + points/wallet/transfer strategy
-  destination       – destination Q&A, tips, visa, best-time-to-visit
-  wallet_support    – balance lookups, card management, product FAQ, booking logistics
-  off_topic         – anything unrelated → generic LLM, no special context
+Priority order (first match wins):
+  1. off_topic
+  2. verdict_strategy
+  3. wallet_support
+  4. destination        — explicit knowledge questions OR bare place name with no trip signals
+  5. trip_search        — explicit flight planning language
+  6. (default)          — trip_search
 
-Supporting context flags (any handler can request these)
-  needs_wallet      – inject user's wallet balances
-  needs_verdict     – inject current verdict context if one exists
-  needs_history     – inject recent conversation turns (always true)
-  is_voice          – caller is the voice endpoint; responses must be short + plain
+IMPORTANT: short affirmative/follow-up replies ("yes", "yes please", "LGA", "december",
+"just me") have no strong signals and fall through to the default — trip_search. This is
+correct because they are continuing an existing trip planning conversation. The trip_search
+handler reads full history to understand context.
 """
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal
 
 Intent = Literal[
@@ -36,36 +35,44 @@ Intent = Literal[
 @dataclass
 class RouteResult:
     intent: Intent
-    needs_wallet: bool = True        # almost always useful
-    needs_verdict: bool = False      # only when a verdict exists + question references it
+    needs_wallet: bool = True
+    needs_verdict: bool = False
     is_voice: bool = False
 
 
-# ── Keyword signal sets ───────────────────────────────────────────────────────
+# ── Signal patterns ───────────────────────────────────────────────────────────
 
 _TRIP_SIGNALS = re.compile(
     r"\b("
-    r"fly|flight|flights|flying|travel|trip|route|ticket|book(?:ing)?|depart|arrive|"
-    r"airport|airline|from .+ to|to .+ from|one.?way|round.?trip|return flight|"
-    r"cheapest|cheap flights?|best time to fly|nonstop|layover|connection|"
-    r"when (?:is|are|can) (?:i|we|you)|how (?:long|much) (?:is|does|would)|"
-    r"find (?:me )?(?:a |some )?flights?|search flights?|look(?:ing)? for flights?"
+    r"fly|flight|flights|flying|"
+    r"travel to|trip to|going to|want to go to|"
+    r"route|ticket|book(?:ing)?|depart|arrive|"
+    r"airport|airline|"
+    r"one.?way|round.?trip|return flight|"
+    r"cheapest(?: flight)?|cheap flights?|best time to fly|"
+    r"nonstop|layover|connection|stopover|"
+    r"find (?:me )?(?:a |some )?flights?|search(?: for)? flights?|"
+    r"look(?:ing)? for flights?|"
+    r"i (?:want|need|d like) to (?:fly|go|travel)|"
+    r"how (?:long|much) (?:is|does|would) (?:a )?(?:flight|trip)"
     r")\b",
     re.IGNORECASE,
 )
 
 _VERDICT_SIGNALS = re.compile(
     r"\b("
-    r"verdict|deal|good deal|worth it|should i (?:book|use|pay|buy)|"
-    r"points or cash|cash or points|use my points|redeem|cpp|cents per point|"
+    r"verdict|good deal|worth it|should i (?:book|use|pay|buy)|"
+    r"points or cash|cash or points|use my points|redeem|"
+    r"cpp|cents per point|"
     r"award (?:ticket|flight|seat|booking)|revenue (?:ticket|fare)|"
     r"better (?:deal|value|option)|is this (?:a good|worth)|"
     r"transfer (?:points|miles)|transfer to|transfer partner|"
     r"chase (?:ur|sapphire|freedom)|amex (?:mr|platinum|gold)|"
-    r"capital one|citi (?:th)?ank(?:you)?|bilt|wells fargo|"
+    r"capital one|citi (?:thankyou|th)?|bilt|wells fargo|"
     r"united miles|delta skymiles|american miles|alaska miles|"
     r"air france|british airways|hyatt|marriott|hilton|"
-    r"how many (?:points|miles)|what.?s (?:the )?best (?:card|program|use)|"
+    r"how many (?:points|miles) (?:do i need|would it cost|to fly)|"
+    r"what.?s (?:the )?best (?:card|program|use)|"
     r"sweet spot|business class(?: with points)?|first class(?: with points)?"
     r")\b",
     re.IGNORECASE,
@@ -73,12 +80,21 @@ _VERDICT_SIGNALS = re.compile(
 
 _DESTINATION_SIGNALS = re.compile(
     r"\b("
-    r"what.?s (?:it )?like in|things? to do|places? to (?:visit|see|go)|"
-    r"best (?:time|month|season) to visit|hidden gems?|local (?:food|tips?|culture)|"
-    r"visa (?:required|needed|for)|do i need a visa|weather in|climate in|"
-    r"safe(?:ty)? in|is .+ safe|restaurants? in|food (?:scene|in)|"
-    r"neighborhoods?|must.?see|must.?do|itinerary for|day trip|"
-    r"nightlife|beach(?:es)?|hiking|museums?|culture in|history of"
+    r"what.?s (?:it )?like (?:in|there)|things? to do(?: in)?|"
+    r"places? to (?:visit|see|go)(?: in)?|"
+    r"best (?:time|month|season) to visit|hidden gems?|"
+    r"local (?:food|tips?|culture|transport)|"
+    r"visa (?:required|needed|for)|do i need a visa|"
+    r"weather in|climate in|"
+    r"is (?:it )?safe(?: in| to go| to visit)?|safety in|"
+    r"restaurants? in|food (?:scene|in)|"
+    r"neighborhoods?|must.?see|must.?do|"
+    r"itinerary for|day trip(?:s)?(?: from| to)?|"
+    r"nightlife(?: in)?|beach(?:es)?(?: in)?|"
+    r"hiking(?: in| near)?|museums?(?: in)?|"
+    r"culture in|history of|"
+    r"tell me about|what should i (?:know|do|see|eat)(?: in| about)?|"
+    r"tips? (?:for|on|about)(?: visiting)?"
     r")\b",
     re.IGNORECASE,
 )
@@ -89,8 +105,10 @@ _WALLET_SUPPORT_SIGNALS = re.compile(
     r"add (?:a )?(?:card|program|account)|remove (?:a )?(?:card|program)|"
     r"update (?:my )?(?:balance|points|card)|wrong (?:balance|points|number)|"
     r"which cards?(?: do i have)?|connected (?:cards?|programs?|accounts?)|"
-    r"how (?:do i|to) (?:add|use|connect|set up)|what (?:does|is) (?:this )?(?:app|site|platform)|"
-    r"how (?:does|do) (?:this|it|you) work|google flights?|comparison|difference|"
+    r"how (?:do i|to) (?:add|use|connect|set up)|"
+    r"what (?:does|is) (?:this )?(?:app|site|platform)|"
+    r"how (?:does|do) (?:this|it|you) work|"
+    r"google flights?|comparison|difference between|"
     r"can (?:i|you) search|hotels?|cancel(?:lation)?|fees?|"
     r"book(?:ing)? (?:direct|through|via|on)|award (?:fee|tax)|partner site|"
     r"how do i (?:actually )?book|where do i book"
@@ -100,14 +118,39 @@ _WALLET_SUPPORT_SIGNALS = re.compile(
 
 _OFF_TOPIC_SIGNALS = re.compile(
     r"\b("
-    r"write (?:me )?a poem|tell me a joke|who (?:won|won the)|sports?|"
-    r"weather (?:today|tomorrow|this week)|stock (?:price|market)|recipe|"
-    r"movie|tv show|netflix|music|song|lyrics|math|calcul|"
-    r"politics|election|news|headline|celebrity"
+    r"write (?:me )?a (?:poem|song|essay|story)|tell me a joke|"
+    r"who (?:won|won the)\b|sports? score|"
+    r"stock (?:price|market)|recipe|how (?:do i )?cook|"
+    r"movie(?: review)?|tv show|netflix|hulu|"
+    r"music|song lyrics|lyrics to|"
+    r"math problem|calcul(?:ate|ation)|solve for|"
+    r"politics|election results|president of|news today|headlines?|celebrity"
     r")\b",
     re.IGNORECASE,
 )
 
+# Bare place name: short message that is likely just a destination name
+# e.g. "India?", "Southeast Asia", "the Maldives"
+# Catches these ONLY when there are no trip signals (not "fly to India")
+_BARE_PLACE = re.compile(
+    r"^(?:the\s+)?[A-Z][a-zA-Z\s\-]{2,35}[?!.]?$"
+)
+
+# Vague destination curiosity — no specific place but clearly exploring ideas
+_VAGUE_DESTINATION = re.compile(
+    r"\b("
+    r"somewhere (?:warm|hot|cold|tropical|exotic|beautiful|cheap|fun|different|new)|"
+    r"(?:beach|island|mountain) (?:destination|trip|getaway)|"
+    r"(?:never|haven.?t) been to|always wanted to (?:go|visit|see)|"
+    r"dream (?:trip|destination|vacation)|"
+    r"not sure where(?: to go)?|don.?t know where(?: to go)?|"
+    r"help me (?:decide|choose|pick)(?: where| a destination)?"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+# ── Classifier ────────────────────────────────────────────────────────────────
 
 def classify(
     message: str,
@@ -115,31 +158,17 @@ def classify(
     has_verdict_context: bool = False,
     is_voice: bool = False,
 ) -> RouteResult:
-    """
-    Classify a user message and return a RouteResult.
-
-    Priority order (first match wins):
-      1. off_topic
-      2. verdict_strategy   (if verdict context present OR explicit points/deal language)
-      3. destination
-      4. wallet_support
-      5. trip_search
-      (default) trip_search — Zoe's core mode
-    """
     text = message.strip()
 
-    # 1. Off-topic — bail out early, no special context needed
+    # 1. Off-topic — exit immediately
     if _OFF_TOPIC_SIGNALS.search(text) and not _TRIP_SIGNALS.search(text):
         return RouteResult(intent="off_topic", needs_wallet=False, is_voice=is_voice)
 
     # 2. Verdict / points strategy
-    #    Fires when: user is asking about a deal/points/transfers,
-    #    OR when a verdict exists and user asks anything evaluative.
     verdict_lang = bool(_VERDICT_SIGNALS.search(text))
     evaluative_with_verdict = has_verdict_context and re.search(
-        r"\b(should i|is this|worth|good|better|recommend|explain|why)\b",
-        text,
-        re.IGNORECASE,
+        r"\b(should i|is this|worth|good|better|recommend|explain|why|analyse|analyze)\b",
+        text, re.IGNORECASE,
     )
     if verdict_lang or evaluative_with_verdict:
         return RouteResult(
@@ -149,33 +178,30 @@ def classify(
             is_voice=is_voice,
         )
 
-    # 3. Destination knowledge
-    if _DESTINATION_SIGNALS.search(text) and not _TRIP_SIGNALS.search(text):
-        return RouteResult(
-            intent="destination",
-            needs_wallet=False,
-            is_voice=is_voice,
-        )
-
-    # 4. Destination + trip hybrid (destination question but also trip signals)
-    if _DESTINATION_SIGNALS.search(text) and _TRIP_SIGNALS.search(text):
-        return RouteResult(
-            intent="destination",
-            needs_wallet=True,
-            is_voice=is_voice,
-        )
-
-    # 5. Wallet / product support / booking logistics
+    # 3. Wallet / product / booking logistics
     if _WALLET_SUPPORT_SIGNALS.search(text) and not _TRIP_SIGNALS.search(text):
-        return RouteResult(
-            intent="wallet_support",
-            needs_wallet=True,
-            is_voice=is_voice,
-        )
+        return RouteResult(intent="wallet_support", needs_wallet=True, is_voice=is_voice)
 
-    # 6. Trip search (also the default)
-    return RouteResult(
-        intent="trip_search",
-        needs_wallet=True,
-        is_voice=is_voice,
-    )
+    has_trip = bool(_TRIP_SIGNALS.search(text))
+
+    # 4. Destination knowledge questions
+    if _DESTINATION_SIGNALS.search(text) and not has_trip:
+        return RouteResult(intent="destination", needs_wallet=False, is_voice=is_voice)
+
+    # 4b. Bare proper noun with no trip signals — curiosity, not booking
+    if not has_trip and _BARE_PLACE.match(text):
+        return RouteResult(intent="destination", needs_wallet=False, is_voice=is_voice)
+
+    # 4c. Vague destination curiosity
+    if _VAGUE_DESTINATION.search(text) and not has_trip:
+        return RouteResult(intent="destination", needs_wallet=False, is_voice=is_voice)
+
+    # 5. Explicit trip planning
+    if has_trip:
+        return RouteResult(intent="trip_search", needs_wallet=True, is_voice=is_voice)
+
+    # 6. Default — trip_search
+    # Catches follow-up replies like "yes", "LGA", "december", "just me", "economy"
+    # that have no strong signal but are continuing a trip planning conversation.
+    # The trip_search handler reads full history to understand context correctly.
+    return RouteResult(intent="trip_search", needs_wallet=True, is_voice=is_voice)

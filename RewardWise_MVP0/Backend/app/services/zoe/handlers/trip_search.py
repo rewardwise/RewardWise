@@ -1,126 +1,158 @@
 """
 zoe/handlers/trip_search.py
 ────────────────────────────
-Handles all trip-planning conversations:
-  - Origin / destination extraction
-  - Date, travelers, cabin collection
-  - Smart follow-up questions (one at a time, only when needed)
-  - PREFILL generation for the search form
-  - Flexible date range detection
-  - Round-trip vs one-way detection
+Handles trip planning conversations.
 
-Ticket coverage:
-  ✅ Partial requests needing follow-up (missing dates, travelers, cabin)
-  ✅ Ask ONE question max — never a list
-  ✅ Round-trip vs one-way detection
-  ✅ Flexible date range requests
-  ✅ Auto-fill form when enough info is present
-  ✅ Voice mode: short speakable replies
+NEW ARCHITECTURE:
+  This handler no longer decides what to ask or manages state extraction.
+  It receives:
+    - The confirmed trip state (from session + slot machine)
+    - The next slot to ask about (from slot machine) — or None if ready
+    - The conversation history (from session — real message objects)
+    - The wallet (for grounding)
+    - Resolution notes (from slot machine, e.g. "Resolved 'New York' → JFK")
+
+  It builds a system prompt with all ground truth injected and calls
+  call_llm_with_history() so Zoe has real conversation context.
+
+  The handler tells the LLM *what* to communicate.
+  The LLM decides *how* to say it naturally.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from app.services.zoe.llm_caller import call_llm_json
+from app.services.zoe.llm_caller import call_llm_with_history
+from app.services.zoe.grounding import build_ground_truth_block
+from app.services.zoe.slot_machine import SlotDecision, format_confirmed_state, format_missing_slots
+from app.services.zoe.session import TripState
 
-# ── System prompt ─────────────────────────────────────────────────────────────
 
-_SYSTEM = """You are Zoe, a sharp and warm travel assistant for MyTravelWallet.
-Your job right now: help the user plan a flight and collect enough info to fill a search form.
+# ── Personality + base instructions ──────────────────────────────────────────
 
-REQUIRED to search: origin, destination, departure date.
-OPTIONAL (use defaults if not given): travelers (default 1), cabin (default economy), return_date (for round-trips).
+_BASE_SYSTEM = """You are Zoe — a warm, sharp travel friend who works for MyTravelWallet.
+You help people plan flights and figure out the best way to use their points.
 
-RULES:
-- Lead with a helpful, friendly response first. Then ask ONE clarifying question if needed.
-- Never ask more than one question in a single message.
-- Never list the fields you need. Weave the question naturally into the reply.
-- If you have origin + destination + date, fill the form and tell the user conversationally. 
-  Example: "Perfect — JFK to Tokyo on June 12, economy. I've filled that in, just hit Search when ready!"
-- If the date is vague ("this summer", "next month"), pick a reasonable specific date and mention it.
-- Detect round-trip intent from phrases like "and back", "return", "round trip".
-- Detect flexible dates from phrases like "cheapest time", "best time", "flexible on dates".
-- For flexible searches, set date to the first day of the range and date_end to the last.
-- Keep replies under 80 words. Never use bullet points.
-- If the user is in voice mode, keep the reply under 40 words, plain text only.
+Your personality: knowledgeable, direct, genuinely interested in the trip.
+Not a form. Not a bot. A friend who happens to know a lot about travel.
 
-WALLET CONTEXT (if provided): Use this to personalize suggestions — e.g., if they have Chase points, mention that.
-
-OUTPUT FORMAT — always return valid JSON:
-{
-  "message": "Zoe's conversational reply",
-  "prefill": {
-    "origin": "JFK" or null,
-    "destination": "NRT" or null,
-    "date": "YYYY-MM-DD" or null,
-    "return_date": "YYYY-MM-DD" or null,
-    "date_end": "YYYY-MM-DD" or null,
-    "travelers": 1,
-    "cabin": "economy" | "business" | "first" | "premium_economy",
-    "tripType": "oneway" | "roundtrip"
-  } or null,
-  "ready_to_search": true | false,
-  "follow_up_slot": "date" | "origin" | "destination" | "travelers" | "cabin" | "trip_type" | null
-}
-
-Set prefill to null if you don't have enough to fill anything useful.
-Set ready_to_search to true ONLY when origin + destination + date are all present.
+RESPONSE RULES:
+- Respond naturally and conversationally — like texting a well-traveled friend
+- Under 80 words for collection turns (when still gathering trip info)
+- Under 150 words for explanatory turns (when search is ready or explaining something)
+- No bullet points, no numbered lists, no markdown headers
+- No sycophantic openers ("Great choice!", "Awesome!", "Of course!")
+- Never ask more than one question per response — this is enforced, not optional
+- Never list what you still need ("I still need X and Y")
+- Never enumerate missing fields
+- Lead with something genuine about the trip when you have destination context
 """
 
+
+def _build_system_prompt(
+    decision: SlotDecision,
+    wallet: list[dict],
+    verdict_context: str | None,
+    is_voice: bool,
+) -> str:
+    """Build the full system prompt for the respond call."""
+
+    state_str = format_confirmed_state(decision.trip_state)
+    missing_str = format_missing_slots(decision.trip_state)
+
+    # Ground truth block (wallet, verdict, resolution notes)
+    ground_truth = build_ground_truth_block(
+        wallet=wallet,
+        verdict_context=verdict_context,
+        resolution_notes=decision.resolution_notes or [],
+    )
+
+    # What to communicate on this turn
+    if decision.ready_to_search:
+        task = """TASK FOR THIS TURN:
+All required trip fields are now confirmed. Tell the user you've filled in the search form
+and invite them to hit Search when they're ready. Be natural — don't make it a big announcement.
+One sentence is enough. Example: "Perfect — I've filled that in, just hit Search when you're ready!"
+Do NOT ask any questions. Do NOT say "shall I search?". The user presses Search."""
+    elif decision.next_slot:
+        slot_label = {
+            "origin":      "where they're flying FROM (their departure city or airport)",
+            "destination": "where they're flying TO (their destination city or airport)",
+            "depart_date": "when they want to depart (a specific date or timeframe)",
+            "trip_type":   "whether it's a one-way trip or round-trip",
+            "return_date": "when they want to return (their return date)",
+        }.get(decision.next_slot, decision.next_slot)
+
+        task = f"""TASK FOR THIS TURN:
+The next required piece of information is: {slot_label}
+
+Ask about this ONE field naturally, woven into a genuine response.
+You may share a brief interesting fact or tip about the destination/route if you have it.
+Then ask your single question.
+
+DO NOT ask about any other fields.
+DO NOT mention what other fields are missing.
+DO NOT list or enumerate what you still need."""
+    else:
+        task = """TASK FOR THIS TURN:
+Continue the conversation naturally. The user is providing more context about their trip."""
+
+    voice_note = "\n[VOICE MODE: plain text only, under 40 words, no markdown]" if is_voice else ""
+
+    return f"""{_BASE_SYSTEM}
+
+CONFIRMED TRIP STATE:
+{state_str}
+
+STILL MISSING:
+{missing_str}
+
+{ground_truth}
+
+{task}{voice_note}"""
+
+
+# ── Main handler ──────────────────────────────────────────────────────────────
 
 async def handle(
     message: str,
     history: list[dict],
     wallet: list[dict],
+    decision: SlotDecision,
     *,
+    verdict_context: str | None = None,
     is_voice: bool = False,
 ) -> dict[str, Any]:
     """
+    Generate Zoe's response for a trip planning turn.
+
+    Args:
+        message:        The user's latest message
+        history:        Conversation history from session (real message objects)
+        wallet:         User's wallet programs and balances
+        decision:       SlotDecision from the slot machine
+        verdict_context: Active verdict if any
+        is_voice:       True for voice interactions
+
     Returns:
-      {
-        "message": str,
-        "prefill": dict | None,
-        "ready_to_search": bool,
-      }
+        {
+          "message": str,
+          "prefill": dict | None,
+        }
     """
-    wallet_str = _format_wallet(wallet)
-    voice_note = "\n[VOICE MODE: keep reply under 40 words, plain text, no markdown]" if is_voice else ""
+    system = _build_system_prompt(decision, wallet, verdict_context, is_voice)
 
-    history_text = _format_history(history)
-
-    user_prompt = f"""{f'USER WALLET:{chr(10)}{wallet_str}{chr(10)}' if wallet_str else ''}
-CONVERSATION SO FAR:
-{history_text}
-
-USER: {message}
-{voice_note}
-
-Return JSON only:"""
-
-    result = await call_llm_json(_SYSTEM, user_prompt, temperature=0.3, max_tokens=500)
+    # Use call_llm_with_history so the model has real conversation context
+    reply = await call_llm_with_history(
+        system,
+        history,
+        message,
+        temperature=0.45,
+        max_tokens=120 if (is_voice or not decision.ready_to_search) else 300,
+    )
 
     return {
-        "message": result.get("message", "Tell me more about your trip and I'll help you search!"),
-        "prefill": result.get("prefill"),
-        "ready_to_search": bool(result.get("ready_to_search", False)),
+        "message": reply or (decision.fallback_question or "Tell me more about your trip!"),
+        "prefill": decision.prefill,
     }
-
-
-def _format_wallet(wallet: list[dict]) -> str:
-    if not wallet:
-        return ""
-    lines = [f"  - {w.get('program', 'Unknown')}: {w.get('points', 0):,} pts" for w in wallet]
-    return "\n".join(lines)
-
-
-def _format_history(history: list[dict]) -> str:
-    if not history:
-        return "(fresh conversation)"
-    lines = []
-    for turn in history[-8:]:
-        role = "Zoe" if turn.get("role") == "assistant" else "User"
-        content = str(turn.get("content", "")).strip()[:300]
-        if content:
-            lines.append(f"{role}: {content}")
-    return "\n".join(lines) or "(fresh conversation)"
