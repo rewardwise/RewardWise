@@ -12,7 +12,7 @@ const TIER_AMOUNTS: Record<
 	string,
 	{ unitAmount: number; productName: string; path: "standard" | "premium" }
 > = {
-	standard: { unitAmount: 3900, productName: "Standard Concierge", path: "standard" },
+	standard: { unitAmount: 1900, productName: "Standard Concierge", path: "standard" },
 	premium: { unitAmount: 19900, productName: "Premium Concierge", path: "premium" },
 };
 

@@ -12,8 +12,6 @@ DEFAULT_FLIGHTAPI_BASE_URL = "https://api.flightapi.io"
 
 CABIN_CLASS_MAP = {
     "economy": "Economy",
-    "premium_economy": "Premium_Economy",
-    "premium economy": "Premium_Economy",
     "business": "Business",
     "first": "First",
 }

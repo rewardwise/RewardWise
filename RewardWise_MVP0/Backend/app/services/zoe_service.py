@@ -1,234 +1,351 @@
+"""
+app/services/zoe_service.py
+────────────────────────────
+Main Zoe entry point — the 8-step production pipeline, all phases active.
+
+Steps every request takes, in order:
+  1. Load session state from Redis
+  2. Parse call — extract intent + entities (JSON-mode, temp=0, no history needed)
+  3. Merge entities + run slot machine (pure Python — LLM never decides what to ask)
+  4. Load wallet from DB (correct join: cards → reward_programs)
+  5. RAG retrieval — 3-layer (KB chunks, corpus examples, PM corrections)
+  6. Dispatch to handler with full context packet
+  7. Respond call — multi-turn with real message history (call_llm_with_history)
+  8. Save session to Redis + log interaction to DB
+
+Response shape (frontend-compatible):
+  {
+    "type":    "followup",
+    "message": str,
+    "prefill": dict | None,
+    "intent":  str,
+  }
+
+Key invariants:
+  - Zoe never invents field values — only confirmed user input reaches prefill
+  - Prefill is dropped unless origin + destination + date are all present
+  - The slot machine picks what to ask — never the LLM
+  - Every factual claim is grounded via grounding.py
+  - wallet fetched from cards → reward_programs join (real schema)
+"""
+
 from __future__ import annotations
 
-import json
-import os
-import re
 from typing import Any, Dict, Optional
 
-import httpx
-
 from app.db.client import get_db_client
-from app.program_aliases import PROGRAM_ALIASES  # noqa: F401
-
-NVIDIA_BASE_URL = os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
-MODEL_NAME = os.getenv("NVIDIA_MODEL", "meta/llama-3.3-70b-instruct")
-TIMEOUT = float(os.getenv("NVIDIA_TIMEOUT_SECONDS", "45"))
-MAX_TOKENS = int(os.getenv("NVIDIA_MAX_TOKENS", "700"))
-
-SYSTEM_PROMPT = """You are Zoe, a sharp, warm, and deeply knowledgeable travel assistant for MyTravelWallet — a platform that helps travelers decide whether to use points or pay cash for flights.
-
-You have extensive knowledge of:
-- World airports, their cities, hubs, and which airlines operate there
-- Airline alliances, frequent flyer programs, and which credit card points transfer to which airline programs
-- Transfer partners and ratios (e.g. Chase UR → United at 1:1, Amex MR → Air France at 1:1, Capital One → Turkish at 2:1.5)
-- General award pricing sweet spots and strategies
-- Travel tips, visa requirements, best times to visit destinations, local culture, activities, food, and hidden gems
-- Points and miles strategy (when to use points vs cash, what CPP thresholds matter, positioning for future trips)
-
-The user's profile and wallet data will be injected at the start of each conversation. Use this to personalize your answers — reference their specific cards and balances when relevant, and their past searches to understand their travel patterns.
-
-How to behave:
-- Be friendly, confident, and helpful. Like a knowledgeable travel friend, not a customer service bot.
-- Lead with the answer. If someone asks about Croatia, talk about Croatia. Don't open with four clarifying questions.
-- Ask at most ONE follow-up question per response, only when you genuinely need it. Never a numbered list of questions.
-- Keep responses under 100 words unless the question genuinely warrants more. Never cut off mid-sentence — wrap up cleanly.
-- No bullet points or numbered lists unless the user asks for a comparison.
-
-Search form pre-fill:
-- As the conversation progresses, if you have enough information to fill the search form, do it.
-- "Enough information" means: origin airport or city, destination airport or city, and a departure date (or rough timeframe). Travelers and cabin are optional — default to 1 / economy if not stated.
-- When you pre-fill, naturally mention it in your reply. Example: "Seattle to JFK in economy sounds good — I've filled that in for you, just hit Search when you're ready."
-- Don't make a big deal of it, just weave it in naturally. Never say "I've pre-filled the form" as your main point — lead with travel advice first.
-- At the end of EVERY response, output a JSON block (and only when you have enough info) in exactly this format on its own line:
-  PREFILL:{"origin":"SEA","destination":"JFK","date":"2026-06-15","return_date":"2026-06-22","travelers":1,"cabin":"economy","tripType":"roundtrip"}
-- Only include the PREFILL line when you genuinely have enough info. Omit it entirely otherwise.
-- For dates: use YYYY-MM-DD format. If the user says "next Friday" or "in two weeks", make a reasonable estimate from today. If you genuinely don't know, omit the date field.
-- For airports: use IATA codes when you're confident (SEA, JFK, LAX, EWR etc). If the user says a city name, use the main airport for that city.
-- tripType: "roundtrip" if a return date is mentioned, "oneway" otherwise.
-
-Points vs cash guidance:
-- You do NOT have live cash fares or award availability inside this chat. Never claim or imply that you do.
-- When asked "should I use points or cash?" without exact prices, give a directional take — not a fake verdict.
-- NEVER invent specific point costs, cash prices, or award availability.
-- When the user needs live numbers, say "Pull the live options in the search form, then I can help you interpret the result."
-- If the user provides actual cash and point numbers, calculate cents-per-point directly: CPP = (cash price / points) * 100. Tell them the number, whether it's good or weak, and give a lean.
-
-Wallet references:
-- Only reference the user's specific point balances if wallet data is available AND directly relevant.
-- Never say "your massive balance" or assume balances are high.
-
-Verdict interpretation (after the search form runs):
-- "Pay Cash" usually means the cash fare is cheap relative to the points required.
-- "Use Points" means the cents-per-point value is strong enough that points beat cash.
-- "Wait" usually means the cash fare looks high compared to typical pricing.
-
-What not to do:
-- Don't say "I ran the numbers" unless numbers were actually provided.
-- Don't sound like an error state when redirecting to the search form.
-- Don't ask for every trip field before giving general guidance."""
+from app.services.zoe import session as session_store
+from app.services.zoe.parse_call import parse as parse_intent
+from app.services.zoe.slot_machine import run as slot_machine_run
+from app.services.zoe.rag.retriever import retrieve as rag_retrieve, should_retrieve
+from app.services.zoe.interaction_logger import log as log_interaction
+from app.services.zoe.handlers import (
+    trip_search,
+    verdict_strategy,
+    destination,
+    wallet_support,
+    off_topic,
+    small_talk,
+)
 
 
-async def _fetch_user_context(user_id: str) -> str:
-    try:
-        supabase = get_db_client()
+# ── Wallet fetcher (uses correct schema: cards → reward_programs) ─────────────
 
-        cards_res = supabase.table("cards")\
-            .select("card_name, points_balance, reward_programs(name)")\
-            .eq("user_id", user_id)\
-            .execute()
-
-        cards = cards_res.data or []
-        if cards:
-            wallet_lines = []
-            for c in cards:
-                prog = (c.get("reward_programs") or {}).get("name", "Unknown program")
-                bal = c.get("points_balance", 0)
-                name = c.get("card_name", "Unknown card")
-                wallet_lines.append(f"  - {name} ({prog}): {bal:,} points")
-            wallet_text = "User's rewards wallet:\n" + "\n".join(wallet_lines)
-        else:
-            wallet_text = "User has no cards added yet."
-
-        searches_res = supabase.table("searches")\
-            .select("origin, destination, departure_date, cabin, trip_type")\
-            .eq("user_id", user_id)\
-            .order("created_at", desc=True)\
-            .limit(10)\
-            .execute()
-
-        searches = searches_res.data or []
-        if searches:
-            search_lines = [
-                f"  - {s['origin']} → {s['destination']} | {s.get('departure_date','')} | {s.get('cabin','economy')} | {s.get('trip_type','roundtrip')}"
-                for s in searches
-            ]
-            searches_text = "User's recent searches:\n" + "\n".join(search_lines)
-        else:
-            searches_text = "User has no recent searches."
-
-        user_res = supabase.table("users")\
-            .select("display_name, email")\
-            .eq("id", user_id)\
-            .single()\
-            .execute()
-
-        user_data = user_res.data or {}
-        name = user_data.get("display_name") or user_data.get("email", "").split("@")[0] or "there"
-
-        return f"User's name: {name}\n\n{wallet_text}\n\n{searches_text}"
-
-    except Exception as e:
-        print("⚠️ Could not fetch user context:", e)
-        return ""
-
-
-def _extract_prefill(raw_reply: str) -> tuple[str, Optional[dict]]:
+async def _fetch_wallet(user_id: str) -> list[dict]:
     """
-    Strip the PREFILL:... line from the reply and parse it.
-    Returns (clean_reply, prefill_dict_or_None).
+    Fetch user wallet from the database.
+    Correct join: cards.reward_program_id → reward_programs.id
+    (Not wallet_programs — that table doesn't exist.)
     """
-    prefill = None
-    lines = raw_reply.split("\n")
-    clean_lines = []
-
-    for line in lines:
-        stripped = line.strip()
-        if stripped.startswith("PREFILL:"):
-            try:
-                json_str = stripped[len("PREFILL:"):]
-                data = json.loads(json_str)
-                # Validate minimum required fields
-                if data.get("origin") and data.get("destination"):
-                    prefill = data
-            except Exception:
-                pass  # Malformed JSON — ignore
-        else:
-            clean_lines.append(line)
-
-    clean_reply = "\n".join(clean_lines).strip()
-    return clean_reply, prefill
-
-
-async def _call_nvidia(messages: list[dict]) -> str:
-    api_key = os.getenv("NVIDIA_API_KEY")
-    if not api_key:
-        return "I'm having trouble connecting right now. Please try again in a moment."
-
     try:
-        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
-            resp = await client.post(
-                f"{NVIDIA_BASE_URL.rstrip('/')}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": MODEL_NAME,
-                    "messages": messages,
-                    "temperature": 0.7,
-                    "max_tokens": MAX_TOKENS,
-                },
-            )
-        if resp.status_code >= 400:
-            print("❌ NVIDIA ERROR:", resp.status_code, resp.text[:300])
-            return "I'm having trouble connecting right now. Please try again."
-
-        content = resp.json()["choices"][0]["message"]["content"]
-        return content.strip() if isinstance(content, str) else ""
-
-    except Exception as e:
-        print("❌ ZOE LLM ERROR:", e)
-        return "I'm having a little trouble right now — give me a second and try again."
+        db = get_db_client()
+        result = (
+            db.table("cards")
+            .select("points_balance, card_name, reward_programs(name, code, currency_type)")
+            .eq("user_id", user_id)
+            .execute()
+        )
+        wallet = []
+        for r in (result.data or []):
+            rp = r.get("reward_programs") or {}
+            wallet.append({
+                "program": rp.get("name") or r.get("card_name") or "Unknown",
+                "program_code": rp.get("code"),
+                "currency_type": rp.get("currency_type"),
+                "points": r.get("points_balance") or 0,
+            })
+        return wallet
+    except Exception as exc:
+        print("⚠️ Zoe wallet fetch error:", exc)
+        return []
 
 
-def _build_messages(user_context: str, history: list[dict], user_message: str) -> list[dict]:
-    system = SYSTEM_PROMPT
-    if user_context:
-        system += f"\n\n--- USER CONTEXT ---\n{user_context}"
+# ── Session ID resolver ───────────────────────────────────────────────────────
 
-    messages = [{"role": "system", "content": system}]
+def _session_id(payload: Dict[str, Any]) -> str:
+    user_id = payload.get("user_id")
+    if not user_id:
+        raise ValueError("Zoe requires an authenticated user")
 
-    for turn in history[-10:]:
-        role = turn.get("role", "")
-        content = str(turn.get("content") or "").strip()
-        if role in ("user", "assistant") and content:
-            messages.append({"role": role, "content": content[:1000]})
+    conv_id = payload.get("conversation_id")
+    if conv_id:
+        return f"user:{user_id}:conv:{conv_id}"
 
-    messages.append({"role": "user", "content": user_message})
-    return messages
+    return f"user:{user_id}"
 
+
+# ── Response helper ───────────────────────────────────────────────────────────
+
+def _reply(
+    message: str,
+    *,
+    prefill: dict | None = None,
+    intent: str = "trip",
+    interaction_id: str | None = None,
+) -> dict[str, Any]:
+    r: dict[str, Any] = {"type": "followup", "message": message, "intent": intent}
+    if prefill:
+        r["prefill"] = prefill
+    if interaction_id:
+        r["interaction_id"] = interaction_id
+    return r
+
+
+# ── Main pipeline ─────────────────────────────────────────────────────────────
 
 async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
-    text = (payload.get("message") or "").strip()
-    history = payload.get("history", []) or []
-    user_id = payload.get("user_id")
+    """
+    Entry point for /api/zoe (text) and /api/zoe/voice.
 
+    Payload keys:
+      message         str   – user's message
+      history         list  – frontend history (session is authoritative; this bootstraps)
+      conversation_id str   – DB conversation ID (used as Redis session key)
+      user_id         str   – for wallet lookup + interaction logging
+      wallet          list  – frontend wallet override (used if provided)
+      verdict_context str   – stringified verdict when user clicks "Ask Zoe"
+      is_voice        bool  – true for voice endpoint
+      interaction_id  str   – if provided, used for feedback recording
+    """
+
+    # ── Unpack ────────────────────────────────────────────────────────────────
+    text: str = (payload.get("message") or "").strip()
+    user_id: Optional[str] = payload.get("user_id")
+    if not user_id:
+        return _reply("Please sign in to use Zoe.", intent="auth_required")
+    verdict_context: Optional[str] = payload.get("verdict_context") or None
+    is_voice: bool = bool(payload.get("is_voice", False))
+    frontend_wallet: list[dict] = payload.get("wallet") or []
+    frontend_history: list[dict] = payload.get("history") or []
+    conversation_id: Optional[str] = payload.get("conversation_id")
+
+    # ── Guard: empty ──────────────────────────────────────────────────────────
     if not text:
-        return {"type": "followup", "message": "Hey! What's on your travel radar?"}
+        return _reply("Hey! What trip are you thinking about?", intent="trip")
 
-    if text.lower() == "start":
-        return {
-            "type": "followup",
-            "message": "Hey, I'm Zoe! I can help you figure out where to go, whether your points are worth using, what to do at a destination, or just think through your next trip. What's on your mind?",
-        }
+    # ── Guard: casual greeting / small talk only ──────────────────────────────
+    # This intentionally runs before the full pipeline, but small_talk.is_small_talk()
+    # excludes real trip/search/verdict requests like "hey I want to go to Vancouver".
+    if small_talk.is_small_talk(text):
+        result = await small_talk.handle(
+            text,
+            frontend_history,
+            is_voice=is_voice,
+        )
+        return _reply(result["message"], intent="small_talk")
 
-    user_context = ""
-    if user_id:
-        user_context = await _fetch_user_context(user_id)
+    # ─────────────────────────────────────────────────────────────────────────
+    # STEP 1: Load session state from Redis
+    # ─────────────────────────────────────────────────────────────────────────
+    sess_id = _session_id(payload)
+    session = await session_store.load(sess_id)
 
-    messages = _build_messages(user_context, history, text)
-    raw_reply = await _call_nvidia(messages)
+    # Bootstrap history from frontend if session is fresh (Redis TTL expired)
+    if not session.history and frontend_history:
+        for turn in frontend_history[-12:]:
+            role = turn.get("role", "")
+            content = str(turn.get("content", "")).strip()
+            if role in ("user", "assistant") and content:
+                session.history.append({"role": role, "content": content})
 
-    # Extract prefill data if the model included it
-    clean_reply, prefill = _extract_prefill(raw_reply)
+    if is_voice:
+        session.conversation_mode = "voice"
 
-    result: Dict[str, Any] = {
-        "type": "followup",
-        "message": clean_reply,
-    }
+    # ─────────────────────────────────────────────────────────────────────────
+    # STEP 2: Parse call — intent + entities (JSON-mode, temp=0, no history)
+    # ─────────────────────────────────────────────────────────────────────────
+    parse_result = await parse_intent(
+        text,
+        session.trip_state,
+        has_verdict_context=bool(verdict_context),
+    )
+    intent: str = parse_result.get("intent", "trip")
+    entities: dict = parse_result.get("entities", {})
 
-    if prefill:
-        result["prefill"] = prefill
-        print("✈️ ZOE PREFILL:", prefill)
+    # If Zoe just asked for a specific slot, the next reply is part of trip collection.
+    # This prevents the parse LLM from misrouting answers like:
+    # "economy sounds good" -> verdict_strategy
+    # "just me" -> off_topic/wallet/etc.
+    # "MIA" -> destination
+    if session.last_asked:
+        if intent != "trip":
+            print(f"🧭 ZOE INTENT OVERRIDE: {intent} → trip because last_asked={session.last_asked}")
+        intent = "trip"
 
-    return result
+    print(f"🧭 ZOE PARSE: intent={intent} entities={list(k for k,v in entities.items() if v)}")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # STEP 3: Slot machine — merge entities, decide next action (pure Python)
+    # ─────────────────────────────────────────────────────────────────────────
+    decision = slot_machine_run(
+        session,
+        intent,
+        entities,
+        user_message=text,
+        is_voice=is_voice,
+    )
+
+    print("🧠 ZOE STATE:", decision.trip_state.model_dump())
+    print("📝 ZOE NOTES:", decision.resolution_notes)
+    print("❓ ZOE LAST_ASKED BEFORE UPDATE:", session.last_asked)
+    print("🎰 ZOE SLOT:", decision.stage, decision.next_slot, decision.ready_to_search)
+
+    session.trip_state = decision.trip_state
+    session.stage = decision.stage
+    if decision.next_slot:
+        session.last_asked = decision.next_slot
+    else:
+        session.last_asked = None
+
+    print(f"🎰 ZOE SLOT: stage={decision.stage} next={decision.next_slot} ready={decision.ready_to_search}")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # STEP 4: Load wallet (frontend payload or DB fetch)
+    # ─────────────────────────────────────────────────────────────────────────
+    wallet = await _fetch_wallet(user_id) if user_id else []
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # STEP 5: RAG retrieval — all 3 layers
+    # ─────────────────────────────────────────────────────────────────────────
+    rag_result: dict = {"kb_chunks": [], "examples": [], "corrections": []}
+    if should_retrieve(intent):
+        rag_result = await rag_retrieve(intent, text, top_k=3)
+
+    kb_chunks: list[dict] = rag_result.get("kb_chunks", [])
+    rag_examples: list[dict] = rag_result.get("examples", [])
+    rag_corrections: list[dict] = rag_result.get("corrections", [])
+
+    print(
+    "📚 ZOE RAG:",
+    intent,
+    "kb=", len(kb_chunks),
+    "examples=", len(rag_examples),
+    "corrections=", len(rag_corrections),
+)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # STEP 6 + 7: Dispatch to handler → respond call
+    # ─────────────────────────────────────────────────────────────────────────
+    result: dict[str, Any] = {}
+
+    if decision.stage == "reset":
+        session.reset_trip()
+        result = {"message": "Sure! Let's start fresh — where are you thinking of going?", "prefill": None}
+
+    elif intent in ("trip", "trip_search") or decision.stage in ("collecting", "searching"):
+        result = await trip_search.handle(
+            text,
+            session.history,
+            wallet,
+            decision,
+            verdict_context=verdict_context,
+            is_voice=is_voice,
+        )
+
+    elif intent == "verdict_strategy":
+        result = await verdict_strategy.handle(
+            text,
+            session.history,
+            wallet,
+            verdict_context=verdict_context,
+            rag_chunks=kb_chunks,
+            rag_examples=rag_examples,
+            rag_corrections=rag_corrections,
+            is_voice=is_voice,
+        )
+
+    elif intent in ("destination", "exploring"):
+        result = await destination.handle(
+            text,
+            session.history,
+            wallet,
+            rag_chunks=kb_chunks,
+            rag_examples=rag_examples,
+            rag_corrections=rag_corrections,
+            is_voice=is_voice,
+        )
+
+    elif intent == "wallet_support":
+        result = await wallet_support.handle(
+            text,
+            session.history,
+            wallet,
+            rag_chunks=kb_chunks,
+            rag_examples=rag_examples,
+            rag_corrections=rag_corrections,
+            is_voice=is_voice,
+        )
+
+    elif intent == "off_topic":
+        result = await off_topic.handle(text, session.history, is_voice=is_voice)
+
+    else:
+        result = await trip_search.handle(
+            text,
+            session.history,
+            wallet,
+            decision,
+            verdict_context=verdict_context,
+            is_voice=is_voice,
+        )
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # STEP 8: Finalize, save state, log interaction
+    # ─────────────────────────────────────────────────────────────────────────
+    message_text: str = result.get("message") or "Give me a second — something went wrong on my end."
+    prefill: dict | None = result.get("prefill") or None
+
+    # Hard guard: drop prefill if any required field is missing.
+    # Cabin and travelers are product-required, so they must be present too.
+    if prefill and not (
+        prefill.get("origin")
+        and prefill.get("destination")
+        and prefill.get("date")
+        and prefill.get("tripType")
+        and prefill.get("travelers")
+        and prefill.get("cabin")
+    ):
+        prefill = None
+        print("⚠️ ZOE: Prefill dropped — required fields missing")
+
+    # Append turns to session history
+    session.add_turn("user", text)
+    session.add_turn("assistant", message_text)
+
+    # Save session to Redis (non-blocking failure)
+    await session_store.save(sess_id, session)
+
+    # Log interaction (non-blocking — failure never breaks user experience)
+    feedback_signal = "search_triggered" if prefill else None
+    interaction_id = await log_interaction(
+        sess_id,
+        user_id,
+        intent,
+        text,
+        message_text,
+        conversation_id=conversation_id,
+        is_voice=is_voice,
+        feedback_signal=feedback_signal,
+    )
+
+    return _reply(message_text, prefill=prefill, intent=intent, interaction_id=interaction_id)
