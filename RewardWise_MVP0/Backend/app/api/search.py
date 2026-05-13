@@ -10,7 +10,6 @@ from app.services.pricing_service import get_cash_price
 from app.services.seats_service import search_award_availability
 from app.services.verdict_service import generate_verdict  # RW-VerdictGenerator
 from app.utils.math_utils import calculate_cpp
-from app.validators.airport_codes import is_valid_airport_code  # RW-047
 from app.program_aliases import PROGRAM_ALIASES
 import os
 router = APIRouter()
@@ -26,12 +25,6 @@ def get_search_params(
     date_end: Optional[str] = Query(default=None),
 ) -> SearchParams:
     """Dependency that validates and returns typed search params (RW-047)."""
-    if not is_valid_airport_code(origin):
-        raise HTTPException(status_code=422, detail=f"Invalid origin airport code: '{origin}'")
-    if not is_valid_airport_code(destination):
-        raise HTTPException(status_code=422, detail=f"Invalid destination airport code: '{destination}'")
-    if origin.upper() == destination.upper():
-        raise HTTPException(status_code=422, detail="Origin and destination cannot be the same.")
     try:
         return SearchParams(
             origin=origin,

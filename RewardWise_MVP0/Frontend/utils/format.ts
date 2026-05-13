@@ -9,3 +9,33 @@ export function fmtMoney(value?: number | null, digits = 0): string {
     maximumFractionDigits: digits,
   })}`;
 }
+
+export function formatPointsForDisplay(n: number | null | undefined): string {
+  if (n === null || n === undefined || Number.isNaN(n)) return "";
+  return n.toLocaleString("en-US");
+}
+
+export function parsePointsInput(s: string): number {
+  if (!s || s.trim() === "") return NaN;
+  let cleaned = s.replace(/[^\d.-]/g, "");
+  if (cleaned === "" || cleaned === "-" || cleaned === ".") return NaN;
+  const decimalIdx = cleaned.indexOf(".");
+  if (decimalIdx >= 0) {
+    cleaned = cleaned.substring(0, decimalIdx);
+  }
+  if (cleaned === "" || cleaned === "-") return NaN;
+  const result = Number(cleaned);
+  if (Number.isNaN(result)) return NaN;
+  return Math.trunc(result);
+}
+
+export interface PointsValidationResult {
+  ok: boolean;
+  reason?: string;
+}
+
+export function validatePoints(value: number): PointsValidationResult {
+  if (Number.isNaN(value)) return { ok: false, reason: "Please enter a number" };
+  if (value < 0) return { ok: false, reason: "Cannot be negative" };
+  return { ok: true };
+}

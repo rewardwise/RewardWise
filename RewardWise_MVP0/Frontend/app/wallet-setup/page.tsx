@@ -17,7 +17,12 @@ import { createClient } from "@/utils/supabase/client";
 import TropicalBackground from "@/components/TropicalBackground";
 import { useAuth } from "@/context/AuthProvider";
 import { AVAILABLE_CARDS } from "@/data/cards";
-import { fmtMoney } from "@/utils/format";
+import {
+  fmtMoney,
+  formatPointsForDisplay,
+  parsePointsInput,
+  validatePoints,
+} from "@/utils/format";
 
 type SavedCard = {
   id: string;
@@ -28,6 +33,7 @@ type SavedCard = {
 };
 
 type ViewMode = "loading" | "portfolio" | "add-cards";
+type FlashType = "success" | "warning" | "error";
 
 export default function WalletSetupPage() {
   const router = useRouter();
@@ -39,12 +45,16 @@ export default function WalletSetupPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("loading");
   const [savedCards, setSavedCards] = useState<SavedCard[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [flashMsg, setFlashMsg] = useState<{ text: string; type: FlashType } | null>(null);
 
   // portfolio editing state
   const [editBalances, setEditBalances] = useState<Record<string, number>>({});
   const [savingId, setSavingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [dirtyIds, setDirtyIds] = useState<Set<string>>(new Set());
+  const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [savingAll, setSavingAll] = useState(false);
 
   // add-cards state
   const [searchTerm, setSearchTerm] = useState("");
@@ -113,11 +123,30 @@ export default function WalletSetupPage() {
     loadPortfolio(user.id);
   }, [user]);
 
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (dirtyIds.size > 0) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [dirtyIds]);
+
   // ── update a single card's balance ─────────────────────────────────────
   async function handleUpdateBalance(cardId: string) {
+    const newBal = editBalances[cardId];
+    if (newBal === undefined) return;
+
+    const validation = validatePoints(newBal);
+    if (!validation.ok) {
+      setRowErrors((prev) => ({ ...prev, [cardId]: validation.reason || "Invalid value" }));
+      return;
+    }
+
     setSavingId(cardId);
     setError(null);
-    const newBal = editBalances[cardId] ?? 0;
 
     const { error } = await supabase
       .from("cards")
@@ -130,7 +159,106 @@ export default function WalletSetupPage() {
     setSavedCards((prev) =>
       prev.map((c) => (c.id === cardId ? { ...c, points_balance: newBal } : c))
     );
-    flash("Balance updated ✓");
+    clearDirty(cardId);
+    clearRowError(cardId);
+    flash("Balance updated", "success");
+  }
+
+  // ── save all dirty rows in parallel ────────────────────────────────────
+  async function handleSaveAll() {
+    if (dirtyIds.size === 0 || savingAll) return;
+
+    const dirtyArray = Array.from(dirtyIds);
+    const validationErrors: Record<string, string> = {};
+
+    for (const cardId of dirtyArray) {
+      const newBal = editBalances[cardId];
+      if (newBal === undefined) continue;
+      const validation = validatePoints(newBal);
+      if (!validation.ok) {
+        validationErrors[cardId] = validation.reason || "Invalid value";
+      }
+    }
+
+    if (Object.keys(validationErrors).length > 0) {
+      setRowErrors((prev) => ({ ...prev, ...validationErrors }));
+      flash(
+        `${Object.keys(validationErrors).length} row${
+          Object.keys(validationErrors).length !== 1 ? "s" : ""
+        } have errors. Fix and try again.`,
+        "error"
+      );
+      return;
+    }
+
+    setSavingAll(true);
+    setError(null);
+
+    const results = await Promise.allSettled(
+      dirtyArray.map(async (cardId) => {
+        const newBal = editBalances[cardId];
+        const { error } = await supabase
+          .from("cards")
+          .update({ points_balance: newBal })
+          .eq("id", cardId);
+        if (error) throw new Error(error.message);
+        return { cardId, newBal };
+      })
+    );
+
+    const succeeded: { cardId: string; newBal: number }[] = [];
+    const failed: { cardId: string; reason: string }[] = [];
+
+    results.forEach((result, idx) => {
+      const cardId = dirtyArray[idx];
+      if (result.status === "fulfilled") {
+        succeeded.push(result.value);
+      } else {
+        const reason =
+          result.reason instanceof Error ? result.reason.message : "Save failed";
+        failed.push({ cardId, reason });
+      }
+    });
+
+    if (succeeded.length > 0) {
+      setSavedCards((prev) =>
+        prev.map((c) => {
+          const hit = succeeded.find((s) => s.cardId === c.id);
+          return hit ? { ...c, points_balance: hit.newBal } : c;
+        })
+      );
+      setDirtyIds((prev) => {
+        const next = new Set(prev);
+        succeeded.forEach(({ cardId }) => next.delete(cardId));
+        return next;
+      });
+      setRowErrors((prev) => {
+        const next = { ...prev };
+        succeeded.forEach(({ cardId }) => delete next[cardId]);
+        return next;
+      });
+    }
+
+    if (failed.length > 0) {
+      setRowErrors((prev) => {
+        const next = { ...prev };
+        failed.forEach(({ cardId, reason }) => { next[cardId] = reason; });
+        return next;
+      });
+    }
+
+    setSavingAll(false);
+
+    if (failed.length === 0) {
+      flash(`Saved ${succeeded.length}`, "success");
+    } else if (succeeded.length === 0) {
+      flash(`All ${failed.length} saves failed`, "error");
+    } else {
+      flash(
+        `Saved ${succeeded.length} of ${succeeded.length + failed.length}. See highlighted rows.`,
+        "warning"
+      );
+    }
   }
 
   // ── delete a card ───────────────────────────────────────────────────────
@@ -169,15 +297,39 @@ export default function WalletSetupPage() {
 
     const programMap = new Map((programs ?? []).map((p: any) => [p.name, p.id]));
 
-    const toInsert = selectedData.map((card) => ({
-      user_id: user.id,
-      card_name: card.name,
-      reward_program_id: programMap.get(card.program),
-      points_balance: newBalances[card.id] || 0,
-    }));
+    const toInsert = selectedData.map((card) => {
+      const raw = newBalances[card.id];
+      const safeBal = raw === undefined || Number.isNaN(raw) || raw < 0 ? 0 : raw;
+      return {
+        user_id: user.id,
+        card_name: card.name,
+        reward_program_id: programMap.get(card.program),
+        points_balance: safeBal,
+      };
+    });
 
-    const { error: insertError } = await supabase.from("cards").insert(toInsert);
-    if (insertError) { setError(insertError.message); setAdding(false); return; }
+    const currentExistingNames = new Set(savedCards.map((c) => c.card_name));
+    const toInsertFiltered = toInsert.filter(
+      (item) => !currentExistingNames.has(item.card_name)
+    );
+    const skippedCount = toInsert.length - toInsertFiltered.length;
+
+    if (toInsertFiltered.length === 0) {
+      setAdding(false);
+      flash("All selected cards are already in your wallet", "warning");
+      return;
+    }
+
+    const { error: insertError } = await supabase.from("cards").insert(toInsertFiltered);
+    if (insertError) {
+      setAdding(false);
+      if ((insertError as { code?: string }).code === "23505") {
+        flash("One or more cards are already in your wallet", "warning");
+      } else {
+        setError(insertError.message);
+      }
+      return;
+    }
 
     await loadPortfolio(user.id);
     await checkPortfolio();
@@ -185,7 +337,17 @@ export default function WalletSetupPage() {
     setNewBalances({});
     setSearchTerm("");
     setAdding(false);
-    flash(`${toInsert.length} card${toInsert.length !== 1 ? "s" : ""} added ✓`);
+    if (skippedCount > 0) {
+      flash(
+        `Added ${toInsertFiltered.length} of ${toInsert.length}. ${skippedCount} already in wallet.`,
+        "warning"
+      );
+    } else {
+      flash(
+        `${toInsertFiltered.length} card${toInsertFiltered.length !== 1 ? "s" : ""} added`,
+        "success"
+      );
+    }
   }
 
   function toggleNewCard(cardId: string) {
@@ -195,9 +357,35 @@ export default function WalletSetupPage() {
     );
   }
 
-  function flash(msg: string) {
-    setSuccessMsg(msg);
-    setTimeout(() => setSuccessMsg(null), 3000);
+  function flash(text: string, type: FlashType = "success") {
+    setFlashMsg({ text, type });
+    setTimeout(() => setFlashMsg(null), 3000);
+  }
+
+  function markDirty(cardId: string, newValue: number, savedValue: number) {
+    setDirtyIds((prev) => {
+      const next = new Set(prev);
+      if (newValue !== savedValue) next.add(cardId);
+      else next.delete(cardId);
+      return next;
+    });
+  }
+
+  function clearDirty(cardId: string) {
+    setDirtyIds((prev) => {
+      const next = new Set(prev);
+      next.delete(cardId);
+      return next;
+    });
+  }
+
+  function clearRowError(cardId: string) {
+    setRowErrors((prev) => {
+      if (!(cardId in prev)) return prev;
+      const next = { ...prev };
+      delete next[cardId];
+      return next;
+    });
   }
 
   // ── LOADING ─────────────────────────────────────────────────────────────
@@ -231,12 +419,22 @@ export default function WalletSetupPage() {
           </div>
 
           {viewMode === "portfolio" && (
-            <button
-              onClick={() => { setViewMode("add-cards"); setSearchTerm(""); setActiveTab("card"); }}
-              className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-all"
-            >
-              <Plus className="w-4 h-4" /> Add to Wallet
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleSaveAll}
+                disabled={dirtyIds.size === 0 || savingAll}
+                className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-700 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-all"
+              >
+                {savingAll && <Loader2 className="w-4 h-4 animate-spin" />}
+                Save All{dirtyIds.size > 0 ? ` (${dirtyIds.size})` : ""}
+              </button>
+              <button
+                onClick={() => { setViewMode("add-cards"); setSearchTerm(""); setActiveTab("card"); }}
+                className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-all"
+              >
+                <Plus className="w-4 h-4" /> Add to Wallet
+              </button>
+            </div>
           )}
 
           {viewMode === "add-cards" && savedCards.length > 0 && (
@@ -255,9 +453,17 @@ export default function WalletSetupPage() {
             {error}
           </div>
         )}
-        {successMsg && (
-          <div className="bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 rounded-lg px-4 py-3 text-sm flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4" /> {successMsg}
+        {flashMsg && (
+          <div
+            className={
+              flashMsg.type === "success"
+                ? "bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 rounded-lg px-4 py-3 text-sm flex items-center gap-2"
+                : flashMsg.type === "warning"
+                ? "bg-amber-500/20 border border-amber-500/40 text-amber-300 rounded-lg px-4 py-3 text-sm flex items-center gap-2"
+                : "bg-red-500/20 border border-red-500/40 text-red-300 rounded-lg px-4 py-3 text-sm flex items-center gap-2"
+            }
+          >
+            <CheckCircle2 className="w-4 h-4" /> {flashMsg.text}
           </div>
         )}
 
@@ -295,21 +501,49 @@ export default function WalletSetupPage() {
                   {/* Inline balance editor */}
                   <div className="flex items-center gap-2">
                     <input
-                      type="number"
-                      min={0}
-                      value={editBalances[card.id] ?? card.points_balance}
-                      onChange={(e) =>
-                        setEditBalances((prev) => ({
-                          ...prev,
-                          [card.id]: Number(e.target.value),
-                        }))
+                      type="text"
+                      inputMode="numeric"
+                      value={
+                        focusedId === card.id
+                          ? Number.isNaN(editBalances[card.id])
+                            ? ""
+                            : String(editBalances[card.id] ?? card.points_balance)
+                          : formatPointsForDisplay(
+                              editBalances[card.id] ?? card.points_balance
+                            )
                       }
-                      className="min-w-0 flex-1 bg-gray-900 border border-gray-700 rounded-lg py-2 px-3 text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      onFocus={() => setFocusedId(card.id)}
+                      onBlur={() => {
+                        setFocusedId(null);
+                        const current = editBalances[card.id];
+                        if (current === undefined || Number.isNaN(current)) {
+                          setEditBalances((prev) => {
+                            const next = { ...prev };
+                            delete next[card.id];
+                            return next;
+                          });
+                          clearDirty(card.id);
+                          clearRowError(card.id);
+                        }
+                      }}
+                      onChange={(e) => {
+                        const parsed = parsePointsInput(e.target.value);
+                        setEditBalances((prev) => ({ ...prev, [card.id]: parsed }));
+                        markDirty(card.id, parsed, card.points_balance);
+                        clearRowError(card.id);
+                      }}
+                      className={`min-w-0 flex-1 bg-gray-900 border rounded-lg py-2 px-3 text-white text-sm focus:outline-none focus:ring-2 ${
+                        rowErrors[card.id]
+                          ? "border-red-500 focus:ring-red-500"
+                          : "border-gray-700 focus:ring-emerald-500"
+                      }`}
                       placeholder="Points balance"
                     />
                     <span className="text-emerald-400 text-xs font-medium bg-emerald-500/10 px-2 py-2 rounded whitespace-nowrap">
                       ~${Math.round(
-                        (editBalances[card.id] ?? card.points_balance) * 0.015
+                        (Number.isNaN(editBalances[card.id])
+                          ? card.points_balance
+                          : editBalances[card.id] ?? card.points_balance) * 0.015
                       ).toLocaleString()}
                     </span>
                     <button
@@ -322,6 +556,9 @@ export default function WalletSetupPage() {
                         : <><Pencil className="w-3 h-3" /> Save</>}
                     </button>
                   </div>
+                  {rowErrors[card.id] && (
+                    <p className="text-xs text-red-400 mt-1">{rowErrors[card.id]}</p>
+                  )}
                 </div>
               ))}
 
@@ -465,15 +702,35 @@ export default function WalletSetupPage() {
                           onClick={(e) => e.stopPropagation()}
                         >
                           <input
-                            type="number"
-                            min={0}
-                            value={newBalances[card.id] || ""}
-                            onChange={(e) =>
-                              setNewBalances((prev) => ({
-                                ...prev,
-                                [card.id]: Number(e.target.value),
-                              }))
+                            type="text"
+                            inputMode="numeric"
+                            value={
+                              focusedId === `add:${card.id}`
+                                ? newBalances[card.id] === undefined ||
+                                  Number.isNaN(newBalances[card.id])
+                                  ? ""
+                                  : String(newBalances[card.id])
+                                : newBalances[card.id] === undefined ||
+                                  Number.isNaN(newBalances[card.id])
+                                ? ""
+                                : formatPointsForDisplay(newBalances[card.id])
                             }
+                            onFocus={() => setFocusedId(`add:${card.id}`)}
+                            onBlur={() => {
+                              setFocusedId(null);
+                              const current = newBalances[card.id];
+                              if (current !== undefined && Number.isNaN(current)) {
+                                setNewBalances((prev) => {
+                                  const next = { ...prev };
+                                  delete next[card.id];
+                                  return next;
+                                });
+                              }
+                            }}
+                            onChange={(e) => {
+                              const parsed = parsePointsInput(e.target.value);
+                              setNewBalances((prev) => ({ ...prev, [card.id]: parsed }));
+                            }}
                             placeholder="Points balance"
                             className="min-w-0 flex-1 bg-gray-900 border border-gray-700 rounded py-2 px-3 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                           />

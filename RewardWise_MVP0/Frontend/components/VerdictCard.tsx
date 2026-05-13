@@ -541,7 +541,6 @@ export default function VerdictCard({
       verdict.explanation || verdict.verdict || "",
       verdict.confidence ? `${confidence.charAt(0).toUpperCase() + confidence.slice(1)} confidence.` : "",
       verdict.confidence_reason || "",
-      verdict.next_step?.label ? `Next step: ${verdict.next_step.label}.` : "",
     ].filter(Boolean);
     return pieces.join(" ");
   }, [confidence, recommendationLabel, verdict]);
@@ -800,9 +799,7 @@ export default function VerdictCard({
                   <h2 className="text-4xl font-extrabold tracking-tight text-white md:text-5xl">{recommendationLabel}</h2>
                   {displayCashPrice != null && (
                     <>
-                      {recommendation === "use_points" && (
-                        <span className="text-sm font-semibold text-slate-400">· Cash fare</span>
-                      )}
+                      <span className="text-sm font-semibold text-slate-400">· Cash fare</span>
                       <span className="text-4xl font-extrabold tracking-tight text-emerald-400 md:text-5xl">
                         {fmtMoney(displayCashPrice, displayCashPrice % 1 === 0 ? 0 : 2)}
                       </span>
@@ -961,15 +958,6 @@ export default function VerdictCard({
   </div>
 )}
 
-            {/* Next step — full-app only */}
-            {!publicPreview && verdict.next_step?.label && (
-              <div className="mt-5 rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-4">
-                <p className="mb-1 text-[11px] uppercase tracking-[0.14em] text-emerald-300">Next step</p>
-                <p className="font-semibold text-white">{verdict.next_step.label}</p>
-                {verdict.next_step.prompt && <p className="mt-1 text-sm text-slate-300">Try asking: "{verdict.next_step.prompt}"</p>}
-              </div>
-            )}
-
             {/* Missing data */}
             {verdict.missing_sources && verdict.missing_sources.length > 0 && (
               <div className="mt-5 rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4">
@@ -977,6 +965,14 @@ export default function VerdictCard({
                 <p className="mt-1 text-sm leading-6 text-slate-200">
                   We could not fully verify: {verdict.missing_sources.map((item) => item.replace(/_/g, " ")).join(", ")}.
                 </p>
+              </div>
+            )}
+
+            {!publicPreview && (
+              <div className="mt-6 flex justify-end">
+                <button onClick={speak} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-medium text-slate-200 hover:bg-white/[0.06]">
+                  {speaking ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />} {speaking ? "Stop" : "Listen"}
+                </button>
               </div>
             )}
 
@@ -993,9 +989,6 @@ export default function VerdictCard({
                     {reasoningOpen ? "Hide reasoning" : "See how Zoe decided"}
                   </button>
                   <div className="flex flex-wrap items-center gap-3">
-                    <button onClick={speak} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-medium text-slate-200 hover:bg-white/[0.06]">
-                      {speaking ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />} {speaking ? "Stop" : "Listen"}
-                    </button>
                     {(() => {
                       const verdictType: "cash" | "points" | null =
                         recommendation === "pay_cash"
