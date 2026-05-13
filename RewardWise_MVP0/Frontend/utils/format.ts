@@ -17,9 +17,16 @@ export function formatPointsForDisplay(n: number | null | undefined): string {
 
 export function parsePointsInput(s: string): number {
   if (!s || s.trim() === "") return NaN;
-  const cleaned = s.replace(/[^\d-]/g, "");
+  let cleaned = s.replace(/[^\d.-]/g, "");
+  if (cleaned === "" || cleaned === "-" || cleaned === ".") return NaN;
+  const decimalIdx = cleaned.indexOf(".");
+  if (decimalIdx >= 0) {
+    cleaned = cleaned.substring(0, decimalIdx);
+  }
   if (cleaned === "" || cleaned === "-") return NaN;
-  return Number(cleaned);
+  const result = Number(cleaned);
+  if (Number.isNaN(result)) return NaN;
+  return Math.trunc(result);
 }
 
 export interface PointsValidationResult {

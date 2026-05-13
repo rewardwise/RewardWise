@@ -42,10 +42,8 @@ describe("parsePointsInput", () => {
   it("strips dollar sign prefix", () => {
     expect(parsePointsInput("$20,000")).toBe(20000);
   });
-  it("strips decimals (digit-only filter)", () => {
-    // Spec note: "20,000.00" should parse to 2000000 because the regex
-    // strips all non-digit characters including the decimal point.
-    expect(parsePointsInput("20,000.00")).toBe(2000000);
+  it("truncates decimal portion (20,000.00 → 20000, not 2000000)", () => {
+    expect(parsePointsInput("20,000.00")).toBe(20000);
   });
   it("returns NaN for non-numeric strings", () => {
     expect(Number.isNaN(parsePointsInput("abc"))).toBe(true);
@@ -64,6 +62,25 @@ describe("parsePointsInput", () => {
   });
   it("handles spaces around digits", () => {
     expect(parsePointsInput("  20000  ")).toBe(20000);
+  });
+});
+
+describe("parsePointsInput — decimal handling", () => {
+  it("truncates decimal portion on whole numbers", () => {
+    expect(parsePointsInput("20,000.00")).toBe(20000);
+    expect(parsePointsInput("20000.50")).toBe(20000);
+    expect(parsePointsInput("$20,000.99")).toBe(20000);
+    expect(parsePointsInput("100.999")).toBe(100);
+  });
+  it("handles partial decimal input gracefully", () => {
+    expect(parsePointsInput("20000.")).toBe(20000);
+    expect(Number.isNaN(parsePointsInput(".50"))).toBe(true);
+    expect(Number.isNaN(parsePointsInput("."))).toBe(true);
+  });
+  it("still handles non-decimal cases correctly", () => {
+    expect(parsePointsInput("20000")).toBe(20000);
+    expect(parsePointsInput("20,000")).toBe(20000);
+    expect(parsePointsInput("$20,000")).toBe(20000);
   });
 });
 
