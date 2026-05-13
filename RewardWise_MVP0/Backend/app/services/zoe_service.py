@@ -230,6 +230,14 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
     rag_examples: list[dict] = rag_result.get("examples", [])
     rag_corrections: list[dict] = rag_result.get("corrections", [])
 
+    print(
+    "📚 ZOE RAG:",
+    intent,
+    "kb=", len(kb_chunks),
+    "examples=", len(rag_examples),
+    "corrections=", len(rag_corrections),
+)
+
     # ─────────────────────────────────────────────────────────────────────────
     # STEP 6 + 7: Dispatch to handler → respond call
     # ─────────────────────────────────────────────────────────────────────────
@@ -277,6 +285,9 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
             text,
             session.history,
             wallet,
+            rag_chunks=kb_chunks,
+            rag_examples=rag_examples,
+            rag_corrections=rag_corrections,
             is_voice=is_voice,
         )
 

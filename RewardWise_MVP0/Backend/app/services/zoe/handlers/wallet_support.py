@@ -80,6 +80,9 @@ async def handle(
     history: list[dict],
     wallet: list[dict],
     *,
+    rag_chunks: list[dict] | None = None,
+    rag_examples: list[dict] | None = None,
+    rag_corrections: list[dict] | None = None,
     is_voice: bool = False,
 ) -> dict[str, Any]:
     """
@@ -100,7 +103,12 @@ async def handle(
     system = _build_system(is_voice)
 
     # Build ground truth block with wallet data
-    ground_truth = build_ground_truth_block(wallet=wallet)
+    ground_truth = build_ground_truth_block(
+      wallet=wallet,
+      rag_chunks=rag_chunks or [],
+      rag_examples=rag_examples or [],
+      rag_corrections=rag_corrections or [],
+    )
 
     # Inject ground truth into the system prompt
     full_system = system

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import re
 from typing import Optional
+from unittest import result
 
 
 def _strip_pii(text: str) -> str:
@@ -65,7 +66,7 @@ async def log(
             "feedback_signal": feedback_signal,
         }
 
-        result = db.table("zoe_interactions").insert(row).select("id").execute()
+        result = db.table("zoe_interactions").insert(row).execute()
         interaction_id = (result.data or [{}])[0].get("id")
 
         # Auto-promote to corpus if we have a strong signal
