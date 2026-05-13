@@ -800,9 +800,7 @@ export default function VerdictCard({
                   <h2 className="text-4xl font-extrabold tracking-tight text-white md:text-5xl">{recommendationLabel}</h2>
                   {displayCashPrice != null && (
                     <>
-                      {recommendation === "use_points" && (
-                        <span className="text-sm font-semibold text-slate-400">· Cash fare</span>
-                      )}
+                      <span className="text-sm font-semibold text-slate-400">· Cash fare</span>
                       <span className="text-4xl font-extrabold tracking-tight text-emerald-400 md:text-5xl">
                         {fmtMoney(displayCashPrice, displayCashPrice % 1 === 0 ? 0 : 2)}
                       </span>
