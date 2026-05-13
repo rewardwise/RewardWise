@@ -978,6 +978,14 @@ export default function VerdictCard({
               </div>
             )}
 
+            {!publicPreview && (
+              <div className="mt-6 flex justify-end">
+                <button onClick={speak} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-medium text-slate-200 hover:bg-white/[0.06]">
+                  {speaking ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />} {speaking ? "Stop" : "Listen"}
+                </button>
+              </div>
+            )}
+
             {/* Footer controls — full app only */}
             {!publicPreview && (
               <div className="mt-8 border-t border-white/10 pt-5">
@@ -991,9 +999,6 @@ export default function VerdictCard({
                     {reasoningOpen ? "Hide reasoning" : "See how Zoe decided"}
                   </button>
                   <div className="flex flex-wrap items-center gap-3">
-                    <button onClick={speak} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-medium text-slate-200 hover:bg-white/[0.06]">
-                      {speaking ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />} {speaking ? "Stop" : "Listen"}
-                    </button>
                     {(() => {
                       const verdictType: "cash" | "points" | null =
                         recommendation === "pay_cash"
