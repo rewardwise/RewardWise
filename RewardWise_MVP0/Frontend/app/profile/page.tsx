@@ -197,7 +197,7 @@ export default function ProfilePage() {
 		{
 			icon: Coffee,
 			label: "Concierge",
-			desc: "Flight booking · $39",
+			desc: "Flight booking · $19",
 			page: "/concierge",
 			color: "amber",
 		},

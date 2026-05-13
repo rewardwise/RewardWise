@@ -295,7 +295,7 @@ function ConciergeStandardInner() {
 	const price =
 		confirmed?.quoted_price != null
 			? `${confirmed.currency ?? "USD"} ${fmtMoney(confirmed.quoted_price)}`
-			: "$39";
+			: "$19";
 
 	return (
 		<div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-cyan-950 relative">
@@ -556,7 +556,7 @@ function ConciergeStandardInner() {
 
 							<div className="rounded-lg border border-gray-700/80 bg-gray-800/40 px-3 py-2 text-sm text-gray-300 flex justify-between items-center">
 								<span>Concierge fee</span>
-								<span className="text-white font-semibold">$39.00 USD</span>
+								<span className="text-white font-semibold">$19.00 USD</span>
 							</div>
 
 							<button

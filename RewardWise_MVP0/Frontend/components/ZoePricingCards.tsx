@@ -243,7 +243,7 @@ export default function ZoePricingCards({
 						Let our team research and plan it for you.
 					</p>
 					<div className="mb-5">
-						<p className="text-3xl font-bold text-stone-900">From $39</p>
+						<p className="text-3xl font-bold text-stone-900">From $19</p>
 						<p className="text-stone-500 text-xs mt-1">
 							per trip · 24hr turnaround
 						</p>
