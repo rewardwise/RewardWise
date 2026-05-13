@@ -142,10 +142,10 @@ async def list_articles(
 
 RPC_SEARCH_KB_ARTICLES = """
 CREATE OR REPLACE FUNCTION search_kb_articles(
-    query_embedding vector(1536),
+    query_embedding vector(4096),
     categories      text[],
     match_count     int DEFAULT 3,
-    min_similarity  float DEFAULT 0.70
+    min_similarity  float DEFAULT 0.08
 )
 RETURNS TABLE (
     id          uuid,
@@ -174,10 +174,10 @@ $$;
 
 RPC_SEARCH_INTERACTION_CORPUS = """
 CREATE OR REPLACE FUNCTION search_interaction_corpus(
-    query_embedding vector(1536),
+    query_embedding vector(4096),
     intent_filter   text,
     match_count     int DEFAULT 2,
-    min_similarity  float DEFAULT 0.75
+    min_similarity  float DEFAULT 0.10
 )
 RETURNS TABLE (
     user_message  text,

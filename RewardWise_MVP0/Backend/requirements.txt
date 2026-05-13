@@ -7,3 +7,5 @@ supabase
 slowapi
 nvidia-riva-client
 redis
+python-multipart
+imageio-ffmpeg
