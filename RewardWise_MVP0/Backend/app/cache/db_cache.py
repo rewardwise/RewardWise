@@ -40,7 +40,7 @@ def find_search_verdict_in_db(
     supabase: Client,
     params: SearchParams,
 ) -> SearchDbLookupResult | None:
-    origin, destination, departure, return_date, passengers, cabin = (
+    origin, destination, departure, departure_date_end, return_date, passengers, cabin = (
         normalize_search_params(params)
     )
 
@@ -48,12 +48,22 @@ def find_search_verdict_in_db(
     since_iso = datetime.fromtimestamp(since_ms / 1000, tz=timezone.utc).isoformat()
 
     try:
-        response = (
+        query = (
             supabase.table("searches")
-            .select("id, origin, destination, departure_date, return_date, passengers, cabin")
+            .select(
+                "id, origin, destination, departure_date, departure_date_end, "
+                "return_date, passengers, cabin"
+            )
             .eq("origin", origin)
             .eq("destination", destination)
             .eq("departure_date", departure)
+        )
+        if departure_date_end:
+            query = query.eq("departure_date_end", departure_date_end)
+        else:
+            query = query.is_("departure_date_end", "null")
+        response = (
+            query
             .gte("created_at", since_iso)
             .order("created_at", desc=True)
             .limit(10)
@@ -72,6 +82,7 @@ def find_search_verdict_in_db(
             normalize(row.get("origin") or "") == origin
             and normalize(row.get("destination") or "") == destination
             and normalize_date(row.get("departure_date") or "") == departure
+            and normalize_date(row.get("departure_date_end") or "") == departure_date_end
             and normalize_date(row.get("return_date") or "") == return_date
             and int(row.get("passengers") or 0) == passengers
             and normalize_cabin(row.get("cabin")) == cabin
