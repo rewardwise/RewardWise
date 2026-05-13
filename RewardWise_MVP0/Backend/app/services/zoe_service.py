@@ -101,10 +101,13 @@ def _reply(
     *,
     prefill: dict | None = None,
     intent: str = "trip",
+    interaction_id: str | None = None,
 ) -> dict[str, Any]:
     r: dict[str, Any] = {"type": "followup", "message": message, "intent": intent}
     if prefill:
         r["prefill"] = prefill
+    if interaction_id:
+        r["interaction_id"] = interaction_id
     return r
 
 
@@ -334,7 +337,7 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
 
     # Log interaction (non-blocking — failure never breaks user experience)
     feedback_signal = "search_triggered" if prefill else None
-    await log_interaction(
+    interaction_id = await log_interaction(
         sess_id,
         user_id,
         intent,
@@ -345,4 +348,4 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
         feedback_signal=feedback_signal,
     )
 
-    return _reply(message_text, prefill=prefill, intent=intent)
+    return _reply(message_text, prefill=prefill, intent=intent, interaction_id=interaction_id)

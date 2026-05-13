@@ -617,7 +617,7 @@ if (prefillRaw && onFillSearch) {
 				<button
 					onClick={toggleVoiceMode}
 					title={voiceMode ? "Exit voice mode" : "Start voice conversation"}
-					className={`flex flex-shrink-0 items-center justify-center rounded-xl border px-3 ${compact ? "py-2" : "py-3"} transition ${
+					className={`flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rounded-xl border px-3 ${compact ? "py-2" : "py-3"} transition ${
 						voiceMode
 							? voiceState === "speaking"   ? "animate-pulse border-rose-400/50 bg-rose-500/10 text-rose-300"
 							: voiceState === "responding" ? "border-emerald-400/50 bg-emerald-500/10 text-emerald-300"
@@ -646,7 +646,8 @@ if (prefillRaw && onFillSearch) {
 				<button
 					onClick={() => void sendText(input)}
 					disabled={!input.trim() || typing}
-					className={`flex-shrink-0 rounded-xl bg-emerald-500 ${compact ? "px-3 py-2" : "px-4 py-3"} text-white transition hover:bg-emerald-400 disabled:bg-slate-700`}
+					aria-label="Send message"
+className={`flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-500 ${compact ? "px-3 py-2" : "px-4 py-3"} text-white transition hover:bg-emerald-400 disabled:bg-slate-700`}
 				>
 					<Send className="h-4 w-4" />
 				</button>
@@ -684,9 +685,11 @@ if (prefillRaw && onFillSearch) {
 				<button
 					onClick={toggleVoiceMode}
 					title={voiceMode ? "Exit voice mode" : "Start voice conversation"}
-					className={`flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-500 full p-2 transition${
-						voiceMode ? "bg-emerald-	500 text-white shadow-lg shadow-emerald-500/30" : "text-slate-400 hover:text-slate-200"
-					}`}
+					className={`flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rounded-xl p-2 transition ${
+	voiceMode
+		? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/30"
+		: "text-slate-400 hover:bg-white/[0.06] hover:text-slate-200"
+}`}
 					aria-label={voiceMode ? "Exit voice mode" : "Start voice conversation"}
 				>
 					<Radio className="h-4 w-4" />

@@ -171,9 +171,7 @@ async def zoe_voice(
     prefill = zoe_result.get("prefill") or ""
 
     # Strip markdown before speaking.
-    tts_text = re.sub(r"[*_#`>~\[\]()] ", "", reply_text).strip()
-    if not tts_text:
-        tts_text = re.sub(r"[*_#`>~\[\]()]","", reply_text).strip()
+    tts_text = re.sub(r"[*_#`>~\[\]()]","", reply_text).strip()
 
     if len(tts_text) > 500:
         tts_text = tts_text[:500] + "..."
