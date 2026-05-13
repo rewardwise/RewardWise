@@ -5,8 +5,14 @@ POST /api/zoe/stt
 
 Accepts uploaded browser audio, converts it to WAV PCM, sends it to NVIDIA
 Parakeet via hosted Riva gRPC, and returns {"transcript": "..."}.
+
+Security/performance:
+- Requires authenticated Supabase user via Bearer token.
+- Rate-limited to protect paid NVIDIA usage.
+- Runs FFmpeg + Riva gRPC work in an executor so the async event loop is not blocked.
 """
 
+import asyncio
 import os
 import subprocess
 import tempfile
@@ -14,8 +20,11 @@ from pathlib import Path
 
 import imageio_ffmpeg
 import riva.client
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
+
+from app.api.validators import limiter
+from app.api.zoe import require_user
 
 router = APIRouter()
 
@@ -24,24 +33,35 @@ STT_GRPC_SERVER = os.environ.get("ZOE_STT_GRPC_SERVER", "grpc.nvcf.nvidia.com:44
 STT_FUNCTION_ID = os.environ.get("ZOE_STT_FUNCTION_ID", "")
 STT_LANGUAGE_CODE = os.environ.get("ZOE_STT_LANGUAGE_CODE", "en-US")
 
+# Keep browser voice uploads bounded. Most short voice turns should be far below this.
+MAX_AUDIO_BYTES = 10_000_000
+
 
 @router.post("/api/zoe/stt")
-async def transcribe_audio(audio: UploadFile = File(...)):
+@limiter.limit("10/minute")
+async def transcribe_audio(
+    request: Request,
+    audio: UploadFile = File(...),
+    auth_user_id: str = Depends(require_user),
+):
     audio_bytes = await audio.read()
 
     if not audio_bytes or len(audio_bytes) < 500:
         raise HTTPException(status_code=400, detail="Audio too short or empty")
 
+    if len(audio_bytes) > MAX_AUDIO_BYTES:
+        raise HTTPException(status_code=413, detail="Audio file too large")
+
     if not NVIDIA_API_KEY:
         raise HTTPException(
             status_code=503,
-            detail="STT not configured — missing NVIDIA_API_KEY",
+            detail="STT is not configured",
         )
 
     if not STT_FUNCTION_ID:
         raise HTTPException(
             status_code=503,
-            detail="STT not configured — missing ZOE_STT_FUNCTION_ID",
+            detail="STT is not configured",
         )
 
     suffix = Path(audio.filename or "audio.webm").suffix or ".webm"
@@ -59,25 +79,32 @@ async def transcribe_audio(audio: UploadFile = File(...)):
         ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
         wav_path = f"{temp_path}.wav"
 
-        ffmpeg_result = subprocess.run(
-            [
-                ffmpeg_exe,
-                "-y",
-                "-err_detect", "ignore_err",
-                "-fflags", "+discardcorrupt",
-                "-i",
-                temp_path,
-                "-ac",
-                "1",
-                "-ar",
-                "16000",
-                "-sample_fmt",
-                "s16",
-                wav_path,
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-            text=True,
+        loop = asyncio.get_running_loop()
+
+        ffmpeg_result = await loop.run_in_executor(
+            None,
+            lambda: subprocess.run(
+                [
+                    ffmpeg_exe,
+                    "-y",
+                    "-err_detect",
+                    "ignore_err",
+                    "-fflags",
+                    "+discardcorrupt",
+                    "-i",
+                    temp_path,
+                    "-ac",
+                    "1",
+                    "-ar",
+                    "16000",
+                    "-sample_fmt",
+                    "s16",
+                    wav_path,
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+            ),
         )
 
         if ffmpeg_result.returncode != 0:
@@ -113,7 +140,10 @@ async def transcribe_audio(audio: UploadFile = File(...)):
         with open(wav_path, "rb") as f:
             audio_data = f.read()
 
-        response = asr_service.offline_recognize(audio_data, config)
+        response = await loop.run_in_executor(
+            None,
+            lambda: asr_service.offline_recognize(audio_data, config),
+        )
 
         transcript_parts = []
         for result in response.results:
@@ -127,7 +157,7 @@ async def transcribe_audio(audio: UploadFile = File(...)):
     except HTTPException:
         raise
 
-    except Exception as e:
+    except Exception:
         import traceback
 
         print("❌ Parakeet/Riva STT full error:")
@@ -135,7 +165,7 @@ async def transcribe_audio(audio: UploadFile = File(...)):
 
         raise HTTPException(
             status_code=502,
-            detail=f"STT request failed: {type(e).__name__}: {e}",
+            detail="STT request failed",
         )
 
     finally:

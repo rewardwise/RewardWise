@@ -8,6 +8,8 @@ const BACKEND_URL =
   process.env.NEXT_PUBLIC_API_URL ??
   "http://127.0.0.1:8000";
 
+const MAX_BODY_SIZE = 50_000;
+
 export async function POST(req: Request) {
 	try {
 		const supabase = await createRouteHandlerClient();
@@ -15,64 +17,70 @@ export async function POST(req: Request) {
 			data: { user },
 		} = await supabase.auth.getUser();
 
-		const body = await req.json();
+		if (!user) {
+			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+		}
 
-		// Always inject the authenticated user_id so the backend can:
-		//   1. Log interactions with the correct user
-		//   2. Fetch wallet from DB if frontend didn't send it
-		const enrichedBody = {
-			...body,
-			user_id: user?.id ?? null,
-		};
+		const rawBody = await req.text();
+		if (rawBody.length > MAX_BODY_SIZE) {
+			return NextResponse.json({ error: "Request body too large" }, { status: 413 });
+		}
+
+		let body: any;
+		try {
+			body = JSON.parse(rawBody);
+		} catch {
+			return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+		}
+
+		const { conversation_id, message } = body;
+
+		const session = await supabase.auth.getSession();
+		const accessToken = session.data.session?.access_token;
 
 		const res = await fetch(`${BACKEND_URL}/api/zoe`, {
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(enrichedBody),
+			headers: {
+				"Content-Type": "application/json",
+				...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+			},
+			body: JSON.stringify({ ...body, user_id: user.id }),
+			signal: AbortSignal.timeout(45_000),
 		});
 
 		const data = await res.json();
 
-		// Persist messages to zoe_messages table (best-effort)
-		if (user && body.conversation_id && body.message) {
+		if (conversation_id && message && data.message) {
 			try {
-				const conversation_id = body.conversation_id;
-
-				// Save the user's message
 				await supabase.from("zoe_messages").insert({
 					conversation_id,
 					role: "user",
-					content: body.message,
+					content: message,
 				});
 
-				// Save Zoe's reply
-				if (data.message) {
-					await supabase.from("zoe_messages").insert({
-						conversation_id,
-						role: "assistant",
-						content: data.message,
-					});
-				}
+				await supabase.from("zoe_messages").insert({
+					conversation_id,
+					role: "assistant",
+					content: data.message,
+				});
 
-				// Update conversation title on first message
-				const isFirstMessage =
-					(body.history ?? []).filter(
-						(m: { role: string }) => m.role === "user"
-					).length === 0;
+				const { data: conv } = await supabase
+					.from("zoe_conversations")
+					.select("title")
+					.eq("id", conversation_id)
+					.eq("user_id", user.id)
+					.single();
 
-				if (isFirstMessage && body.message) {
-					const title =
-						body.message.length > 60
-							? body.message.slice(0, 57) + "…"
-							: body.message;
+				if (conv?.title === "New conversation") {
+					const title = message.length > 60 ? message.slice(0, 57) + "…" : message;
 					await supabase
 						.from("zoe_conversations")
 						.update({ title })
-						.eq("id", conversation_id);
+						.eq("id", conversation_id)
+						.eq("user_id", user.id);
 				}
 			} catch (dbErr) {
 				console.error("Zoe DB persist error:", dbErr);
-				// Non-fatal
 			}
 		}
 

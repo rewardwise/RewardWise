@@ -83,13 +83,15 @@ async def _fetch_wallet(user_id: str) -> list[dict]:
 # ── Session ID resolver ───────────────────────────────────────────────────────
 
 def _session_id(payload: Dict[str, Any]) -> str:
+    user_id = payload.get("user_id")
+    if not user_id:
+        raise ValueError("Zoe requires an authenticated user")
+
     conv_id = payload.get("conversation_id")
     if conv_id:
-        return f"conv:{conv_id}"
-    user_id = payload.get("user_id")
-    if user_id:
-        return f"user:{user_id}"
-    return "anon:default"
+        return f"user:{user_id}:conv:{conv_id}"
+
+    return f"user:{user_id}"
 
 
 # ── Response helper ───────────────────────────────────────────────────────────
@@ -126,6 +128,8 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
     # ── Unpack ────────────────────────────────────────────────────────────────
     text: str = (payload.get("message") or "").strip()
     user_id: Optional[str] = payload.get("user_id")
+    if not user_id:
+        return _reply("Please sign in to use Zoe.", intent="auth_required")
     verdict_context: Optional[str] = payload.get("verdict_context") or None
     is_voice: bool = bool(payload.get("is_voice", False))
     frontend_wallet: list[dict] = payload.get("wallet") or []
@@ -215,9 +219,7 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
     # ─────────────────────────────────────────────────────────────────────────
     # STEP 4: Load wallet (frontend payload or DB fetch)
     # ─────────────────────────────────────────────────────────────────────────
-    wallet = frontend_wallet
-    if not wallet and user_id:
-        wallet = await _fetch_wallet(user_id)
+    wallet = await _fetch_wallet(user_id) if user_id else []
 
     # ─────────────────────────────────────────────────────────────────────────
     # STEP 5: RAG retrieval — all 3 layers

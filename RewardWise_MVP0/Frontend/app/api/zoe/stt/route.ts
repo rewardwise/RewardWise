@@ -22,13 +22,19 @@ export async function POST(req: Request) {
 			return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 		}
 
+		const session = await supabase.auth.getSession();
+		const accessToken = session.data.session?.access_token;
+
 		const formData = await req.formData();
 		const backendUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 		const backendRes = await fetch(`${backendUrl}/api/zoe/stt`, {
-			method: "POST",
-			body: formData,
-		});
+	method: "POST",
+	headers: {
+		...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+	},
+	body: formData,
+});
 
 		const data = await backendRes.json();
 		return NextResponse.json(data, { status: backendRes.status });

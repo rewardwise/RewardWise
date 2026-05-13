@@ -684,8 +684,8 @@ if (prefillRaw && onFillSearch) {
 				<button
 					onClick={toggleVoiceMode}
 					title={voiceMode ? "Exit voice mode" : "Start voice conversation"}
-					className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition ${
-						voiceMode ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/30" : "text-slate-400 hover:text-slate-200"
+					className={`flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rounded-xl bg-emerald-500 full p-2 transition${
+						voiceMode ? "bg-emerald-	500 text-white shadow-lg shadow-emerald-500/30" : "text-slate-400 hover:text-slate-200"
 					}`}
 					aria-label={voiceMode ? "Exit voice mode" : "Start voice conversation"}
 				>
@@ -694,7 +694,7 @@ if (prefillRaw && onFillSearch) {
 				{compact && (
 					<button
 						onClick={() => setExpanded(true)}
-						className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
+						className="flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rounded-xl p-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
 						aria-label="Expand"
 						title="Expand"
 					>
@@ -704,7 +704,7 @@ if (prefillRaw && onFillSearch) {
 				{!compact && (
 					<button
 						onClick={() => setExpanded(false)}
-						className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
+						className="flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rounded-xl p-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
 						aria-label="Collapse"
 						title="Collapse"
 					>
@@ -713,7 +713,7 @@ if (prefillRaw && onFillSearch) {
 				)}
 				<button
 					onClick={() => { setIsOpen(false); setExpanded(false); }}
-					className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-xl text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
+					className="flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rounded-xl p-2 text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
 					aria-label="Close Zoe"
 					title="Close"
 				>
