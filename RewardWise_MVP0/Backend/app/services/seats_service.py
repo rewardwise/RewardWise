@@ -1,3 +1,4 @@
+import asyncio
 import httpx
 import os
 from typing import Optional
@@ -12,6 +13,30 @@ CABIN_MAP = {
     "business": "J",
     "first": "F"
 }
+
+# Process-local cache for /trips/{id} responses. No TTL by design: trip IDs
+# are immutable for the lifetime of a given availability snapshot, and the
+# parent search call refreshes them on every public search. 100-entry cap
+# keeps memory bounded in the long-running FastAPI process.
+_TRIP_DETAIL_CACHE: dict = {}
+_TRIP_DETAIL_CACHE_MAX = 100
+_TRIP_DETAIL_TIMEOUT_S = 5.0
+_TRIP_DETAIL_FANOUT_LIMIT = 3
+
+
+async def _fetch_trip_detail_cached(trip_id: str) -> dict:
+    cached = _TRIP_DETAIL_CACHE.get(trip_id)
+    if cached is not None:
+        return cached
+    try:
+        result = await asyncio.wait_for(
+            get_trip_detail(trip_id), timeout=_TRIP_DETAIL_TIMEOUT_S
+        )
+    except Exception:
+        result = {}
+    if len(_TRIP_DETAIL_CACHE) < _TRIP_DETAIL_CACHE_MAX:
+        _TRIP_DETAIL_CACHE[trip_id] = result
+    return result
 
 async def search_award_availability(
     origin: str,
@@ -140,6 +165,28 @@ async def search_award_availability(
             },
             "source": "seats.aero"
         })
+
+    # Hydrate the first few awards with segment-level detail via /trips/{id}.
+    # seats.aero's include_trips=true returns AvailabilityTrips with IDs only
+    # (no inline AvailabilitySegments), so the inline branch above almost
+    # never fires in production. Fan out a bounded number of /trips calls
+    # in parallel so the verdict surface has segments to render.
+    # TODO(2026-05-13, Gate 4a): backfill pytest coverage for this fan-out
+    # (happy path, 404, timeout, cache hit, empty trip_ids, fanout cap).
+    awards_to_hydrate = [
+        r for r in results if not r["trips"] and r["trip_ids"]
+    ][:_TRIP_DETAIL_FANOUT_LIMIT]
+    if awards_to_hydrate:
+        details = await asyncio.gather(
+            *[_fetch_trip_detail_cached(r["trip_ids"][0]) for r in awards_to_hydrate],
+            return_exceptions=True,
+        )
+        for award, detail in zip(awards_to_hydrate, details):
+            if isinstance(detail, Exception) or not isinstance(detail, dict):
+                continue
+            hydrated_trips = detail.get("trips", [])
+            if hydrated_trips:
+                award["trips"] = hydrated_trips
 
     return results
 
