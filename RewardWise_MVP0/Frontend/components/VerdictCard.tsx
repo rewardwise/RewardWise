@@ -676,39 +676,41 @@ export default function VerdictCard({
               publicPreview={publicPreview}
             />
 
-            <p className="mt-5 max-w-4xl text-lg font-medium leading-8 text-slate-300 md:text-xl">
-              {mainExplanation}
-            </p>
-            {searchedRangeCopy && (
-              <p className="mt-3 inline-flex items-center rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200">
-                {searchedRangeCopy}
-              </p>
-            )}
-
-            {/* Reasoning panel — always visible in public preview, togglable otherwise */}
             {(publicPreview || reasoningOpen) && (
-              <div className="mt-8 rounded-2xl bg-white/[0.04] p-5 md:p-6">
-                <div className="grid gap-5 md:grid-cols-3">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-400">Cash fare</p>
-                    <p className="mt-2 text-2xl font-bold text-white">{fmtMoney(displayCashPrice, displayCashPrice != null && displayCashPrice % 1 !== 0 ? 2 : 0)}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-slate-400">Best award</p>
-                    <p className="mt-2 text-2xl font-bold text-white">
-                      {hasAward ? `${Number(displayPoints).toLocaleString()} pts` : "—"}
-                      {displayTaxes != null && displayTaxes > 0 && <span className="text-base font-semibold text-slate-300"> + {fmtMoney(displayTaxes, 0)}</span>}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-slate-400">Value preserved</p>
-                    <p className="mt-2 text-2xl font-bold text-emerald-400">
-                      {displaySavings != null ? `~${fmtMoney(displaySavings, 0)}` : "—"}
-                    </p>
-                  </div>
-                </div>
+              <div data-testid="verdict-reasoning-block">
+                <p className="mt-5 max-w-4xl text-lg font-medium leading-8 text-slate-300 md:text-xl">
+                  {mainExplanation}
+                </p>
+                {searchedRangeCopy && (
+                  <p className="mt-3 inline-flex items-center rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200">
+                    {searchedRangeCopy}
+                  </p>
+                )}
 
-                <p className="mt-5 text-base leading-7 text-slate-300">{reasoningCopy}</p>
+                {/* Reasoning panel — always visible in public preview, togglable otherwise */}
+                <div className="mt-8 rounded-2xl bg-white/[0.04] p-5 md:p-6">
+                  <div className="grid gap-5 md:grid-cols-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-400">Cash fare</p>
+                      <p className="mt-2 text-2xl font-bold text-white">{fmtMoney(displayCashPrice, displayCashPrice != null && displayCashPrice % 1 !== 0 ? 2 : 0)}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-400">Best award</p>
+                      <p className="mt-2 text-2xl font-bold text-white">
+                        {hasAward ? `${Number(displayPoints).toLocaleString()} pts` : "—"}
+                        {displayTaxes != null && displayTaxes > 0 && <span className="text-base font-semibold text-slate-300"> + {fmtMoney(displayTaxes, 0)}</span>}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-400">Value preserved</p>
+                      <p className="mt-2 text-2xl font-bold text-emerald-400">
+                        {displaySavings != null ? `~${fmtMoney(displaySavings, 0)}` : "—"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <p className="mt-5 text-base leading-7 text-slate-300">{reasoningCopy}</p>
+                </div>
               </div>
             )}
 
