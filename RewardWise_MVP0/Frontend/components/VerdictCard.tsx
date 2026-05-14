@@ -15,6 +15,7 @@ import {
 import { useAlerts } from "@/context/AlertContext";
 import { fmtMoney } from "@/utils/format";
 import { dedupeByProgram } from "@/utils/awardOptions";
+import { buildOutboundLeg, buildInboundLeg } from "@/utils/flightLegs";
 import VerdictTopRow from "@/components/verdict/VerdictTopRow";
 import ErrorStateCard from "@/components/verdict/ErrorStateCard";
 import FlightSection, { FlightLeg } from "@/components/verdict/FlightSection";
@@ -374,67 +375,19 @@ export default function VerdictCard({
       : `Searched ${formatShortDate(departDate)} to ${formatShortDate(departDateEnd!)}.`
     : null;
 
-  const outboundLeg: FlightLeg | null = (() => {
-    if (recommendation === "use_points" && bestOutbound) {
-      const trip = bestOutbound.trips?.[0];
-      const segments = (trip?.segments ?? []).map((s) => ({
-        flight_number: s.flight_number,
-        carrier: bestOutbound.airlines,
-        origin: s.origin,
-        destination: s.destination,
-        departs_at: s.departs_at,
-        arrives_at: s.arrives_at,
-      }));
-      if (segments.length === 0) return null;
-      return { label: "Outbound", segments, total_duration: trip?.total_duration };
-    }
-    if (recommendation === "pay_cash" && bestCashFlight) {
-      const segments = (bestCashFlight.legs ?? []).map((leg) => ({
-        flight_number: leg.flight_number,
-        carrier: leg.airline,
-        origin: leg.departure_iata,
-        destination: leg.arrival_iata,
-        departs_at: leg.departure_time,
-        arrives_at: leg.arrival_time,
-        duration: leg.duration,
-      }));
-      if (segments.length === 0) return null;
-      return { label: "Outbound", segments, total_duration: bestCashFlight.total_duration };
-    }
-    return null;
-  })();
+  const outboundLeg: FlightLeg | null = buildOutboundLeg({
+    recommendation,
+    bestOutbound,
+    bestCashFlight,
+  });
 
-  const inboundLeg: FlightLeg | null = (() => {
-    if (!isRoundtrip) return null;
-    if (recommendation === "use_points" && bestReturn) {
-      const trip = bestReturn.trips?.[0];
-      const segments = (trip?.segments ?? []).map((s) => ({
-        flight_number: s.flight_number,
-        carrier: bestReturn.airlines,
-        origin: s.origin,
-        destination: s.destination,
-        departs_at: s.departs_at,
-        arrives_at: s.arrives_at,
-      }));
-      if (segments.length === 0) return null;
-      return { label: "Return", segments, total_duration: trip?.total_duration };
-    }
-    if (recommendation === "pay_cash" && bestCashFlight?.return_flight) {
-      const ret = bestCashFlight.return_flight;
-      const segments = (ret.legs ?? []).map((leg) => ({
-        flight_number: leg.flight_number,
-        carrier: leg.airline,
-        origin: leg.departure_iata,
-        destination: leg.arrival_iata,
-        departs_at: leg.departure_time,
-        arrives_at: leg.arrival_time,
-        duration: leg.duration,
-      }));
-      if (segments.length === 0) return null;
-      return { label: "Return", segments, total_duration: ret.total_duration };
-    }
-    return null;
-  })();
+  const inboundLeg: FlightLeg | null = buildInboundLeg({
+    recommendation,
+    isRoundtrip: Boolean(isRoundtrip),
+    bestOutbound,
+    bestReturn,
+    bestCashFlight,
+  });
 
   const operatingAirline: string | null = (() => {
     if (recommendation === "pay_cash") {
