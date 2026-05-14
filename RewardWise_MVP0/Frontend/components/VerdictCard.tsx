@@ -12,22 +12,15 @@ import {
   ExternalLink,
   PlaneLanding,
   PlaneTakeoff,
-  Search,
   Sparkles,
-  Volume2,
-  VolumeX,
-  ThumbsUp,
-  ThumbsDown,
-  MessageSquare,
 } from "lucide-react";
 import { useAlerts } from "@/context/AlertContext";
-import { createClient } from "@/utils/supabase/client";
 import { fmtMoney } from "@/utils/format";
 import { isDeepLinkable, airlineDisplayName } from "@/utils/airlines";
 import { logHandoffClick } from "@/utils/analytics";
 import VerdictBookingFallback from "@/components/VerdictBookingFallback";
-
-const supabase = createClient();
+import VerdictTopRow from "@/components/verdict/VerdictTopRow";
+import ErrorStateCard from "@/components/verdict/ErrorStateCard";
 
 type Confidence = "high" | "medium" | "low";
 
@@ -288,26 +281,6 @@ function fmtProgram(s?: string | null) {
     .join(" ");
 }
 
-function buildGoogleFlightsUrl(origin: string, destination: string, departDate: string, returnDate?: string | null, cabin?: string): string {
-  const cabinStr = ({ economy: "economy", business: "business", first: "first class" } as Record<string, string>)[cabin ?? "economy"] ?? "economy";
-  const q = returnDate
-    ? `Flights from ${origin} to ${destination} on ${departDate} returning ${returnDate} ${cabinStr}`
-    : `Flights from ${origin} to ${destination} on ${departDate} ${cabinStr}`;
-  return `https://www.google.com/travel/flights?q=${encodeURIComponent(q)}`;
-}
-
-function confidenceTone(confidence: Confidence) {
-  if (confidence === "high") return "border-emerald-400/25 bg-emerald-500/10 text-emerald-200";
-  if (confidence === "medium") return "border-amber-400/25 bg-amber-500/10 text-amber-200";
-  return "border-slate-400/20 bg-slate-400/10 text-slate-200";
-}
-
-function confidenceDot(confidence: Confidence) {
-  if (confidence === "high") return "bg-emerald-300";
-  if (confidence === "medium") return "bg-amber-300";
-  return "bg-slate-300";
-}
-
 export function VerdictCardSkeleton({ origin, destination }: { origin: string; destination: string }) {
   return (
     <div className="animate-pulse rounded-2xl border border-white/10 bg-slate-900/80 p-6 shadow-2xl">
@@ -320,100 +293,6 @@ export function VerdictCardSkeleton({ origin, destination }: { origin: string; d
       </div>
       <div className="h-44 rounded-2xl bg-white/5" />
       <p className="mt-6 text-sm text-slate-500">Loading {origin} → {destination}…</p>
-    </div>
-  );
-}
-
-function FeedbackInline({ verdictId }: { verdictId?: string | null }) {
-  const [choice, setChoice] = useState<1 | 5 | null>(null);
-  const [open, setOpen] = useState(false);
-  const [comment, setComment] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState("");
-
-  if (!verdictId) return null;
-
-  const submit = async () => {
-    if (!choice || saving) return;
-    setSaving(true);
-    setError("");
-    const { data: userData } = await supabase.auth.getUser();
-    const userId = userData.user?.id;
-    if (!userId) {
-      setSaving(false);
-      setError("Please log in again before submitting feedback.");
-      return;
-    }
-    const payload = {
-      verdict_id: verdictId,
-      user_id: userId,
-      rating: choice,
-      comment: comment.trim() || null,
-      did_book: false,
-      booking_method: null,
-    };
-    const { error: insertError } = await supabase.from("feedback").insert(payload);
-    if (insertError) {
-      setSaving(false);
-      setError(insertError.message || "Failed to save feedback.");
-      return;
-    }
-    setSaving(false);
-    setSaved(true);
-    setOpen(false);
-  };
-
-  return (
-    <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2 text-slate-300">
-          <MessageSquare className="h-4 w-4" />
-          <span className="text-sm font-medium">Was this useful?</span>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => {
-              setChoice(5);
-              setOpen(true);
-            }}
-            className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${choice === 5 ? "border-emerald-400 bg-emerald-500/10 text-emerald-300" : "border-white/10 bg-white/[0.03] text-slate-300"}`}
-          >
-            <ThumbsUp className="h-4 w-4" /> Helpful
-          </button>
-          <button
-            onClick={() => {
-              setChoice(1);
-              setOpen(true);
-            }}
-            className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${choice === 1 ? "border-rose-400 bg-rose-500/10 text-rose-300" : "border-white/10 bg-white/[0.03] text-slate-300"}`}
-          >
-            <ThumbsDown className="h-4 w-4" /> Needs work
-          </button>
-        </div>
-      </div>
-      {open && !saved && (
-        <div className="mt-3 space-y-3">
-          <textarea
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            placeholder="Optional: what should Zoe do better here?"
-            className="min-h-[92px] w-full rounded-xl border border-white/10 bg-slate-900/80 px-3 py-2 text-sm text-white placeholder:text-slate-500"
-          />
-          <div className="flex items-center gap-2">
-            <button
-              onClick={submit}
-              disabled={saving}
-              className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-600 disabled:bg-slate-700"
-            >
-              {saving ? "Saving…" : "Submit feedback"}
-            </button>
-            <button onClick={() => setOpen(false)} className="rounded-xl border border-white/10 px-4 py-2 text-sm text-slate-300">Cancel</button>
-          </div>
-          {error && <p className="text-xs text-rose-300">{error}</p>}
-        </div>
-      )}
-      {saved && <p className="mt-3 text-sm text-emerald-300">Thanks — your feedback was saved.</p>}
     </div>
   );
 }
@@ -444,11 +323,9 @@ export default function VerdictCard({
   const [justAdded, setJustAdded] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [reasoningOpen, setReasoningOpen] = useState(true);
-  const [inlineAnswer, setInlineAnswer] = useState<{ question: string; answer: string } | null>(null);
   const [slide, setSlide] = useState(0); // 0 = verdict, 1 = details
   const touchStartX = useRef<number | null>(null);
   const touchEndX = useRef<number | null>(null);
-  const [inlineLoading, setInlineLoading] = useState<string | null>(null); // which question is loading
   const [flightDetailsOpen, setFlightDetailsOpen] = useState(false);
   const alreadyWatching = isWatching(origin, destination, departDate);
 
@@ -459,7 +336,7 @@ export default function VerdictCard({
   const bookingUrl = verdict.booking_link?.preferred === "seats_aero" && verdict.booking_link?.seats_aero_link
     ? verdict.booking_link.seats_aero_link
     : verdict.booking_link?.airline_link ?? null;
-  const googleFlightsUrl = buildGoogleFlightsUrl(origin, destination, departDate, returnDate, cabin);
+  const bestDate = winningDate || departDate;
   const bestCashFlight = flights[0] ?? null;
   const bestOutbound = winner?.program
     ? (awardOptions.find((option) => option.program.toLowerCase() === winner.program!.toLowerCase()) ?? awardOptions[0])
@@ -472,6 +349,20 @@ export default function VerdictCard({
   const displaySavings = metrics.estimated_savings ?? null;
   const hasAward = displayPoints != null && displayPoints > 0;
   const mainExplanation = verdict.explanation || verdict.verdict || "Zoe compared the live cash fare against the strongest award option available for this trip.";
+
+  const recommendationHeadline = (() => {
+    if (recommendation === "use_points") {
+      return displaySavings != null
+        ? `Use Points · Save ${fmtMoney(Math.round(displaySavings))}`
+        : "Use Points";
+    }
+    if (recommendation === "pay_cash") {
+      return displayCashPrice != null
+        ? `Pay Cash · ${fmtMoney(displayCashPrice, displayCashPrice % 1 === 0 ? 0 : 2)}`
+        : "Pay Cash";
+    }
+    return verdict.verdict_label ?? "Wait";
+  })();
 
   const isFlexibleSearch = Boolean(departDateEnd && departDateEnd !== departDate);
   const searchedRangeCopy = isFlexibleSearch
@@ -487,52 +378,6 @@ export default function VerdictCard({
         ? "The award option is stronger than the cash fare right now, so using points protects cash while still getting solid redemption value."
         : "The current signal is mixed, so it is worth checking nearby dates or another cabin before booking."
   );
-
-  const quickQuestions = [
-    recommendation === "pay_cash" ? "Why not points?" : "Why not cash?",
-    "Show alternatives",
-    "What if I’m flush with miles?",
-  ];
-
-  const askInline = async (question: string) => {
-    if (inlineLoading) return;
-    setInlineLoading(question);
-    setInlineAnswer(null);
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData?.session?.access_token;
-      const context = [
-        `Verdict for ${origin} → ${destination}, ${(cabin || "economy").replace(/_/g, " ")}, ${travelers} traveler${travelers !== 1 ? "s" : ""}.`,
-        `Verdict: ${verdict.verdict_label ?? (verdict.pay_cash ? "Pay Cash" : "Use Points")}.`,
-        verdict.metrics?.cash_price != null ? `Cash fare: ${fmtMoney(Math.round(verdict.metrics.cash_price))}.` : null,
-        verdict.winner?.points && verdict.winner?.program
-          ? `Best award: ${verdict.winner.points.toLocaleString()} points via ${verdict.winner.program.replace(/_/g, " ")}.`
-          : null,
-        verdict.winner?.cpp != null ? `Value: ${verdict.winner.cpp.toFixed(2)} cents per point.` : null,
-        `Confidence: ${verdict.confidence}.`,
-        verdict.confidence_reason ?? null,
-        verdict.explanation ?? null,
-      ].filter(Boolean).join(" ");
-
-      const res = await fetch("/api/zoe", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          message: `Given this search result: ${context} Answer this question in 2-3 sentences max, no fluff: ${question}`,
-          history: [],
-        }),
-      });
-      const data = await res.json();
-      setInlineAnswer({ question, answer: data.message || "Couldn't get an answer right now." });
-    } catch {
-      setInlineAnswer({ question, answer: "Something went wrong — try again." });
-    } finally {
-      setInlineLoading(null);
-    }
-  };
 
   const readout = useMemo(() => {
     const pieces = [
@@ -769,6 +614,10 @@ export default function VerdictCard({
     if (Math.abs(diff) > 50) setSlide(diff > 0 ? 1 : 0);
   };
 
+  if (recommendation === "wait") {
+    return <ErrorStateCard />;
+  }
+
   return (
     <div
       className="relative overflow-hidden"
@@ -792,41 +641,24 @@ export default function VerdictCard({
           <div className="flex-1 rounded-3xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl md:p-8 flex flex-col">
 
             {/* Header */}
-            <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
-              <div className="min-w-0">
-                <p className="text-[13px] font-semibold uppercase tracking-[0.22em] text-slate-400">The Verdict</p>
-                <div className="mt-8 flex flex-wrap items-baseline gap-x-4 gap-y-2">
-                  <h2 className="text-4xl font-extrabold tracking-tight text-white md:text-5xl">{recommendationLabel}</h2>
-                  {displayCashPrice != null && (
-                    <>
-                      <span className="text-sm font-semibold text-slate-400">· Cash fare</span>
-                      <span className="text-4xl font-extrabold tracking-tight text-emerald-400 md:text-5xl">
-                        {fmtMoney(displayCashPrice, displayCashPrice % 1 === 0 ? 0 : 2)}
-                      </span>
-                    </>
-                  )}
-                </div>
-                <p className="mt-5 max-w-4xl text-lg font-medium leading-8 text-slate-300 md:text-xl">
-                  {mainExplanation}
-                </p>
-                {searchedRangeCopy && (
-                  <p className="mt-3 inline-flex items-center rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200">
-                    {searchedRangeCopy}
-                  </p>
-                )}
-              </div>
-              <div className="flex shrink-0 flex-wrap items-center gap-2 md:justify-end">
-                <span className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-bold capitalize ${confidenceTone(confidence)}`}>
-                  <span className={`h-2 w-2 rounded-full ${confidenceDot(confidence)}`} />
-                  {confidence} confidence
-                </span>
-                {verdict.data_quality && verdict.data_quality !== "full" && (
-                  <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-200">
-                    Partial data
-                  </span>
-                )}
-              </div>
-            </div>
+            <VerdictTopRow
+              recommendationHeadline={recommendationHeadline}
+              confidence={confidence}
+              showPartialDataBadge={Boolean(verdict.data_quality && verdict.data_quality !== "full")}
+              speaking={speaking}
+              onListenToggle={speak}
+              verdictId={verdictId}
+              publicPreview={publicPreview}
+            />
+
+            <p className="mt-5 max-w-4xl text-lg font-medium leading-8 text-slate-300 md:text-xl">
+              {mainExplanation}
+            </p>
+            {searchedRangeCopy && (
+              <p className="mt-3 inline-flex items-center rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200">
+                {searchedRangeCopy}
+              </p>
+            )}
 
             {/* Reasoning panel — always visible in public preview, togglable otherwise */}
             {(publicPreview || reasoningOpen) && (
@@ -852,46 +684,6 @@ export default function VerdictCard({
                 </div>
 
                 <p className="mt-5 text-base leading-7 text-slate-300">{reasoningCopy}</p>
-
-                {/* Quick questions — full-app only */}
-                {!publicPreview && (
-                  <div className="mt-5 flex flex-wrap gap-3">
-                    {quickQuestions.map((question) => (
-                      <button
-                        key={question}
-                        type="button"
-                        onClick={() => void askInline(question)}
-                        disabled={!!inlineLoading}
-                        className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
-                          inlineAnswer?.question === question
-                            ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-200"
-                            : "border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.08]"
-                        } disabled:opacity-50`}
-                      >
-                        {inlineLoading === question ? (
-                          <span className="flex items-center gap-2">
-                            <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                            </svg>
-                            {question}
-                          </span>
-                        ) : question}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {/* Inline answer */}
-                {!publicPreview && inlineAnswer && (
-                  <div className="mt-4 rounded-2xl border border-emerald-400/15 bg-emerald-500/[0.06] px-4 py-3">
-                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-300">{inlineAnswer.question}</p>
-                    <p className="text-sm leading-6 text-slate-200">{inlineAnswer.answer}</p>
-                    <button type="button" onClick={() => setInlineAnswer(null)} className="mt-2 text-xs text-slate-500 hover:text-slate-300">
-                      Dismiss
-                    </button>
-                  </div>
-                )}
               </div>
             )}
 
@@ -968,14 +760,6 @@ export default function VerdictCard({
               </div>
             )}
 
-            {!publicPreview && (
-              <div className="mt-6 flex justify-end">
-                <button onClick={speak} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-medium text-slate-200 hover:bg-white/[0.06]">
-                  {speaking ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />} {speaking ? "Stop" : "Listen"}
-                </button>
-              </div>
-            )}
-
             {/* Footer controls — full app only */}
             {!publicPreview && (
               <div className="mt-8 border-t border-white/10 pt-5">
@@ -1009,7 +793,7 @@ export default function VerdictCard({
                                 program,
                                 origin,
                                 destination,
-                                depart_date: departDate,
+                                depart_date: bestDate,
                                 return_date: returnDate ?? null,
                                 travelers,
                                 cabin,
@@ -1035,7 +819,7 @@ export default function VerdictCard({
                             airlineDomain={airlineDomain}
                             origin={origin}
                             destination={destination}
-                            departDate={departDate}
+                            departDate={bestDate}
                             returnDate={returnDate}
                             travelers={travelers}
                             cabin={cabin}
@@ -1050,16 +834,7 @@ export default function VerdictCard({
                         );
                       }
 
-                      return (
-                        <a
-                          href={googleFlightsUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-2 rounded-xl bg-emerald-400 px-5 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-300"
-                        >
-                          Search fares <Search className="h-4 w-4" />
-                        </a>
-                      );
+                      return null;
                     })()}
                     <button
                       onClick={handleSetAlert}
@@ -1081,7 +856,7 @@ export default function VerdictCard({
                         const savingsStr = displaySavings != null ? `saving roughly ${fmtMoney(Math.round(displaySavings))}` : null;
                         const parts = [
                           `The search returned a verdict for ${origin} → ${destination}`,
-                          `on ${departDate}${returnDate ? ` returning ${returnDate}` : ""}, ${travelers} traveler${travelers !== 1 ? "s" : ""}, ${(cabin || "economy").replace(/_/g, " ")} class.`,
+                          `on ${bestDate}${returnDate ? ` returning ${returnDate}` : ""}, ${travelers} traveler${travelers !== 1 ? "s" : ""}, ${(cabin || "economy").replace(/_/g, " ")} class.`,
                           `Verdict: ${recommendationLabel}.`,
                           cashStr ? `Cash fare: ${cashStr}.` : null,
                           ptsStr && progStr ? `Best award: ${ptsStr} via ${progStr}.` : null,
@@ -1105,7 +880,6 @@ export default function VerdictCard({
 
 
             {!publicPreview && verdict.booking_note && <p className="mt-4 text-xs text-slate-500">{verdict.booking_note}</p>}
-            {!publicPreview && <FeedbackInline verdictId={verdictId} />}
           </div>
         </div>
 
