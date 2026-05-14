@@ -132,7 +132,7 @@ function FlightCard({ leg }: { leg: FlightLeg }) {
           >
             {leg.label}
             {headerDate ? (
-              <span className="normal-case tracking-normal text-slate-300"> · {headerDate}</span>
+              <span className="normal-case tracking-normal text-slate-400"> · {headerDate}</span>
             ) : null}
           </p>
           <div className="mt-1 flex flex-wrap items-baseline gap-2">
