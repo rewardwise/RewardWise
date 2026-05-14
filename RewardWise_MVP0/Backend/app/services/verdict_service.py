@@ -4,6 +4,11 @@ from urllib.parse import urlencode
 
 logger = logging.getLogger(__name__)
 
+CPP_PAY_CASH_THRESHOLD = 1.25
+CPP_GRAY_ZONE_MIDPOINT = 1.5
+CPP_USE_POINTS_STRONG_THRESHOLD = 1.8
+CHEAP_CASH_THRESHOLD_USD = 250
+
 PROGRAM_URL_OVERRIDES = {
     "american": "https://www.aa.com/",
     "aeroplan": "https://www.aircanada.com/",
@@ -271,6 +276,90 @@ def _choose_candidate(award_options: list, user_programs: Optional[list]) -> tup
     return user_picks, award_options
 
 
+def _gray_zone_response(
+    *,
+    recommendation: str,
+    program: Optional[str],
+    program_label: str,
+    points: int,
+    cpp: float,
+    cash_price: float,
+    trip_ids: list,
+    display_origin: str,
+    display_destination: str,
+    winner_origin: str,
+    winner_destination: str,
+    date: str,
+    return_date: Optional[str],
+    travelers: int,
+    winner_payload: dict,
+    data_quality: str,
+    missing_sources: list,
+) -> dict:
+    """Build the gray-zone (1.25 <= cpp < 1.8) response for pay_cash or use_points.
+
+    Gray-zone next_step is None per product decision; headline + explanation carry
+    the framing.
+    """
+    cash_label = _cash_label(cash_price)
+    if recommendation == "pay_cash":
+        verdict_label = "Pay Cash"
+        headline = "Pay cash. Save your points for a stronger redemption."
+        explanation = (
+            f"I found {program_label} at {points:,} points versus {cash_label} cash."
+            f" At {cpp:.2f}¢/pt, the award value here is below the threshold where points typically beat cash."
+            " Paying cash preserves your points for a higher-value redemption on a different trip."
+        )
+        confidence_reason = (
+            "Both cash and award data were found. The award value is below the 1.5¢/pt"
+            " threshold where points usually outperform cash."
+        )
+        booking_note = "Pay cash and keep your points for a higher-value redemption."
+        booking_origin = display_origin
+        booking_destination = display_destination
+    else:
+        verdict_label = "Use Points"
+        headline = "Use points. Better than paying cash, though not the strongest redemption."
+        explanation = (
+            f"I found {program_label} at {points:,} points versus {cash_label} cash."
+            f" At {cpp:.2f}¢/pt, this beats paying cash, but it is not at premium-redemption levels."
+            " If you have flexibility, you might find better value on a different route or date."
+        )
+        confidence_reason = (
+            "Both cash and award data were found. The award value is above the 1.5¢/pt"
+            " threshold, but not at the premium-redemption range."
+        )
+        booking_note = f"Verify the award on {program_label}'s site before you transfer any points."
+        booking_origin = winner_origin
+        booking_destination = winner_destination
+
+    return _base_response(
+        recommendation=recommendation,
+        verdict_label=verdict_label,
+        headline=headline,
+        explanation=explanation,
+        confidence="medium",
+        confidence_reason=confidence_reason,
+        booking_note=booking_note,
+        booking_link=_get_booking_link_for_verdict(
+            program,
+            trip_ids,
+            origin=booking_origin,
+            destination=booking_destination,
+            depart_date=date,
+            return_date=return_date,
+            travelers=travelers,
+            recommendation=recommendation,
+        ),
+        winner=winner_payload,
+        cash_price=cash_price,
+        data_quality=data_quality,
+        missing_sources=missing_sources,
+        safe_fallback_used=bool(missing_sources),
+        next_step=None,
+    )
+
+
 async def generate_verdict(
     origin: str,
     destination: str,
@@ -456,7 +545,7 @@ async def generate_verdict(
     savings = max(0, round(cash_price - taxes, 2))
     urgency = 0 < remaining_seats <= 3
 
-    if cash_price <= 250 or cpp < 1.25:
+    if cash_price <= CHEAP_CASH_THRESHOLD_USD or cpp < CPP_PAY_CASH_THRESHOLD:
         explanation = (
             f"Cash is only {_cash_label(cash_price)}, while the best award I found is {points:,} points"
             f"{' plus about $' + str(int(round(taxes))) + ' in taxes' if taxes else ''}."
@@ -500,7 +589,7 @@ async def generate_verdict(
         )
         return response
 
-    if cpp >= 1.8:
+    if cpp >= CPP_USE_POINTS_STRONG_THRESHOLD:
         explanation = (
             f"The best award is {points:,} points"
             f"{' plus about $' + str(int(round(taxes))) + ' in taxes' if taxes else ''}"
@@ -551,47 +640,47 @@ async def generate_verdict(
         )
         return response
 
-    if 1.25 <= cpp < 1.8:
-        response = _base_response(
-            recommendation="wait",
-            verdict_label="Wait",
-            headline="This one is close enough that I would check another date before booking.",
-            explanation=(
-                f"I found {program_label} at {points:,} points versus {_cash_label(cash_price)} cash."
-                f" That is decent value, but not a slam dunk once you factor in the fees and flexibility tradeoff."
-            ),
-            confidence="medium",
-            confidence_reason="Both cash and award data were found, but the value gap is not wide enough to be decisive.",
-            booking_note="Try shifting the date or cabin to see if better award value opens up.",
-            booking_link=_get_booking_link_for_verdict(
-                program,
-                trip_ids,
-                origin=display_origin,
-                destination=display_destination,
-                depart_date=date,
-                return_date=return_date,
-                travelers=travelers,
-                recommendation="wait",
-            ),
-            winner=winner_payload,
+    if CPP_PAY_CASH_THRESHOLD <= cpp < CPP_GRAY_ZONE_MIDPOINT:
+        return _gray_zone_response(
+            recommendation="pay_cash",
+            program=program,
+            program_label=program_label,
+            points=points,
+            cpp=cpp,
             cash_price=cash_price,
+            trip_ids=trip_ids,
+            display_origin=display_origin,
+            display_destination=display_destination,
+            winner_origin=winner_origin,
+            winner_destination=winner_destination,
+            date=date,
+            return_date=return_date,
+            travelers=travelers,
+            winner_payload=winner_payload,
             data_quality=data_quality,
             missing_sources=missing_sources,
-            safe_fallback_used=bool(missing_sources),
-            next_step=_build_next_step(
-                "wait",
-                winner_origin,
-                winner_destination,
-                cabin,
-                cpp=cpp,
-                cash_price=cash_price,
-                remaining_seats=remaining_seats,
-                urgency=urgency,
-                program_label=program_label,
-                data_quality=data_quality,
-            ),
         )
-        return response
+
+    if CPP_GRAY_ZONE_MIDPOINT <= cpp < CPP_USE_POINTS_STRONG_THRESHOLD:
+        return _gray_zone_response(
+            recommendation="use_points",
+            program=program,
+            program_label=program_label,
+            points=points,
+            cpp=cpp,
+            cash_price=cash_price,
+            trip_ids=trip_ids,
+            display_origin=display_origin,
+            display_destination=display_destination,
+            winner_origin=winner_origin,
+            winner_destination=winner_destination,
+            date=date,
+            return_date=return_date,
+            travelers=travelers,
+            winner_payload=winner_payload,
+            data_quality=data_quality,
+            missing_sources=missing_sources,
+        )
 
     # Defensive fallback.
     return _base_response(
