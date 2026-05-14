@@ -19,6 +19,11 @@ export interface FlightLeg {
   label: "Outbound" | "Return";
   segments: FlightSegment[];
   total_duration?: number;
+  // "detailed" = trips[i].segments hydrated with per-segment carrier/time data.
+  // "summary"  = synthesized from top-level award fields (airlines, route, search date)
+  //              because seats.aero /trips hydration was skipped or returned no detail.
+  //              FlightSection renders a disclaimer in this case.
+  data_quality?: "detailed" | "summary";
 }
 
 type Props = {
@@ -59,6 +64,28 @@ function fmtShortDate(value?: string) {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
+function fmtDate(value?: string) {
+  if (!value) return "";
+  // Date-only strings (YYYY-MM-DD) must be parsed in local tz, not UTC.
+  // new Date("2026-07-04") parses as UTC midnight and renders as Jul 3 in Pacific.
+  const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (dateOnly) {
+    const [, y, m, d] = dateOnly;
+    return new Date(Number(y), Number(m) - 1, Number(d)).toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+    });
+  }
+  const parsed = parseDateTime(value);
+  if (!parsed) return "";
+  return parsed.toLocaleDateString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
+}
+
 function arrivalOverflowsDate(seg: FlightSegment) {
   const dep = parseDateTime(seg.departs_at);
   const arr = parseDateTime(seg.arrives_at);
@@ -81,9 +108,15 @@ function FlightCard({ leg }: { leg: FlightLeg }) {
   const last = segments[segments.length - 1];
   const stopCount = segments.length - 1;
   const stopLabel = stopCount === 0 ? "Nonstop" : `${stopCount} stop${stopCount > 1 ? "s" : ""}`;
+  const headerDate = first ? fmtDate(first.departs_at) : "";
+  const isSummary = leg.data_quality === "summary";
+  const testIdSuffix = leg.label.toLowerCase();
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
+    <div
+      data-testid={`flight-card-${testIdSuffix}`}
+      className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 md:p-5"
+    >
       <div className="mb-4 flex items-center gap-3">
         <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-indigo-400/20 bg-indigo-500/15">
           {isReturn ? (
@@ -93,8 +126,14 @@ function FlightCard({ leg }: { leg: FlightLeg }) {
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-indigo-300">
+          <p
+            data-testid={`leg-header-${testIdSuffix}`}
+            className="text-[11px] font-semibold uppercase tracking-[0.16em] text-indigo-300"
+          >
             {leg.label}
+            {headerDate ? (
+              <span className="normal-case tracking-normal text-slate-300"> · {headerDate}</span>
+            ) : null}
           </p>
           <div className="mt-1 flex flex-wrap items-baseline gap-2">
             <span className="text-lg font-extrabold text-white">
@@ -118,7 +157,10 @@ function FlightCard({ leg }: { leg: FlightLeg }) {
           const carrierLabel = [seg.carrier, seg.flight_number].filter(Boolean).join(" ");
           return (
             <div key={`${idx}-${seg.flight_number ?? "seg"}`}>
-              <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <div
+                data-testid="segment-row"
+                className="flex flex-wrap items-baseline justify-between gap-2"
+              >
                 <p className="text-sm font-semibold text-white">
                   {carrierLabel || "Flight pending"}
                   <span className="font-normal text-slate-400">
@@ -130,13 +172,17 @@ function FlightCard({ leg }: { leg: FlightLeg }) {
                   ) : null}
                 </p>
               </div>
-              <p className="mt-1 text-xs text-slate-400">
-                {fmtTime(seg.departs_at) || "—"}
-                {fmtTime(seg.arrives_at) ? ` – ${fmtTime(seg.arrives_at)}` : ""}
-                {overflow && seg.arrives_at ? (
-                  <span className="text-amber-300"> · Arrives {fmtShortDate(seg.arrives_at)}</span>
-                ) : null}
-              </p>
+              {isSummary ? null : (
+                <div className="mt-1 flex flex-wrap items-baseline gap-x-2 text-xs text-slate-400">
+                  <span>
+                    {fmtTime(seg.departs_at) || "—"}
+                    {fmtTime(seg.arrives_at) ? ` – ${fmtTime(seg.arrives_at)}` : ""}
+                  </span>
+                  {overflow && seg.arrives_at ? (
+                    <span className="text-amber-300">· Arrives {fmtShortDate(seg.arrives_at)}</span>
+                  ) : null}
+                </div>
+              )}
               {layover != null && next ? (
                 <p className="mt-2 text-[11px] uppercase tracking-[0.14em] text-slate-500">
                   {fmtDuration(layover)} layover {seg.destination || ""}
@@ -146,6 +192,11 @@ function FlightCard({ leg }: { leg: FlightLeg }) {
           );
         })}
       </div>
+      {isSummary ? (
+        <p className="mt-3 text-xs italic text-slate-400">
+          Flight details may vary at booking. Confirm on the airline site.
+        </p>
+      ) : null}
     </div>
   );
 }
