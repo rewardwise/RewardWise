@@ -21,6 +21,9 @@ import { logHandoffClick } from "@/utils/analytics";
 import VerdictBookingFallback from "@/components/VerdictBookingFallback";
 import VerdictTopRow from "@/components/verdict/VerdictTopRow";
 import ErrorStateCard from "@/components/verdict/ErrorStateCard";
+import FlightSection, { FlightLeg } from "@/components/verdict/FlightSection";
+import AwardDetailsSection, { AwardProgramOption } from "@/components/verdict/AwardDetailsSection";
+import HowToBookSection from "@/components/verdict/HowToBookSection";
 
 type Confidence = "high" | "medium" | "low";
 
@@ -371,6 +374,85 @@ export default function VerdictCard({
       : `Searched ${formatShortDate(departDate)} to ${formatShortDate(departDateEnd!)}.`
     : null;
 
+  const outboundLeg: FlightLeg | null = (() => {
+    if (recommendation === "use_points" && bestOutbound) {
+      const trip = bestOutbound.trips?.[0];
+      const segments = (trip?.segments ?? []).map((s) => ({
+        flight_number: s.flight_number,
+        carrier: bestOutbound.airlines,
+        origin: s.origin,
+        destination: s.destination,
+        departs_at: s.departs_at,
+        arrives_at: s.arrives_at,
+      }));
+      if (segments.length === 0) return null;
+      return { label: "Outbound", segments, total_duration: trip?.total_duration };
+    }
+    if (recommendation === "pay_cash" && bestCashFlight) {
+      const segments = (bestCashFlight.legs ?? []).map((leg) => ({
+        flight_number: leg.flight_number,
+        carrier: leg.airline,
+        origin: leg.departure_iata,
+        destination: leg.arrival_iata,
+        departs_at: leg.departure_time,
+        arrives_at: leg.arrival_time,
+        duration: leg.duration,
+      }));
+      if (segments.length === 0) return null;
+      return { label: "Outbound", segments, total_duration: bestCashFlight.total_duration };
+    }
+    return null;
+  })();
+
+  const inboundLeg: FlightLeg | null = (() => {
+    if (!isRoundtrip) return null;
+    if (recommendation === "use_points" && bestReturn) {
+      const trip = bestReturn.trips?.[0];
+      const segments = (trip?.segments ?? []).map((s) => ({
+        flight_number: s.flight_number,
+        carrier: bestReturn.airlines,
+        origin: s.origin,
+        destination: s.destination,
+        departs_at: s.departs_at,
+        arrives_at: s.arrives_at,
+      }));
+      if (segments.length === 0) return null;
+      return { label: "Return", segments, total_duration: trip?.total_duration };
+    }
+    if (recommendation === "pay_cash" && bestCashFlight?.return_flight) {
+      const ret = bestCashFlight.return_flight;
+      const segments = (ret.legs ?? []).map((leg) => ({
+        flight_number: leg.flight_number,
+        carrier: leg.airline,
+        origin: leg.departure_iata,
+        destination: leg.arrival_iata,
+        departs_at: leg.departure_time,
+        arrives_at: leg.arrival_time,
+        duration: leg.duration,
+      }));
+      if (segments.length === 0) return null;
+      return { label: "Return", segments, total_duration: ret.total_duration };
+    }
+    return null;
+  })();
+
+  const operatingAirline: string | null = (() => {
+    if (recommendation === "pay_cash") {
+      return bestCashFlight?.legs?.[0]?.airline ?? null;
+    }
+    if (bestOutbound?.airlines) return bestOutbound.airlines;
+    return null;
+  })();
+
+  const programOptions: AwardProgramOption[] = awardOptions.map((opt) => ({
+    program: opt.program,
+    points: opt.points,
+    taxes: opt.taxes,
+    cpp: opt.cpp,
+    remaining_seats: opt.remaining_seats,
+    direct: opt.direct,
+  }));
+
   const reasoningCopy = verdict.confidence_reason || (
     recommendation === "pay_cash"
       ? "Live cash fare matched our estimate. Award redemptions on this route look less efficient right now, so your points may work harder on international business or peak holiday trips."
@@ -685,6 +767,39 @@ export default function VerdictCard({
 
                 <p className="mt-5 text-base leading-7 text-slate-300">{reasoningCopy}</p>
               </div>
+            )}
+
+            {!publicPreview && (
+              <>
+                <FlightSection
+                  recommendation={recommendation}
+                  isRoundtrip={Boolean(isRoundtrip)}
+                  outbound={outboundLeg}
+                  inbound={inboundLeg}
+                />
+                <AwardDetailsSection
+                  recommendation={recommendation}
+                  operatingAirline={operatingAirline}
+                  awardOptions={programOptions}
+                  userPrograms={userPrograms}
+                  travelers={travelers}
+                />
+                <HowToBookSection
+                  recommendation={recommendation}
+                  origin={origin}
+                  destination={destination}
+                  date={bestDate}
+                  returnDate={returnDate}
+                  travelers={travelers}
+                  cabin={cabin}
+                  programName={winner?.program ?? null}
+                  operatingAirline={operatingAirline}
+                  points={displayPoints}
+                  taxes={displayTaxes}
+                  seatsRemaining={bestOutbound?.remaining_seats ?? null}
+                  cashPrice={displayCashPrice}
+                />
+              </>
             )}
 
             {/* Zoe locked features — public preview filler to balance height */}
