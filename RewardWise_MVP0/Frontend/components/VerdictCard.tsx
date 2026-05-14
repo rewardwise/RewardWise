@@ -289,7 +289,7 @@ function fmtProgram(s?: string | null) {
 }
 
 function buildGoogleFlightsUrl(origin: string, destination: string, departDate: string, returnDate?: string | null, cabin?: string): string {
-  const cabinStr = ({ economy: "economy", premium_economy: "premium economy", business: "business", first: "first class" } as Record<string, string>)[cabin ?? "economy"] ?? "economy";
+  const cabinStr = ({ economy: "economy", business: "business", first: "first class" } as Record<string, string>)[cabin ?? "economy"] ?? "economy";
   const q = returnDate
     ? `Flights from ${origin} to ${destination} on ${departDate} returning ${returnDate} ${cabinStr}`
     : `Flights from ${origin} to ${destination} on ${departDate} ${cabinStr}`;
