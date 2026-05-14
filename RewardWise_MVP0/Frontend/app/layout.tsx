@@ -10,6 +10,7 @@ import { SearchFillProvider } from "@/context/SearchFillContext";
 import { ABTestProvider } from "@/context/ABTestContext";
 import NavbarWrapper from "@/components/NavbarWrapper";
 import PaymentNotificationBanner from "@/components/PaymentNotificationBanner";
+import DayPassUpgradeReminder from "@/components/DayPassUpgradeReminder";
 import AnalyticsTracker from "@/components/analytics/AnalyticsTracker";
 import "./globals.css";
 
@@ -57,6 +58,7 @@ export default function RootLayout({
 									</Suspense>
 									<NavbarWrapper />
 									<PaymentNotificationBanner />
+									<DayPassUpgradeReminder />
 									{children}
 								</SearchFillProvider>
 							</ABTestProvider>

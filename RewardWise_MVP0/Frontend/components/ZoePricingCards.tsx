@@ -11,6 +11,42 @@ import {
 	PAY_START_SUBSCRIPTION,
 } from "@/utils/user-messages";
 
+
+type DealPriceProps = {
+	before: string;
+	price: string;
+	suffix?: string;
+	badge: string;
+	badgeClassName?: string;
+};
+
+function DealPrice({
+	before,
+	price,
+	suffix = "",
+	badge,
+	badgeClassName = "bg-emerald-100 text-emerald-800 ring-emerald-200",
+}: DealPriceProps) {
+	return (
+		<div className="space-y-2">
+			<div className="flex flex-wrap items-center gap-2">
+				<span className="text-base sm:text-lg font-semibold text-stone-400 line-through decoration-2">
+					{before}
+				</span>
+				<span
+					className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-extrabold tracking-wide ring-1 ${badgeClassName}`}
+				>
+					{badge}
+				</span>
+			</div>
+			<p className="text-3xl font-bold text-stone-900">
+				{price}
+				{suffix && <span className="text-lg font-semibold"> {suffix}</span>}
+			</p>
+		</div>
+	);
+}
+
 export type ZoePricingCardsProps = {
 	searchId?: string | null;
 	showHeader?: boolean;
@@ -130,8 +166,8 @@ export default function ZoePricingCards({
 						Unlock Verdict Search + Zoe for 24 hours.
 					</p>
 					<div className="mb-5">
-						<p className="text-3xl font-bold text-stone-900">$0.99</p>
-						<p className="text-stone-500 text-xs mt-1">
+						<DealPrice before="$3.99" price="$0.99" badge="75% OFF" />
+						<p className="text-stone-500 text-xs mt-1.5">
 							one time · 24-hour access
 						</p>
 					</div>
@@ -190,11 +226,14 @@ export default function ZoePricingCards({
 							Ongoing access to Verdict Search + Zoe.
 						</p>
 						<div className="mb-5">
-							<p className="text-3xl font-bold text-stone-900">
-								$3.99
-								<span className="text-lg font-semibold"> /month</span>
-							</p>
-							<p className="text-stone-500 text-xs mt-1">
+							<DealPrice
+								before="$9.99"
+								price="$3.99"
+								suffix="/month"
+								badge="60% OFF"
+								badgeClassName="bg-emerald-600 text-white ring-emerald-700/20 shadow-sm"
+							/>
+							<p className="text-stone-500 text-xs mt-1.5">
 								cancel anytime
 							</p>
 						</div>
@@ -243,8 +282,13 @@ export default function ZoePricingCards({
 						Let our team research and plan it for you.
 					</p>
 					<div className="mb-5">
-						<p className="text-3xl font-bold text-stone-900">From $19</p>
-						<p className="text-stone-500 text-xs mt-1">
+						<DealPrice
+							before="From $39"
+							price="From $19"
+							badge="51% OFF"
+							badgeClassName="bg-amber-100 text-amber-900 ring-amber-200"
+						/>
+						<p className="text-stone-500 text-xs mt-1.5">
 							per trip · 24hr turnaround
 						</p>
 					</div>
