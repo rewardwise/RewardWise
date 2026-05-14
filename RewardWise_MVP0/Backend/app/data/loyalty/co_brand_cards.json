@@ -1,0 +1,556 @@
+{
+  "as_of": "2026-05-14",
+  "version": "1.0",
+  "cards": [
+    {
+      "card_id": "chase_united_gateway",
+      "issuer": "Chase",
+      "card_name": "United Gateway",
+      "earns_into": "united_mileageplus",
+      "earns_into_display": "United MileagePlus",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 5 Table 1"
+    },
+    {
+      "card_id": "chase_united_explorer",
+      "issuer": "Chase",
+      "card_name": "United Explorer",
+      "earns_into": "united_mileageplus",
+      "earns_into_display": "United MileagePlus",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 5 Table 1"
+    },
+    {
+      "card_id": "chase_united_quest",
+      "issuer": "Chase",
+      "card_name": "United Quest",
+      "earns_into": "united_mileageplus",
+      "earns_into_display": "United MileagePlus",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 5 Table 1"
+    },
+    {
+      "card_id": "chase_united_club_infinite",
+      "issuer": "Chase",
+      "card_name": "United Club Infinite",
+      "earns_into": "united_mileageplus",
+      "earns_into_display": "United MileagePlus",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 5 Table 1"
+    },
+    {
+      "card_id": "chase_united_business",
+      "issuer": "Chase",
+      "card_name": "United Business",
+      "earns_into": "united_mileageplus",
+      "earns_into_display": "United MileagePlus",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 5 Table 1"
+    },
+    {
+      "card_id": "chase_united_club_business",
+      "issuer": "Chase",
+      "card_name": "United Club Business",
+      "earns_into": "united_mileageplus",
+      "earns_into_display": "United MileagePlus",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 5 Table 1"
+    },
+    {
+      "card_id": "chase_southwest_plus",
+      "issuer": "Chase",
+      "card_name": "Southwest Rapid Rewards Plus",
+      "earns_into": "southwest_rapid_rewards",
+      "earns_into_display": "Southwest Rapid Rewards",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 5 Table 1"
+    },
+    {
+      "card_id": "chase_southwest_premier",
+      "issuer": "Chase",
+      "card_name": "Southwest Rapid Rewards Premier",
+      "earns_into": "southwest_rapid_rewards",
+      "earns_into_display": "Southwest Rapid Rewards",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 5 Table 1"
+    },
+    {
+      "card_id": "chase_southwest_priority",
+      "issuer": "Chase",
+      "card_name": "Southwest Rapid Rewards Priority",
+      "earns_into": "southwest_rapid_rewards",
+      "earns_into_display": "Southwest Rapid Rewards",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 5 Table 1"
+    },
+    {
+      "card_id": "chase_southwest_premier_business",
+      "issuer": "Chase",
+      "card_name": "Southwest Rapid Rewards Premier Business",
+      "earns_into": "southwest_rapid_rewards",
+      "earns_into_display": "Southwest Rapid Rewards",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 5 Table 1"
+    },
+    {
+      "card_id": "chase_southwest_performance_business",
+      "issuer": "Chase",
+      "card_name": "Southwest Rapid Rewards Performance Business",
+      "earns_into": "southwest_rapid_rewards",
+      "earns_into_display": "Southwest Rapid Rewards",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 5 Table 1"
+    },
+    {
+      "card_id": "chase_british_airways_visa",
+      "issuer": "Chase",
+      "card_name": "British Airways Visa Signature",
+      "earns_into": "british_airways_avios",
+      "earns_into_display": "British Airways Executive Club",
+      "status": "active",
+      "notes": "Avios pool; transferable between BA, Iberia, Aer Lingus",
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 3.1 + 5 Table 1"
+    },
+    {
+      "card_id": "chase_iberia_plus_visa",
+      "issuer": "Chase",
+      "card_name": "Iberia Plus Visa Signature",
+      "earns_into": "iberia_avios",
+      "earns_into_display": "Iberia Plus",
+      "status": "active",
+      "notes": "Avios pool; transferable between BA, Iberia, Aer Lingus",
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 3.1 + 5 Table 1"
+    },
+    {
+      "card_id": "chase_aer_lingus_visa",
+      "issuer": "Chase",
+      "card_name": "Aer Lingus Visa Signature",
+      "earns_into": "aer_lingus_avios",
+      "earns_into_display": "Aer Lingus AerClub",
+      "status": "active",
+      "notes": "Avios pool; transferable between BA, Iberia, Aer Lingus",
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 3.1 + 5 Table 1"
+    },
+    {
+      "card_id": "chase_ihg_premier",
+      "issuer": "Chase",
+      "card_name": "IHG One Rewards Premier",
+      "earns_into": "ihg_one_rewards",
+      "earns_into_display": "IHG One Rewards",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 5 Table 1"
+    },
+    {
+      "card_id": "chase_ihg_traveler",
+      "issuer": "Chase",
+      "card_name": "IHG One Rewards Traveler",
+      "earns_into": "ihg_one_rewards",
+      "earns_into_display": "IHG One Rewards",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 5 Table 1"
+    },
+    {
+      "card_id": "chase_marriott_bonvoy_bold",
+      "issuer": "Chase",
+      "card_name": "Marriott Bonvoy Bold",
+      "earns_into": "marriott_bonvoy",
+      "earns_into_display": "Marriott Bonvoy",
+      "status": "active",
+      "notes": "Marriott Bonvoy is split-issued between Chase and Amex",
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 3.2 + 5 Table 1"
+    },
+    {
+      "card_id": "chase_marriott_bonvoy_boundless",
+      "issuer": "Chase",
+      "card_name": "Marriott Bonvoy Boundless",
+      "earns_into": "marriott_bonvoy",
+      "earns_into_display": "Marriott Bonvoy",
+      "status": "active",
+      "notes": "Marriott Bonvoy is split-issued between Chase and Amex",
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 3.2 + 5 Table 1"
+    },
+    {
+      "card_id": "chase_marriott_bonvoy_business",
+      "issuer": "Chase",
+      "card_name": "Marriott Bonvoy Business",
+      "earns_into": "marriott_bonvoy",
+      "earns_into_display": "Marriott Bonvoy",
+      "status": "active",
+      "notes": "Marriott Bonvoy is split-issued between Chase and Amex",
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 3.2 + 5 Table 1"
+    },
+    {
+      "card_id": "amex_delta_blue",
+      "issuer": "Amex",
+      "card_name": "Delta SkyMiles Blue",
+      "earns_into": "delta_skymiles",
+      "earns_into_display": "Delta SkyMiles",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 1 + 5 Table 1"
+    },
+    {
+      "card_id": "amex_delta_gold",
+      "issuer": "Amex",
+      "card_name": "Delta SkyMiles Gold",
+      "earns_into": "delta_skymiles",
+      "earns_into_display": "Delta SkyMiles",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 1 + 5 Table 1"
+    },
+    {
+      "card_id": "amex_delta_platinum",
+      "issuer": "Amex",
+      "card_name": "Delta SkyMiles Platinum",
+      "earns_into": "delta_skymiles",
+      "earns_into_display": "Delta SkyMiles",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 1 + 5 Table 1"
+    },
+    {
+      "card_id": "amex_delta_reserve",
+      "issuer": "Amex",
+      "card_name": "Delta SkyMiles Reserve",
+      "earns_into": "delta_skymiles",
+      "earns_into_display": "Delta SkyMiles",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 1 + 5 Table 1"
+    },
+    {
+      "card_id": "amex_delta_gold_business",
+      "issuer": "Amex",
+      "card_name": "Delta SkyMiles Gold Business",
+      "earns_into": "delta_skymiles",
+      "earns_into_display": "Delta SkyMiles",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 1 + 5 Table 1"
+    },
+    {
+      "card_id": "amex_delta_platinum_business",
+      "issuer": "Amex",
+      "card_name": "Delta SkyMiles Platinum Business",
+      "earns_into": "delta_skymiles",
+      "earns_into_display": "Delta SkyMiles",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 1 + 5 Table 1"
+    },
+    {
+      "card_id": "amex_delta_reserve_business",
+      "issuer": "Amex",
+      "card_name": "Delta SkyMiles Reserve Business",
+      "earns_into": "delta_skymiles",
+      "earns_into_display": "Delta SkyMiles",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 1 + 5 Table 1"
+    },
+    {
+      "card_id": "amex_hilton_honors",
+      "issuer": "Amex",
+      "card_name": "Hilton Honors",
+      "earns_into": "hilton_honors",
+      "earns_into_display": "Hilton Honors",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 1 + 5 Table 1"
+    },
+    {
+      "card_id": "amex_hilton_honors_surpass",
+      "issuer": "Amex",
+      "card_name": "Hilton Honors Surpass",
+      "earns_into": "hilton_honors",
+      "earns_into_display": "Hilton Honors",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 1 + 5 Table 1"
+    },
+    {
+      "card_id": "amex_hilton_honors_aspire",
+      "issuer": "Amex",
+      "card_name": "Hilton Honors Aspire",
+      "earns_into": "hilton_honors",
+      "earns_into_display": "Hilton Honors",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 1 + 5 Table 1"
+    },
+    {
+      "card_id": "amex_hilton_honors_business",
+      "issuer": "Amex",
+      "card_name": "Hilton Honors Business",
+      "earns_into": "hilton_honors",
+      "earns_into_display": "Hilton Honors",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 1 + 5 Table 1"
+    },
+    {
+      "card_id": "amex_marriott_bonvoy_bevy",
+      "issuer": "Amex",
+      "card_name": "Marriott Bonvoy Bevy",
+      "earns_into": "marriott_bonvoy",
+      "earns_into_display": "Marriott Bonvoy",
+      "status": "active",
+      "notes": "Marriott Bonvoy is split-issued between Chase and Amex",
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 3.2 + 5 Table 1"
+    },
+    {
+      "card_id": "amex_marriott_bonvoy_brilliant",
+      "issuer": "Amex",
+      "card_name": "Marriott Bonvoy Brilliant",
+      "earns_into": "marriott_bonvoy",
+      "earns_into_display": "Marriott Bonvoy",
+      "status": "active",
+      "notes": "Marriott Bonvoy is split-issued between Chase and Amex",
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 3.2 + 5 Table 1"
+    },
+    {
+      "card_id": "amex_marriott_bonvoy_business",
+      "issuer": "Amex",
+      "card_name": "Marriott Bonvoy Business",
+      "earns_into": "marriott_bonvoy",
+      "earns_into_display": "Marriott Bonvoy",
+      "status": "active",
+      "notes": "Marriott Bonvoy is split-issued between Chase and Amex",
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 3.2 + 5 Table 1"
+    },
+    {
+      "card_id": "citi_aadvantage_mileup",
+      "issuer": "Citi",
+      "card_name": "AAdvantage MileUp",
+      "earns_into": "aa_aadvantage",
+      "earns_into_display": "American AAdvantage",
+      "status": "active",
+      "notes": "Citi is sole AAdvantage issuer after Barclays exited Oct 2025",
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 1 + 5 Table 1"
+    },
+    {
+      "card_id": "citi_aadvantage_platinum_select",
+      "issuer": "Citi",
+      "card_name": "AAdvantage Platinum Select World Elite",
+      "earns_into": "aa_aadvantage",
+      "earns_into_display": "American AAdvantage",
+      "status": "active",
+      "notes": "Citi is sole AAdvantage issuer after Barclays exited Oct 2025",
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 1 + 5 Table 1"
+    },
+    {
+      "card_id": "citi_aadvantage_globe",
+      "issuer": "Citi",
+      "card_name": "AAdvantage Globe",
+      "earns_into": "aa_aadvantage",
+      "earns_into_display": "American AAdvantage",
+      "status": "active",
+      "notes": "Launched 2025 ($350 annual fee)",
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 1 + 5 Table 1"
+    },
+    {
+      "card_id": "citi_aadvantage_executive",
+      "issuer": "Citi",
+      "card_name": "AAdvantage Executive World Elite",
+      "earns_into": "aa_aadvantage",
+      "earns_into_display": "American AAdvantage",
+      "status": "active",
+      "notes": "Citi is sole AAdvantage issuer after Barclays exited Oct 2025",
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 1 + 5 Table 1"
+    },
+    {
+      "card_id": "barclays_jetblue",
+      "issuer": "Barclays",
+      "card_name": "JetBlue Card",
+      "earns_into": "jetblue_trueblue",
+      "earns_into_display": "JetBlue TrueBlue",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 3.3 + 5 Table 1"
+    },
+    {
+      "card_id": "barclays_jetblue_plus",
+      "issuer": "Barclays",
+      "card_name": "JetBlue Plus",
+      "earns_into": "jetblue_trueblue",
+      "earns_into_display": "JetBlue TrueBlue",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 3.3 + 5 Table 1"
+    },
+    {
+      "card_id": "barclays_frontier",
+      "issuer": "Barclays",
+      "card_name": "Frontier Airlines World Mastercard",
+      "earns_into": "frontier_miles",
+      "earns_into_display": "Frontier Miles",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 3.3 + 5 Table 1"
+    },
+    {
+      "card_id": "barclays_wyndham_earner",
+      "issuer": "Barclays",
+      "card_name": "Wyndham Rewards Earner",
+      "earns_into": "wyndham_rewards",
+      "earns_into_display": "Wyndham Rewards",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 3.3 + 5 Table 1"
+    },
+    {
+      "card_id": "barclays_wyndham_earner_plus",
+      "issuer": "Barclays",
+      "card_name": "Wyndham Rewards Earner Plus",
+      "earns_into": "wyndham_rewards",
+      "earns_into_display": "Wyndham Rewards",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 3.3 + 5 Table 1"
+    },
+    {
+      "card_id": "bofa_atmos_ascent",
+      "issuer": "Bank of America",
+      "card_name": "Atmos Ascent Visa Signature",
+      "earns_into": "atmos_rewards",
+      "earns_into_display": "Atmos Rewards",
+      "status": "active",
+      "notes": "Formerly Alaska Airlines Visa Signature; rebranded as Atmos Ascent after Alaska + Hawaiian unified Oct 2025",
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 2.3 + 5 Table 1"
+    },
+    {
+      "card_id": "bofa_atmos_summit",
+      "issuer": "Bank of America",
+      "card_name": "Atmos Summit Visa Infinite",
+      "earns_into": "atmos_rewards",
+      "earns_into_display": "Atmos Rewards",
+      "status": "active",
+      "notes": "Launched Aug 2025 ($395 annual fee)",
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 2.3 + 5 Table 1"
+    },
+    {
+      "card_id": "bofa_atmos_business",
+      "issuer": "Bank of America",
+      "card_name": "Atmos Business",
+      "earns_into": "atmos_rewards",
+      "earns_into_display": "Atmos Rewards",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 2.3 + 5 Table 1"
+    },
+    {
+      "card_id": "bofa_air_france_klm",
+      "issuer": "Bank of America",
+      "card_name": "Air France KLM World Elite Mastercard",
+      "earns_into": "flying_blue",
+      "earns_into_display": "Flying Blue",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 5 Table 1"
+    },
+    {
+      "card_id": "us_bank_skypass_skyblue",
+      "issuer": "US Bank",
+      "card_name": "Korean Air SKYPASS SkyBlue Visa",
+      "earns_into": "korean_air_skypass",
+      "earns_into_display": "Korean Air SKYPASS",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 1 + 5 Table 1"
+    },
+    {
+      "card_id": "us_bank_skypass_visa_signature",
+      "issuer": "US Bank",
+      "card_name": "Korean Air SKYPASS Visa Signature",
+      "earns_into": "korean_air_skypass",
+      "earns_into_display": "Korean Air SKYPASS",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 1 + 5 Table 1"
+    },
+    {
+      "card_id": "us_bank_skypass_select",
+      "issuer": "US Bank",
+      "card_name": "Korean Air SKYPASS Select Visa Signature",
+      "earns_into": "korean_air_skypass",
+      "earns_into_display": "Korean Air SKYPASS",
+      "status": "active",
+      "notes": null,
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 1 + 5 Table 1"
+    },
+    {
+      "card_id": "synchrony_sun_country",
+      "issuer": "Synchrony",
+      "card_name": "Sun Country Visa Signature",
+      "earns_into": "sun_country_miles",
+      "earns_into_display": "Sun Country Rewards",
+      "status": "active",
+      "notes": "Launched Sep 2025",
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 3.8 + 5 Table 1"
+    },
+    {
+      "card_id": "synchrony_virgin_red",
+      "issuer": "Synchrony",
+      "card_name": "Virgin Red Rewards Mastercard",
+      "earns_into": "virgin_red",
+      "earns_into_display": "Virgin Red",
+      "status": "active",
+      "notes": "Replaces BofA Virgin Atlantic (discontinued Oct 2024)",
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 2.4 + 5 Table 1"
+    },
+    {
+      "card_id": "barclays_aadvantage_aviator",
+      "issuer": "Barclays",
+      "card_name": "AAdvantage Aviator",
+      "earns_into": "aa_aadvantage",
+      "earns_into_display": "American AAdvantage",
+      "status": "discontinued",
+      "notes": "Discontinued Oct 2025; existing cardholders retain. Non-actors converted to Barclays Arrival+. Citi is sole AAdvantage issuer.",
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 2.1"
+    },
+    {
+      "card_id": "barclays_hawaiian_world_elite",
+      "issuer": "Barclays",
+      "card_name": "Hawaiian Airlines World Elite Mastercard",
+      "earns_into": "atmos_rewards",
+      "earns_into_display": "Atmos Rewards",
+      "status": "discontinued",
+      "notes": "Discontinued Oct 2025; HawaiianMiles merged into Atmos Rewards same day. Existing cardholders retain.",
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 2.2"
+    },
+    {
+      "card_id": "bofa_virgin_atlantic",
+      "issuer": "Bank of America",
+      "card_name": "Virgin Atlantic World Elite Mastercard",
+      "earns_into": "virgin_atlantic_flying_club",
+      "earns_into_display": "Virgin Atlantic Flying Club",
+      "status": "discontinued",
+      "notes": "Discontinued Oct 2024; existing cards converted to BofA Unlimited Cash Rewards. Replacement is Synchrony Virgin Red Rewards Mastercard.",
+      "source": "Travel_Rewards_Data_Audit_2026-05-14.md Section 2.4"
+    },
+    {
+      "card_id": "amex_hawaiian_business",
+      "issuer": "Amex",
+      "card_name": "Hawaiian Airlines Business Mastercard",
+      "earns_into": "atmos_rewards",
+      "earns_into_display": "Atmos Rewards",
+      "status": "discontinued",
+      "notes": "Discontinued; HawaiianMiles folded into Atmos Rewards June 30, 2025. Existing holders may retain card; current earning routes to Atmos.",
+      "source": "audit Section 2 #5; verify earning behavior for grandfathered holders"
+    }
+  ]
+}
