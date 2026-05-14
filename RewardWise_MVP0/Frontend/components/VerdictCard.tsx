@@ -1,33 +1,25 @@
 /** @format */
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Bell,
   Check,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   ChevronUp,
   ExternalLink,
   PlaneLanding,
   PlaneTakeoff,
-  Search,
   Sparkles,
-  Volume2,
-  VolumeX,
-  ThumbsUp,
-  ThumbsDown,
-  MessageSquare,
 } from "lucide-react";
 import { useAlerts } from "@/context/AlertContext";
-import { createClient } from "@/utils/supabase/client";
 import { fmtMoney } from "@/utils/format";
-import { isDeepLinkable, airlineDisplayName } from "@/utils/airlines";
-import { logHandoffClick } from "@/utils/analytics";
-import VerdictBookingFallback from "@/components/VerdictBookingFallback";
-
-const supabase = createClient();
+import VerdictTopRow from "@/components/verdict/VerdictTopRow";
+import ErrorStateCard from "@/components/verdict/ErrorStateCard";
+import FlightSection, { FlightLeg } from "@/components/verdict/FlightSection";
+import AwardDetailsSection, { AwardProgramOption } from "@/components/verdict/AwardDetailsSection";
+import HowToBookSection from "@/components/verdict/HowToBookSection";
+import MultiHandoffGrid, { MultiHandoffProgram, MultiHandoffCashAirline } from "@/components/verdict/MultiHandoffGrid";
 
 type Confidence = "high" | "medium" | "low";
 
@@ -288,26 +280,6 @@ function fmtProgram(s?: string | null) {
     .join(" ");
 }
 
-function buildGoogleFlightsUrl(origin: string, destination: string, departDate: string, returnDate?: string | null, cabin?: string): string {
-  const cabinStr = ({ economy: "economy", business: "business", first: "first class" } as Record<string, string>)[cabin ?? "economy"] ?? "economy";
-  const q = returnDate
-    ? `Flights from ${origin} to ${destination} on ${departDate} returning ${returnDate} ${cabinStr}`
-    : `Flights from ${origin} to ${destination} on ${departDate} ${cabinStr}`;
-  return `https://www.google.com/travel/flights?q=${encodeURIComponent(q)}`;
-}
-
-function confidenceTone(confidence: Confidence) {
-  if (confidence === "high") return "border-emerald-400/25 bg-emerald-500/10 text-emerald-200";
-  if (confidence === "medium") return "border-amber-400/25 bg-amber-500/10 text-amber-200";
-  return "border-slate-400/20 bg-slate-400/10 text-slate-200";
-}
-
-function confidenceDot(confidence: Confidence) {
-  if (confidence === "high") return "bg-emerald-300";
-  if (confidence === "medium") return "bg-amber-300";
-  return "bg-slate-300";
-}
-
 export function VerdictCardSkeleton({ origin, destination }: { origin: string; destination: string }) {
   return (
     <div className="animate-pulse rounded-2xl border border-white/10 bg-slate-900/80 p-6 shadow-2xl">
@@ -320,100 +292,6 @@ export function VerdictCardSkeleton({ origin, destination }: { origin: string; d
       </div>
       <div className="h-44 rounded-2xl bg-white/5" />
       <p className="mt-6 text-sm text-slate-500">Loading {origin} → {destination}…</p>
-    </div>
-  );
-}
-
-function FeedbackInline({ verdictId }: { verdictId?: string | null }) {
-  const [choice, setChoice] = useState<1 | 5 | null>(null);
-  const [open, setOpen] = useState(false);
-  const [comment, setComment] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState("");
-
-  if (!verdictId) return null;
-
-  const submit = async () => {
-    if (!choice || saving) return;
-    setSaving(true);
-    setError("");
-    const { data: userData } = await supabase.auth.getUser();
-    const userId = userData.user?.id;
-    if (!userId) {
-      setSaving(false);
-      setError("Please log in again before submitting feedback.");
-      return;
-    }
-    const payload = {
-      verdict_id: verdictId,
-      user_id: userId,
-      rating: choice,
-      comment: comment.trim() || null,
-      did_book: false,
-      booking_method: null,
-    };
-    const { error: insertError } = await supabase.from("feedback").insert(payload);
-    if (insertError) {
-      setSaving(false);
-      setError(insertError.message || "Failed to save feedback.");
-      return;
-    }
-    setSaving(false);
-    setSaved(true);
-    setOpen(false);
-  };
-
-  return (
-    <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2 text-slate-300">
-          <MessageSquare className="h-4 w-4" />
-          <span className="text-sm font-medium">Was this useful?</span>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => {
-              setChoice(5);
-              setOpen(true);
-            }}
-            className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${choice === 5 ? "border-emerald-400 bg-emerald-500/10 text-emerald-300" : "border-white/10 bg-white/[0.03] text-slate-300"}`}
-          >
-            <ThumbsUp className="h-4 w-4" /> Helpful
-          </button>
-          <button
-            onClick={() => {
-              setChoice(1);
-              setOpen(true);
-            }}
-            className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${choice === 1 ? "border-rose-400 bg-rose-500/10 text-rose-300" : "border-white/10 bg-white/[0.03] text-slate-300"}`}
-          >
-            <ThumbsDown className="h-4 w-4" /> Needs work
-          </button>
-        </div>
-      </div>
-      {open && !saved && (
-        <div className="mt-3 space-y-3">
-          <textarea
-            value={comment}
-            onChange={(e) => setComment(e.target.value)}
-            placeholder="Optional: what should Zoe do better here?"
-            className="min-h-[92px] w-full rounded-xl border border-white/10 bg-slate-900/80 px-3 py-2 text-sm text-white placeholder:text-slate-500"
-          />
-          <div className="flex items-center gap-2">
-            <button
-              onClick={submit}
-              disabled={saving}
-              className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-600 disabled:bg-slate-700"
-            >
-              {saving ? "Saving…" : "Submit feedback"}
-            </button>
-            <button onClick={() => setOpen(false)} className="rounded-xl border border-white/10 px-4 py-2 text-sm text-slate-300">Cancel</button>
-          </div>
-          {error && <p className="text-xs text-rose-300">{error}</p>}
-        </div>
-      )}
-      {saved && <p className="mt-3 text-sm text-emerald-300">Thanks — your feedback was saved.</p>}
     </div>
   );
 }
@@ -444,11 +322,6 @@ export default function VerdictCard({
   const [justAdded, setJustAdded] = useState(false);
   const [speaking, setSpeaking] = useState(false);
   const [reasoningOpen, setReasoningOpen] = useState(true);
-  const [inlineAnswer, setInlineAnswer] = useState<{ question: string; answer: string } | null>(null);
-  const [slide, setSlide] = useState(0); // 0 = verdict, 1 = details
-  const touchStartX = useRef<number | null>(null);
-  const touchEndX = useRef<number | null>(null);
-  const [inlineLoading, setInlineLoading] = useState<string | null>(null); // which question is loading
   const [flightDetailsOpen, setFlightDetailsOpen] = useState(false);
   const alreadyWatching = isWatching(origin, destination, departDate);
 
@@ -459,7 +332,7 @@ export default function VerdictCard({
   const bookingUrl = verdict.booking_link?.preferred === "seats_aero" && verdict.booking_link?.seats_aero_link
     ? verdict.booking_link.seats_aero_link
     : verdict.booking_link?.airline_link ?? null;
-  const googleFlightsUrl = buildGoogleFlightsUrl(origin, destination, departDate, returnDate, cabin);
+  const bestDate = winningDate || departDate;
   const bestCashFlight = flights[0] ?? null;
   const bestOutbound = winner?.program
     ? (awardOptions.find((option) => option.program.toLowerCase() === winner.program!.toLowerCase()) ?? awardOptions[0])
@@ -473,12 +346,124 @@ export default function VerdictCard({
   const hasAward = displayPoints != null && displayPoints > 0;
   const mainExplanation = verdict.explanation || verdict.verdict || "Zoe compared the live cash fare against the strongest award option available for this trip.";
 
+  const recommendationHeadline = (() => {
+    if (recommendation === "use_points") {
+      return displaySavings != null
+        ? `Use Points · Save ${fmtMoney(Math.round(displaySavings))}`
+        : "Use Points";
+    }
+    if (recommendation === "pay_cash") {
+      return displayCashPrice != null
+        ? `Pay Cash · ${fmtMoney(displayCashPrice, displayCashPrice % 1 === 0 ? 0 : 2)}`
+        : "Pay Cash";
+    }
+    return verdict.verdict_label ?? "Wait";
+  })();
+
   const isFlexibleSearch = Boolean(departDateEnd && departDateEnd !== departDate);
   const searchedRangeCopy = isFlexibleSearch
     ? winningDate && winningDate !== departDate
       ? `Searched ${formatShortDate(departDate)} to ${formatShortDate(departDateEnd!)}, best is ${formatShortDate(winningDate)}.`
       : `Searched ${formatShortDate(departDate)} to ${formatShortDate(departDateEnd!)}.`
     : null;
+
+  const outboundLeg: FlightLeg | null = (() => {
+    if (recommendation === "use_points" && bestOutbound) {
+      const trip = bestOutbound.trips?.[0];
+      const segments = (trip?.segments ?? []).map((s) => ({
+        flight_number: s.flight_number,
+        carrier: bestOutbound.airlines,
+        origin: s.origin,
+        destination: s.destination,
+        departs_at: s.departs_at,
+        arrives_at: s.arrives_at,
+      }));
+      if (segments.length === 0) return null;
+      return { label: "Outbound", segments, total_duration: trip?.total_duration };
+    }
+    if (recommendation === "pay_cash" && bestCashFlight) {
+      const segments = (bestCashFlight.legs ?? []).map((leg) => ({
+        flight_number: leg.flight_number,
+        carrier: leg.airline,
+        origin: leg.departure_iata,
+        destination: leg.arrival_iata,
+        departs_at: leg.departure_time,
+        arrives_at: leg.arrival_time,
+        duration: leg.duration,
+      }));
+      if (segments.length === 0) return null;
+      return { label: "Outbound", segments, total_duration: bestCashFlight.total_duration };
+    }
+    return null;
+  })();
+
+  const inboundLeg: FlightLeg | null = (() => {
+    if (!isRoundtrip) return null;
+    if (recommendation === "use_points" && bestReturn) {
+      const trip = bestReturn.trips?.[0];
+      const segments = (trip?.segments ?? []).map((s) => ({
+        flight_number: s.flight_number,
+        carrier: bestReturn.airlines,
+        origin: s.origin,
+        destination: s.destination,
+        departs_at: s.departs_at,
+        arrives_at: s.arrives_at,
+      }));
+      if (segments.length === 0) return null;
+      return { label: "Return", segments, total_duration: trip?.total_duration };
+    }
+    if (recommendation === "pay_cash" && bestCashFlight?.return_flight) {
+      const ret = bestCashFlight.return_flight;
+      const segments = (ret.legs ?? []).map((leg) => ({
+        flight_number: leg.flight_number,
+        carrier: leg.airline,
+        origin: leg.departure_iata,
+        destination: leg.arrival_iata,
+        departs_at: leg.departure_time,
+        arrives_at: leg.arrival_time,
+        duration: leg.duration,
+      }));
+      if (segments.length === 0) return null;
+      return { label: "Return", segments, total_duration: ret.total_duration };
+    }
+    return null;
+  })();
+
+  const operatingAirline: string | null = (() => {
+    if (recommendation === "pay_cash") {
+      return bestCashFlight?.legs?.[0]?.airline ?? null;
+    }
+    if (bestOutbound?.airlines) return bestOutbound.airlines;
+    return null;
+  })();
+
+  const programOptions: AwardProgramOption[] = awardOptions.map((opt) => ({
+    program: opt.program,
+    points: opt.points,
+    taxes: opt.taxes,
+    cpp: opt.cpp,
+    remaining_seats: opt.remaining_seats,
+    direct: opt.direct,
+  }));
+
+  const walletSet = new Set(userPrograms.map((p) => p.toLowerCase()));
+  const inWalletAwards = awardOptions.filter((opt) => walletSet.has(opt.program.toLowerCase()));
+  const handoffPrograms: MultiHandoffProgram[] = (inWalletAwards.length > 0 ? inWalletAwards : awardOptions.slice(0, 1)).map(
+    (opt) => ({
+      program: opt.program,
+      points: opt.points * travelers,
+      taxes: opt.taxes,
+    }),
+  );
+  const cashHandoff: MultiHandoffCashAirline | null = bestCashFlight
+    ? {
+        airline: bestCashFlight.legs?.[0]?.airline || "the airline",
+        cashPrice: bestCashFlight.price ?? displayCashPrice ?? null,
+        bookingUrl: bestCashFlight.booking_url ?? bookingUrl,
+      }
+    : null;
+  const routeLabel = isRoundtrip ? `${origin} ⇄ ${destination}` : `${origin} → ${destination}`;
+  const travelersLabel = `${travelers} traveler${travelers !== 1 ? "s" : ""}, ${(cabin || "economy").replace(/_/g, " ")}`;
 
   const reasoningCopy = verdict.confidence_reason || (
     recommendation === "pay_cash"
@@ -487,52 +472,6 @@ export default function VerdictCard({
         ? "The award option is stronger than the cash fare right now, so using points protects cash while still getting solid redemption value."
         : "The current signal is mixed, so it is worth checking nearby dates or another cabin before booking."
   );
-
-  const quickQuestions = [
-    recommendation === "pay_cash" ? "Why not points?" : "Why not cash?",
-    "Show alternatives",
-    "What if I’m flush with miles?",
-  ];
-
-  const askInline = async (question: string) => {
-    if (inlineLoading) return;
-    setInlineLoading(question);
-    setInlineAnswer(null);
-    try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData?.session?.access_token;
-      const context = [
-        `Verdict for ${origin} → ${destination}, ${(cabin || "economy").replace(/_/g, " ")}, ${travelers} traveler${travelers !== 1 ? "s" : ""}.`,
-        `Verdict: ${verdict.verdict_label ?? (verdict.pay_cash ? "Pay Cash" : "Use Points")}.`,
-        verdict.metrics?.cash_price != null ? `Cash fare: ${fmtMoney(Math.round(verdict.metrics.cash_price))}.` : null,
-        verdict.winner?.points && verdict.winner?.program
-          ? `Best award: ${verdict.winner.points.toLocaleString()} points via ${verdict.winner.program.replace(/_/g, " ")}.`
-          : null,
-        verdict.winner?.cpp != null ? `Value: ${verdict.winner.cpp.toFixed(2)} cents per point.` : null,
-        `Confidence: ${verdict.confidence}.`,
-        verdict.confidence_reason ?? null,
-        verdict.explanation ?? null,
-      ].filter(Boolean).join(" ");
-
-      const res = await fetch("/api/zoe", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          message: `Given this search result: ${context} Answer this question in 2-3 sentences max, no fluff: ${question}`,
-          history: [],
-        }),
-      });
-      const data = await res.json();
-      setInlineAnswer({ question, answer: data.message || "Couldn't get an answer right now." });
-    } catch {
-      setInlineAnswer({ question, answer: "Something went wrong — try again." });
-    } finally {
-      setInlineLoading(null);
-    }
-  };
 
   const readout = useMemo(() => {
     const pieces = [
@@ -758,75 +697,33 @@ export default function VerdictCard({
     );
   };
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if (publicPreview) return;
-    touchStartX.current = e.touches[0].clientX;
-  };
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    if (publicPreview) return;
-    touchEndX.current = e.changedTouches[0].clientX;
-    const diff = (touchStartX.current ?? 0) - (touchEndX.current ?? 0);
-    if (Math.abs(diff) > 50) setSlide(diff > 0 ? 1 : 0);
-  };
+  if (recommendation === "wait") {
+    return <ErrorStateCard />;
+  }
 
   return (
-    <div
-      className="relative overflow-hidden"
-      onTouchStart={handleTouchStart}
-      onTouchEnd={handleTouchEnd}
-    >
-      {/* ── Slide track. Public previews render verdict + details side by side on desktop. ── */}
-      <div
-        className={
-          publicPreview
-            ? "grid items-stretch gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(340px,0.84fr)]"
-            : "flex items-stretch transition-transform duration-300 ease-in-out"
-        }
-        style={publicPreview ? undefined : { transform: `translateX(-${slide * 100}%)` }}
-      >
-
-        {/* ════════════════════════════════════════
-            SLIDE 1 — Verdict
-        ════════════════════════════════════════ */}
-        <div className={publicPreview ? "min-w-0 flex h-full flex-col gap-5" : "min-w-full flex flex-col"}>
-          <div className="flex-1 rounded-3xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl md:p-8 flex flex-col">
+    <div className="flex flex-col gap-5">
+      <div className="rounded-3xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl md:p-8 flex flex-col">
 
             {/* Header */}
-            <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
-              <div className="min-w-0">
-                <p className="text-[13px] font-semibold uppercase tracking-[0.22em] text-slate-400">The Verdict</p>
-                <div className="mt-8 flex flex-wrap items-baseline gap-x-4 gap-y-2">
-                  <h2 className="text-4xl font-extrabold tracking-tight text-white md:text-5xl">{recommendationLabel}</h2>
-                  {displayCashPrice != null && (
-                    <>
-                      <span className="text-sm font-semibold text-slate-400">· Cash fare</span>
-                      <span className="text-4xl font-extrabold tracking-tight text-emerald-400 md:text-5xl">
-                        {fmtMoney(displayCashPrice, displayCashPrice % 1 === 0 ? 0 : 2)}
-                      </span>
-                    </>
-                  )}
-                </div>
-                <p className="mt-5 max-w-4xl text-lg font-medium leading-8 text-slate-300 md:text-xl">
-                  {mainExplanation}
-                </p>
-                {searchedRangeCopy && (
-                  <p className="mt-3 inline-flex items-center rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200">
-                    {searchedRangeCopy}
-                  </p>
-                )}
-              </div>
-              <div className="flex shrink-0 flex-wrap items-center gap-2 md:justify-end">
-                <span className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-bold capitalize ${confidenceTone(confidence)}`}>
-                  <span className={`h-2 w-2 rounded-full ${confidenceDot(confidence)}`} />
-                  {confidence} confidence
-                </span>
-                {verdict.data_quality && verdict.data_quality !== "full" && (
-                  <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-200">
-                    Partial data
-                  </span>
-                )}
-              </div>
-            </div>
+            <VerdictTopRow
+              recommendationHeadline={recommendationHeadline}
+              confidence={confidence}
+              showPartialDataBadge={Boolean(verdict.data_quality && verdict.data_quality !== "full")}
+              speaking={speaking}
+              onListenToggle={speak}
+              verdictId={verdictId}
+              publicPreview={publicPreview}
+            />
+
+            <p className="mt-5 max-w-4xl text-lg font-medium leading-8 text-slate-300 md:text-xl">
+              {mainExplanation}
+            </p>
+            {searchedRangeCopy && (
+              <p className="mt-3 inline-flex items-center rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200">
+                {searchedRangeCopy}
+              </p>
+            )}
 
             {/* Reasoning panel — always visible in public preview, togglable otherwise */}
             {(publicPreview || reasoningOpen) && (
@@ -852,47 +749,57 @@ export default function VerdictCard({
                 </div>
 
                 <p className="mt-5 text-base leading-7 text-slate-300">{reasoningCopy}</p>
-
-                {/* Quick questions — full-app only */}
-                {!publicPreview && (
-                  <div className="mt-5 flex flex-wrap gap-3">
-                    {quickQuestions.map((question) => (
-                      <button
-                        key={question}
-                        type="button"
-                        onClick={() => void askInline(question)}
-                        disabled={!!inlineLoading}
-                        className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
-                          inlineAnswer?.question === question
-                            ? "border-emerald-400/30 bg-emerald-500/10 text-emerald-200"
-                            : "border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.08]"
-                        } disabled:opacity-50`}
-                      >
-                        {inlineLoading === question ? (
-                          <span className="flex items-center gap-2">
-                            <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                            </svg>
-                            {question}
-                          </span>
-                        ) : question}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {/* Inline answer */}
-                {!publicPreview && inlineAnswer && (
-                  <div className="mt-4 rounded-2xl border border-emerald-400/15 bg-emerald-500/[0.06] px-4 py-3">
-                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-300">{inlineAnswer.question}</p>
-                    <p className="text-sm leading-6 text-slate-200">{inlineAnswer.answer}</p>
-                    <button type="button" onClick={() => setInlineAnswer(null)} className="mt-2 text-xs text-slate-500 hover:text-slate-300">
-                      Dismiss
-                    </button>
-                  </div>
-                )}
               </div>
+            )}
+
+            {!publicPreview && (
+              <>
+                <FlightSection
+                  recommendation={recommendation}
+                  isRoundtrip={Boolean(isRoundtrip)}
+                  outbound={outboundLeg}
+                  inbound={inboundLeg}
+                />
+                <AwardDetailsSection
+                  recommendation={recommendation}
+                  operatingAirline={operatingAirline}
+                  awardOptions={programOptions}
+                  userPrograms={userPrograms}
+                  travelers={travelers}
+                />
+                <HowToBookSection
+                  recommendation={recommendation}
+                  origin={origin}
+                  destination={destination}
+                  date={bestDate}
+                  returnDate={returnDate}
+                  travelers={travelers}
+                  cabin={cabin}
+                  programName={winner?.program ?? null}
+                  operatingAirline={operatingAirline}
+                  points={displayPoints}
+                  taxes={displayTaxes}
+                  seatsRemaining={bestOutbound?.remaining_seats ?? null}
+                  cashPrice={displayCashPrice}
+                />
+                {recommendation === "use_points" ? (
+                  <MultiHandoffGrid
+                    recommendation="use_points"
+                    programs={handoffPrograms}
+                    bestDate={bestDate}
+                    routeLabel={routeLabel}
+                    travelersLabel={travelersLabel}
+                  />
+                ) : recommendation === "pay_cash" ? (
+                  <MultiHandoffGrid
+                    recommendation="pay_cash"
+                    cashAirline={cashHandoff}
+                    bestDate={bestDate}
+                    routeLabel={routeLabel}
+                    travelersLabel={travelersLabel}
+                  />
+                ) : null}
+              </>
             )}
 
             {/* Zoe locked features — public preview filler to balance height */}
@@ -968,14 +875,6 @@ export default function VerdictCard({
               </div>
             )}
 
-            {!publicPreview && (
-              <div className="mt-6 flex justify-end">
-                <button onClick={speak} className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-2.5 text-sm font-medium text-slate-200 hover:bg-white/[0.06]">
-                  {speaking ? <VolumeX className="h-4 w-4" /> : <Volume2 className="h-4 w-4" />} {speaking ? "Stop" : "Listen"}
-                </button>
-              </div>
-            )}
-
             {/* Footer controls — full app only */}
             {!publicPreview && (
               <div className="mt-8 border-t border-white/10 pt-5">
@@ -989,78 +888,6 @@ export default function VerdictCard({
                     {reasoningOpen ? "Hide reasoning" : "See how Zoe decided"}
                   </button>
                   <div className="flex flex-wrap items-center gap-3">
-                    {(() => {
-                      const verdictType: "cash" | "points" | null =
-                        recommendation === "pay_cash"
-                          ? "cash"
-                          : recommendation === "use_points"
-                            ? "points"
-                            : null;
-                      const program = winner?.program ?? null;
-
-                      if (verdictType === "cash" && program && isDeepLinkable(program) && bookingUrl) {
-                        return (
-                          <a
-                            href={bookingUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={() =>
-                              logHandoffClick({
-                                program,
-                                origin,
-                                destination,
-                                depart_date: departDate,
-                                return_date: returnDate ?? null,
-                                travelers,
-                                cabin,
-                                verdict_type: "cash",
-                                amount_cash: displayCashPrice ?? undefined,
-                              })
-                            }
-                            className="flex items-center gap-2 rounded-xl bg-emerald-400 px-5 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-300"
-                          >
-                            Book on {airlineDisplayName(program)} <ExternalLink className="h-4 w-4" />
-                          </a>
-                        );
-                      }
-
-                      if (verdictType && program && bookingUrl) {
-                        const airlineDomain = bookingUrl
-                          .replace(/^https?:\/\//, "")
-                          .replace(/^www\./, "")
-                          .replace(/\/.*$/, "");
-                        return (
-                          <VerdictBookingFallback
-                            airlineName={airlineDisplayName(program)}
-                            airlineDomain={airlineDomain}
-                            origin={origin}
-                            destination={destination}
-                            departDate={departDate}
-                            returnDate={returnDate}
-                            travelers={travelers}
-                            cabin={cabin}
-                            verdictType={verdictType}
-                            amountCash={verdictType === "cash" ? displayCashPrice ?? undefined : undefined}
-                            amountPoints={verdictType === "points" ? displayPoints ?? undefined : undefined}
-                            pointsProgram={airlineDisplayName(program)}
-                            taxes={displayTaxes ?? undefined}
-                            airlineUrl={bookingUrl}
-                            program={program}
-                          />
-                        );
-                      }
-
-                      return (
-                        <a
-                          href={googleFlightsUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center gap-2 rounded-xl bg-emerald-400 px-5 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-300"
-                        >
-                          Search fares <Search className="h-4 w-4" />
-                        </a>
-                      );
-                    })()}
                     <button
                       onClick={handleSetAlert}
                       disabled={alreadyWatching || justAdded}
@@ -1081,7 +908,7 @@ export default function VerdictCard({
                         const savingsStr = displaySavings != null ? `saving roughly ${fmtMoney(Math.round(displaySavings))}` : null;
                         const parts = [
                           `The search returned a verdict for ${origin} → ${destination}`,
-                          `on ${departDate}${returnDate ? ` returning ${returnDate}` : ""}, ${travelers} traveler${travelers !== 1 ? "s" : ""}, ${(cabin || "economy").replace(/_/g, " ")} class.`,
+                          `on ${bestDate}${returnDate ? ` returning ${returnDate}` : ""}, ${travelers} traveler${travelers !== 1 ? "s" : ""}, ${(cabin || "economy").replace(/_/g, " ")} class.`,
                           `Verdict: ${recommendationLabel}.`,
                           cashStr ? `Cash fare: ${cashStr}.` : null,
                           ptsStr && progStr ? `Best award: ${ptsStr} via ${progStr}.` : null,
@@ -1105,352 +932,31 @@ export default function VerdictCard({
 
 
             {!publicPreview && verdict.booking_note && <p className="mt-4 text-xs text-slate-500">{verdict.booking_note}</p>}
-            {!publicPreview && <FeedbackInline verdictId={verdictId} />}
           </div>
-        </div>
 
-        {/* ════════════════════════════════════════
-            SLIDE 2 — Trip details
-        ════════════════════════════════════════ */}
-        <div className={publicPreview ? "min-w-0 flex flex-col" : "min-w-full flex flex-col"}>
-          <div className="flex-1 rounded-3xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl md:p-8">
-
-            {/* ── Header row ── */}
-            <div className="mb-6 flex items-start justify-between gap-4">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Flight details</p>
-                <div className="mt-1 flex items-center gap-2">
-                  <span className="text-2xl font-extrabold tracking-tight text-white">{origin}</span>
-                  <svg viewBox="0 0 24 24" className="h-5 w-5 text-slate-500" fill="none" stroke="currentColor" strokeWidth="1.5">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 8.25L21 12m0 0l-3.75 3.75M21 12H3" />
-                  </svg>
-                  <span className="text-2xl font-extrabold tracking-tight text-white">{destination}</span>
-                  {isRoundtrip && (
-                    <>
-                      <svg viewBox="0 0 24 24" className="h-4 w-4 text-slate-600" fill="none" stroke="currentColor" strokeWidth="1.5">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 8.25L21 12m0 0l-3.75 3.75M21 12H3" />
-                      </svg>
-                      <span className="text-2xl font-extrabold tracking-tight text-slate-400">{origin}</span>
-                    </>
-                  )}
-                </div>
-                <p className="mt-1 text-sm text-slate-500">
-                  {isFlexibleSearch
-                    ? `${formatShortDate(departDate)} to ${formatShortDate(departDateEnd!)}${winningDate && winningDate !== departDate ? ` (best ${formatShortDate(winningDate)})` : ""}`
-                    : formatDate(departDate)}
-                  {returnDate ? ` – ${formatDate(returnDate)}` : ""} · {travelers} traveler{travelers !== 1 ? "s" : ""} · <span className="capitalize">{(cabin || "economy").replace(/_/g, " ")}</span>
-                </p>
-              </div>
-              {displayCashPrice != null && (
-                <div className="text-right flex-shrink-0">
-                  <p className="text-[10px] uppercase tracking-[0.16em] text-slate-500">Cash fare</p>
-                  <p className="text-2xl font-extrabold text-white">{fmtMoney(displayCashPrice, displayCashPrice % 1 === 0 ? 0 : 2)}</p>
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-4">
-
-              {/* ── Best cash flight ── */}
-              {bestCashFlight && (
-                <div className="rounded-2xl border border-white/8 bg-white/[0.03] overflow-hidden">
-                  {/* Flight bar */}
-                  <div className="flex items-center justify-between gap-4 px-5 py-4">
-                    <div className="flex items-center gap-3 min-w-0">
-                      {bestCashFlight.legs?.[0]?.airline_logo ? (
-                        <img src={bestCashFlight.legs[0].airline_logo} alt={bestCashFlight.legs[0].airline ?? ""} className="h-8 w-8 rounded-lg object-contain bg-white/5 p-1 flex-shrink-0" />
-                      ) : (
-                        <div className="h-8 w-8 rounded-lg bg-indigo-500/15 border border-indigo-400/20 flex items-center justify-center flex-shrink-0">
-                          <PlaneTakeoff className="h-4 w-4 text-indigo-300" />
-                        </div>
-                      )}
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-base font-bold text-white">
-                            {fmtTime(bestCashFlight.departure_time) || "—"}
-                          </span>
-                          <span className="text-slate-600">→</span>
-                          <span className="text-base font-bold text-white">
-                            {fmtTime(bestCashFlight.arrival_time) || "—"}
-                          </span>
-                          <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] text-slate-400">
-                            {stopText(bestCashFlight.stops)}
-                          </span>
-                        </div>
-                        <p className="mt-0.5 text-xs text-slate-500">
-                          {bestCashFlight.departure_iata || bestCashFlight.departure_airport}
-                          {" → "}
-                          {bestCashFlight.arrival_iata || bestCashFlight.arrival_airport}
-                          {bestCashFlight.total_duration ? ` · ${fmtDuration(bestCashFlight.total_duration)}` : ""}
-                          {bestCashFlight.legs?.[0]?.airline ? ` · ${bestCashFlight.legs[0].airline}` : ""}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      {bestCashFlight.price != null && (
-                        <p className="text-xl font-extrabold text-emerald-400">{fmtMoney(bestCashFlight.price, bestCashFlight.price % 1 === 0 ? 0 : 2)}</p>
-                      )}
-                      {bestCashFlight.vendor && (
-                        <p className="text-[11px] text-slate-500 mt-0.5">via {bestCashFlight.vendor}</p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Segment detail — only if we have segments */}
-                  {bestCashFlight.legs && bestCashFlight.legs.length > 0 && (
-                    <div className="border-t border-white/6 px-5 pb-4 pt-3">
-                      <div className="relative space-y-3">
-                        {bestCashFlight.legs.map((leg, idx) => (
-                          <div key={idx} className="flex gap-3">
-                            <div className="flex flex-col items-center pt-1">
-                              <div className="h-2 w-2 rounded-full bg-indigo-400 flex-shrink-0" />
-                              {idx < (bestCashFlight.legs?.length ?? 0) - 1 && (
-                                <div className="mt-1 w-px flex-1 bg-white/10" style={{minHeight: "1.5rem"}} />
-                              )}
-                            </div>
-                            <div className="pb-2 min-w-0 flex-1">
-                              <div className="flex items-start justify-between gap-2 flex-wrap">
-                                <div>
-                                  <p className="text-sm font-semibold text-white">
-                                    {leg.departure_iata || "—"} → {leg.arrival_iata || "—"}
-                                  </p>
-                                  <p className="text-xs text-slate-500 mt-0.5">
-                                    {fmtTime(leg.departure_time) || "—"}
-                                    {fmtTime(leg.arrival_time) ? ` – ${fmtTime(leg.arrival_time)}` : ""}
-                                    {leg.duration ? ` · ${fmtDuration(leg.duration)}` : ""}
-                                  </p>
-                                </div>
-                                <div className="text-right">
-                                  {leg.flight_number && (
-                                    <p className="text-xs font-mono text-slate-400">{leg.flight_number}</p>
-                                  )}
-                                  {leg.airplane && (
-                                    <p className="text-[11px] text-slate-600">{leg.airplane}</p>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Booking CTA */}
-                  {!publicPreview && bestCashFlight.booking_url && (
-                    <div className="border-t border-white/6 px-5 py-3">
-                      <a
-                        href={bestCashFlight.booking_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-2 rounded-xl bg-emerald-500/15 border border-emerald-400/25 px-4 py-2 text-sm font-semibold text-emerald-300 hover:bg-emerald-500/25 transition"
-                      >
-                        <ExternalLink className="h-3.5 w-3.5" /> Book this flight
-                      </a>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* ── Return flight ── */}
-              {isRoundtrip && bestCashFlight?.return_flight && (
-                <div className="rounded-2xl border border-white/8 bg-white/[0.03] overflow-hidden">
-                  <div className="flex items-center justify-between gap-4 px-5 py-4">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="h-8 w-8 rounded-lg bg-indigo-500/10 border border-indigo-400/15 flex items-center justify-center flex-shrink-0">
-                        <PlaneLanding className="h-4 w-4 text-indigo-300" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-indigo-300">Return</span>
-                          <span className="text-base font-bold text-white">
-                            {fmtTime(bestCashFlight.return_flight.departure_time) || "—"}
-                          </span>
-                          <span className="text-slate-600">→</span>
-                          <span className="text-base font-bold text-white">
-                            {fmtTime(bestCashFlight.return_flight.arrival_time) || "—"}
-                          </span>
-                          <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] text-slate-400">
-                            {stopText(bestCashFlight.return_flight.stops)}
-                          </span>
-                        </div>
-                        <p className="mt-0.5 text-xs text-slate-500">
-                          {bestCashFlight.return_flight.departure_iata || bestCashFlight.return_flight.departure_airport}
-                          {" → "}
-                          {bestCashFlight.return_flight.arrival_iata || bestCashFlight.return_flight.arrival_airport}
-                          {bestCashFlight.return_flight.total_duration ? ` · ${fmtDuration(bestCashFlight.return_flight.total_duration)}` : ""}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* ── Points option ── */}
-              {bestOutbound && (
-                <div className={`rounded-2xl overflow-hidden border ${recommendation === "use_points" ? "border-emerald-400/25 bg-emerald-500/[0.06]" : "border-white/8 bg-white/[0.02]"}`}>
-                  <div className="flex items-center justify-between gap-4 px-5 py-4">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className={`text-[10px] font-bold uppercase tracking-[0.16em] ${recommendation === "use_points" ? "text-emerald-300" : "text-slate-500"}`}>
-                          {recommendation === "use_points" ? "✦ Best award" : "Points comparison"}
-                        </span>
-                      </div>
-                      <p className="text-base font-bold text-white">{fmtProgram(bestOutbound.program)}</p>
-                      <p className="mt-0.5 text-xs text-slate-400">
-                        {bestOutbound.direct ? "Nonstop" : bestOutbound.remaining_seats ? `${bestOutbound.remaining_seats} seat${bestOutbound.remaining_seats !== 1 ? "s" : ""} left` : "Award space available"}
-                        {bestOutbound.airlines ? ` · ${bestOutbound.airlines}` : ""}
-                        {bestOutbound.taxes != null && bestOutbound.taxes > 0 ? ` · +$${Number(bestOutbound.taxes).toFixed(0)} taxes` : " · No fuel surcharges"}
-                      </p>
-                      {bestOutbound.cpp != null && (
-                        <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1">
-                          <span className="text-[11px] font-semibold text-slate-300">{bestOutbound.cpp.toFixed(2)}¢/pt</span>
-                          <span className="text-[11px] text-slate-600">·</span>
-                          <span className={`text-[11px] font-semibold ${bestOutbound.cpp >= 1.8 ? "text-emerald-300" : bestOutbound.cpp >= 1.3 ? "text-amber-300" : "text-slate-400"}`}>
-                            {bestOutbound.cpp >= 1.8 ? "Strong value" : bestOutbound.cpp >= 1.3 ? "Decent value" : "Weak value"}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    <div className="text-right flex-shrink-0">
-                      <p className={`text-xl font-extrabold ${recommendation === "use_points" ? "text-emerald-300" : "text-slate-300"}`}>
-                        {(bestOutbound.points * travelers).toLocaleString()}
-                      </p>
-                      <p className="text-[11px] text-slate-500">pts</p>
-                    </div>
-                  </div>
-                  {recommendation === "pay_cash" && cashPrice != null && (
-                    <div className="border-t border-white/6 px-5 py-3">
-                      <p className="text-xs leading-5 text-slate-500">
-                        At {fmtMoney(cashPrice, 0)} cash, your points are worth more on a premium redemption.
-                      </p>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* ── No data state ── */}
-              {!bestCashFlight && !bestOutbound && (
-                <div className="rounded-2xl border border-white/8 bg-white/[0.02] px-5 py-8 text-center">
-                  <p className="text-sm text-slate-500">No flight details available for this search.</p>
-                </div>
-              )}
-
-              {/* ── Zoe chat demo (public preview only) ── */}
-              {publicPreview && (
-                <div className="rounded-2xl border border-white/8 bg-[#0d1420] overflow-hidden">
-                  {/* Zoe header */}
-                  <div className="flex items-center gap-3 px-4 py-3 border-b border-white/6">
-                    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-emerald-500/20 border border-emerald-400/30">
-                      <Sparkles className="h-4 w-4 text-emerald-300" />
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-white leading-none">Zoe</p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">Your travel agent</p>
-                    </div>
-                  </div>
-                  {/* Chat messages */}
-                  <div className="px-4 py-4 space-y-3">
-                    {/* User bubble */}
-                    <div className="flex justify-end">
-                      <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-emerald-500 px-4 py-2.5">
-                        <p className="text-sm font-medium text-white leading-5">
-                          Can you explain why I should pay cash for {origin} → {destination}?
-                        </p>
-                      </div>
-                    </div>
-                    {/* Zoe bubble */}
-                    <div className="flex justify-start">
-                      <div className="max-w-[90%] rounded-2xl rounded-tl-sm bg-white/[0.06] border border-white/8 px-4 py-3">
-                        <p className="text-sm leading-6 text-slate-200">
-                          The cash fare is {fmtMoney(displayCashPrice, 0)} — that's a solid price for this route. The best award I found is{" "}
-                          {hasAward ? `${Number(displayPoints).toLocaleString()} pts` : "not available"}
-                          {displayTaxes != null && displayTaxes > 0 ? ` + ${fmtMoney(displayTaxes, 0)} in taxes` : ""}, which works out to only{" "}
-                          {bestOutbound?.cpp != null ? `${bestOutbound.cpp.toFixed(2)}¢ per point` : "weak value"}.
-                          {" "}Your points are worth more saved for a premium cabin or international trip where redemption value is higher.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                  {/* Locked input bar */}
-                  <div className="px-4 pb-4">
-                    <div className="flex items-center gap-2 rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-2.5 cursor-not-allowed" onClick={onPublicPreviewSignup}>
-                      <p className="flex-1 text-sm text-slate-600">Ask Zoe a follow-up…</p>
-                      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500/20">
-                        <Sparkles className="h-3 w-3 text-emerald-400" />
-                      </div>
-                    </div>
-                    <p className="mt-2 text-center text-[11px] text-slate-600">Sign up to chat with Zoe about your trip</p>
-                  </div>
-                </div>
-              )}
-
-            </div>
-          </div>
-          {publicPreview && (onPublicPreviewSignup || onPublicPreviewSignin) && (
-            <div className="rounded-3xl border border-white/10 bg-slate-950/95 p-5 shadow-2xl">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Keep comparing trips</p>
-              <p className="mt-2 text-sm leading-6 text-slate-300">
-                This free search shows the verdict and key details only — and it's limited to one use per network. Create an account to save searches, add your wallet, and unlock the full experience with booking tools, alerts, and deeper comparisons.
-              </p>
-              <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                <button
-                  type="button"
-                  onClick={onPublicPreviewSignup}
-                  className="inline-flex items-center justify-center rounded-2xl bg-emerald-400 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-emerald-300"
-                >
-                  Create free account
-                </button>
-                <button
-                  type="button"
-                  onClick={onPublicPreviewSignin}
-                  className="inline-flex items-center justify-center rounded-2xl border border-white/12 bg-white/[0.04] px-5 py-3 text-sm font-medium text-slate-200 transition hover:bg-white/[0.08] hover:text-white"
-                >
-                  Sign in
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-      </div>{/* end slide track */}
-
-      {/* ── Navigation dots + arrows. Hidden for public previews because both sections are visible together. ── */}
-      {!publicPreview && (
-      <div className="mt-4 flex items-center justify-center gap-4">
-        <button
-          type="button"
-          onClick={() => setSlide(0)}
-          disabled={slide === 0}
-          className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-slate-400 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-30 disabled:cursor-default"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </button>
-
-        <div className="flex items-center gap-2">
-          {[0, 1].map((i) => (
+      {publicPreview && (onPublicPreviewSignup || onPublicPreviewSignin) && (
+        <div className="rounded-3xl border border-white/10 bg-slate-950/95 p-5 shadow-2xl">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Keep comparing trips</p>
+          <p className="mt-2 text-sm leading-6 text-slate-300">
+            This free search shows the verdict and key details only — and it&apos;s limited to one use per network. Create an account to save searches, add your wallet, and unlock the full experience with booking tools, alerts, and deeper comparisons.
+          </p>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
             <button
-              key={i}
               type="button"
-              onClick={() => setSlide(i)}
-              className={`rounded-full transition-all duration-200 ${
-                slide === i
-                  ? "h-2.5 w-6 bg-emerald-400"
-                  : "h-2 w-2 bg-white/20 hover:bg-white/40"
-              }`}
-            />
-          ))}
+              onClick={onPublicPreviewSignup}
+              className="inline-flex items-center justify-center rounded-2xl bg-emerald-400 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-emerald-300"
+            >
+              Create free account
+            </button>
+            <button
+              type="button"
+              onClick={onPublicPreviewSignin}
+              className="inline-flex items-center justify-center rounded-2xl border border-white/12 bg-white/[0.04] px-5 py-3 text-sm font-medium text-slate-200 transition hover:bg-white/[0.08] hover:text-white"
+            >
+              Sign in
+            </button>
+          </div>
         </div>
-
-        <button
-          type="button"
-          onClick={() => setSlide(1)}
-          disabled={slide === 1}
-          className="flex h-8 w-8 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-slate-400 transition hover:bg-white/[0.08] hover:text-white disabled:opacity-30 disabled:cursor-default"
-        >
-          <ChevronRight className="h-4 w-4" />
-        </button>
-      </div>
       )}
     </div>
   );

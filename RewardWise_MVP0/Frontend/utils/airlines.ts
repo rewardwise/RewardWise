@@ -31,3 +31,40 @@ const DISPLAY_NAMES: Record<string, string> = {
 export function airlineDisplayName(program: string): string {
 	return DISPLAY_NAMES[program.toLowerCase().trim()] || program;
 }
+
+// V1 frontend-only program domain map. Drift risk with backend _get_booking_link_for_verdict.
+// Centralize in V2 — see ticket 86b9xxadk.
+
+export const PROGRAM_HOMEPAGE_URLS: Record<string, string> = {
+	united: "https://www.united.com",
+	flyingblue: "https://www.flyingblue.com",
+	aeroplan: "https://www.aircanada.com/aeroplan",
+	delta: "https://www.delta.com",
+	americanairlines: "https://www.aa.com",
+	britishairways: "https://www.britishairways.com/executiveclub",
+	alaska: "https://www.alaskaair.com/mileageplan",
+	jetblue: "https://trueblue.jetblue.com",
+	southwest: "https://www.southwest.com",
+	virginatlantic: "https://flyingclub.virginatlantic.com",
+};
+
+export const PROGRAM_DISPLAY_NAMES: Record<string, string> = {
+	united: "United",
+	flyingblue: "Flying Blue",
+	aeroplan: "Aeroplan",
+	delta: "Delta SkyMiles",
+	americanairlines: "American Airlines",
+	britishairways: "British Airways",
+	alaska: "Alaska Airlines",
+	jetblue: "JetBlue TrueBlue",
+	southwest: "Southwest Rapid Rewards",
+	virginatlantic: "Virgin Atlantic Flying Club",
+};
+
+export function getProgramHandoffInfo(programKey: string): { url: string; displayName: string } {
+	const normalized = programKey.toLowerCase().trim();
+	return {
+		url: PROGRAM_HOMEPAGE_URLS[normalized] || "#",
+		displayName: PROGRAM_DISPLAY_NAMES[normalized] || programKey,
+	};
+}
