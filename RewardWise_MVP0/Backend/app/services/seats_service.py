@@ -1,3 +1,4 @@
+import asyncio
 import httpx
 import os
 from typing import Optional
@@ -12,6 +13,30 @@ CABIN_MAP = {
     "business": "J",
     "first": "F"
 }
+
+# Process-local cache for /trips/{id} responses. No TTL by design: trip IDs
+# are immutable for the lifetime of a given availability snapshot, and the
+# parent search call refreshes them on every public search. 100-entry cap
+# keeps memory bounded in the long-running FastAPI process.
+_TRIP_DETAIL_CACHE: dict = {}
+_TRIP_DETAIL_CACHE_MAX = 100
+_TRIP_DETAIL_TIMEOUT_S = 5.0
+_TRIP_DETAIL_FANOUT_LIMIT = 3
+
+
+async def _fetch_trip_detail_cached(trip_id: str) -> dict:
+    cached = _TRIP_DETAIL_CACHE.get(trip_id)
+    if cached is not None:
+        return cached
+    try:
+        result = await asyncio.wait_for(
+            get_trip_detail(trip_id), timeout=_TRIP_DETAIL_TIMEOUT_S
+        )
+    except Exception:
+        result = {}
+    if len(_TRIP_DETAIL_CACHE) < _TRIP_DETAIL_CACHE_MAX:
+        _TRIP_DETAIL_CACHE[trip_id] = result
+    return result
 
 async def search_award_availability(
     origin: str,
@@ -68,25 +93,29 @@ async def search_award_availability(
         taxes = avail.get(f"{cabin_prefix}TotalTaxes")
         taxes_currency = avail.get("TaxesCurrency", "USD")
 
-        # AvailabilityTrips is a JSON string — parse it to get trip IDs
+        # AvailabilityTrips is a JSON string — parse it to get trip IDs.
+        # Split into two buckets so the downstream fan-out can prefer the
+        # best candidate (fewest stops, then shortest duration) instead of
+        # whatever order seats.aero returned.
         import json as _json
         raw_trips = avail.get("AvailabilityTrips")
-        trip_ids = []
-        trips_detail = []
+        trip_candidates: list = []  # list of (id, total_duration, stops); awaits fan-out
+        trips_detail = []           # inline-segments trips; no fan-out needed
         if raw_trips:
             try:
                 parsed = _json.loads(raw_trips) if isinstance(raw_trips, str) else raw_trips
                 for t in (parsed if isinstance(parsed, list) else []):
                     tid = t.get("ID") or t.get("AvailabilityID")
-                    if tid:
-                        trip_ids.append(tid)
-                    # Grab segment-level info if included inline
+                    if not tid:
+                        continue
+                    total_duration = t.get("TotalDuration")
+                    stops = t.get("Stops", 0)
                     segs = t.get("AvailabilitySegments", [])
                     if segs:
                         trips_detail.append({
                             "id": tid,
-                            "total_duration": t.get("TotalDuration"),
-                            "stops": t.get("Stops", 0),
+                            "total_duration": total_duration,
+                            "stops": stops,
                             "flight_numbers": t.get("FlightNumbers", ""),
                             "departs_at": t.get("DepartsAt"),
                             "arrives_at": t.get("ArrivesAt"),
@@ -107,8 +136,15 @@ async def search_award_availability(
                                 for s in segs
                             ]
                         })
+                    else:
+                        trip_candidates.append((tid, total_duration, stops))
             except Exception:
                 pass
+
+        # Preserve list[str] contract for downstream consumers (search.py,
+        # verdict_service). Candidates first so trip_ids[0] (used by legacy
+        # callers) still points at a no-segments trip when one exists.
+        trip_ids = [c[0] for c in trip_candidates] + [t["id"] for t in trips_detail]
 
         route_obj = avail.get("Route") if isinstance(avail.get("Route"), dict) else {}
         first_origin = origin.upper().split(",")[0]
@@ -127,6 +163,7 @@ async def search_award_availability(
             "route": route_obj.get("ID") or f"{first_origin}-{first_destination}",
             "trip_ids": trip_ids,          # for lazy /trips/{id} fetch if needed
             "trips": trips_detail,         # segment detail if include_trips returned it
+            "_trip_candidates": trip_candidates,  # internal: (id, total_duration, stops); stripped before return
             "also_available": {
                 cabin_name: {
                     "available": avail.get(f"{p}Available", False),
@@ -140,6 +177,45 @@ async def search_award_availability(
             },
             "source": "seats.aero"
         })
+
+    # Hydrate the first few awards with segment-level detail via /trips/{id}.
+    # seats.aero's include_trips=true returns AvailabilityTrips with IDs only
+    # (no inline AvailabilitySegments), so the inline branch above almost
+    # never fires in production. Fan out a bounded number of /trips calls
+    # in parallel so the verdict surface has segments to render. For each
+    # award, pick the candidate with fewest stops, tie-broken by shortest
+    # total_duration — favors nonstop. Sentinels (999 / 99999) push None
+    # values to the end of the sort so a missing value never beats a real one.
+    # TODO(2026-05-13, Gate 4a): backfill pytest coverage for this fan-out
+    # (happy path, 404, timeout, cache hit, empty trip_ids, fanout cap, sort).
+    awards_to_hydrate = [
+        r for r in results if not r["trips"] and r.get("_trip_candidates")
+    ][:_TRIP_DETAIL_FANOUT_LIMIT]
+    if awards_to_hydrate:
+        best_trip_ids = []
+        for r in awards_to_hydrate:
+            candidates_sorted = sorted(
+                r["_trip_candidates"],
+                key=lambda c: (
+                    c[2] if c[2] is not None else 999,
+                    c[1] if c[1] is not None else 99999,
+                ),
+            )
+            best_trip_ids.append(candidates_sorted[0][0])
+        details = await asyncio.gather(
+            *[_fetch_trip_detail_cached(tid) for tid in best_trip_ids],
+            return_exceptions=True,
+        )
+        for award, detail in zip(awards_to_hydrate, details):
+            if isinstance(detail, Exception) or not isinstance(detail, dict):
+                continue
+            hydrated_trips = detail.get("trips", [])
+            if hydrated_trips:
+                award["trips"] = hydrated_trips
+
+    # Internal-only field — never expose to API consumers.
+    for r in results:
+        r.pop("_trip_candidates", None)
 
     return results
 
