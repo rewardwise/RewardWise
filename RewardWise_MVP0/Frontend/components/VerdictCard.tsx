@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useAlerts } from "@/context/AlertContext";
 import { fmtMoney } from "@/utils/format";
+import { dedupeByProgram } from "@/utils/awardOptions";
 import VerdictTopRow from "@/components/verdict/VerdictTopRow";
 import ErrorStateCard from "@/components/verdict/ErrorStateCard";
 import FlightSection, { FlightLeg } from "@/components/verdict/FlightSection";
@@ -308,8 +309,8 @@ export default function VerdictCard({
   cabin,
   travelers,
   isRoundtrip,
-  awardOptions = [],
-  returnAwardOptions = [],
+  awardOptions: rawAwardOptions = [],
+  returnAwardOptions: rawReturnAwardOptions = [],
   flights = [],
   userPrograms = [],
   verdictId,
@@ -318,6 +319,12 @@ export default function VerdictCard({
   onPublicPreviewSignup,
   onPublicPreviewSignin,
 }: VerdictCardProps) {
+  // Metro + flex searches return multiple award_options per program (different
+  // airport pairs / dates). Collapse to best-per-program before any consumer
+  // (AwardDetailsSection header, MultiHandoffGrid cards) reads the list.
+  const awardOptions = useMemo(() => dedupeByProgram(rawAwardOptions), [rawAwardOptions]);
+  const returnAwardOptions = useMemo(() => dedupeByProgram(rawReturnAwardOptions), [rawReturnAwardOptions]);
+
   const { addToWatchlist, isWatching } = useAlerts();
   const [justAdded, setJustAdded] = useState(false);
   const [speaking, setSpeaking] = useState(false);
