@@ -68,27 +68,31 @@ def test_T2_cpp_1p24_just_below_threshold_returns_pay_cash():
     assert result["verdict_label"] == "Pay Cash"
 
 
-def test_T3_cpp_1p25_lower_gray_zone_returns_wait_BASELINE():
-    """Will flip to pay_cash in Phase 3."""
+def test_T3_cpp_1p25_lower_gray_zone_returns_pay_cash():
+    """Flipped in Phase 3: 1.25 <= cpp < 1.5 is now pay_cash gray zone."""
     result = _run(cash_price=800.0, award_options=[_award(cpp=1.25)])
-    assert result["recommendation"] == "wait"
-    assert result["verdict_label"] == "Wait"
+    assert result["recommendation"] == "pay_cash"
+    assert result["verdict_label"] == "Pay Cash"
     assert result["confidence"] == "medium"
+    assert "preserves your points" in result["explanation"]
 
 
-def test_T4_cpp_1p5_gray_zone_midpoint_returns_wait_BASELINE():
-    """Will flip to use_points in Phase 3."""
+def test_T4_cpp_1p5_gray_zone_midpoint_returns_use_points():
+    """Flipped in Phase 3: 1.5 <= cpp < 1.8 is now use_points gray zone."""
     result = _run(cash_price=800.0, award_options=[_award(cpp=1.5)])
-    assert result["recommendation"] == "wait"
-    assert result["verdict_label"] == "Wait"
+    assert result["recommendation"] == "use_points"
+    assert result["verdict_label"] == "Use Points"
     assert result["confidence"] == "medium"
+    assert "beats paying cash" in result["explanation"]
 
 
-def test_T5_cpp_1p79_upper_gray_zone_returns_wait_BASELINE():
-    """Will flip to use_points in Phase 3."""
+def test_T5_cpp_1p79_upper_gray_zone_returns_use_points():
+    """Flipped in Phase 3: 1.5 <= cpp < 1.8 is now use_points gray zone."""
     result = _run(cash_price=800.0, award_options=[_award(cpp=1.79)])
-    assert result["recommendation"] == "wait"
-    assert result["verdict_label"] == "Wait"
+    assert result["recommendation"] == "use_points"
+    assert result["verdict_label"] == "Use Points"
+    assert result["confidence"] == "medium"
+    assert "beats paying cash" in result["explanation"]
 
 
 def test_T6_cpp_1p8_exact_returns_use_points_high_confidence():
@@ -189,3 +193,31 @@ def test_T14_cash_under_250_overrides_use_points_cpp_returns_pay_cash():
     result = _run(cash_price=200.0, award_options=[_award(cpp=1.6)])
     assert result["recommendation"] == "pay_cash"
     assert result["verdict_label"] == "Pay Cash"
+
+
+# ---- Gray-zone messaging (new in Phase 3) -----------------------------------
+
+def test_T15_cpp_1p3_pay_cash_gray_zone_messaging():
+    """1.25 <= cpp < 1.5: pay_cash with gray-zone framing."""
+    result = _run(cash_price=800.0, award_options=[_award(program="united", points=70000, cpp=1.3)])
+    assert result["recommendation"] == "pay_cash"
+    assert result["verdict_label"] == "Pay Cash"
+    assert result["confidence"] == "medium"
+    assert "Pay cash" in result["headline"]
+    assert "below the threshold" in result["explanation"]
+    assert "United" in result["explanation"]
+    assert "70,000 points" in result["explanation"]
+    assert result["next_step"] is None
+
+
+def test_T16_cpp_1p7_use_points_gray_zone_messaging():
+    """1.5 <= cpp < 1.8: use_points with gray-zone framing."""
+    result = _run(cash_price=800.0, award_options=[_award(program="aeroplan", points=55000, cpp=1.7)])
+    assert result["recommendation"] == "use_points"
+    assert result["verdict_label"] == "Use Points"
+    assert result["confidence"] == "medium"
+    assert "Use points" in result["headline"]
+    assert "beats paying cash" in result["explanation"]
+    assert "Aeroplan" in result["explanation"]
+    assert "55,000 points" in result["explanation"]
+    assert result["next_step"] is None
