@@ -174,11 +174,24 @@ export default function WalletSetupPage() {
 
   // ── update a single card's balance ─────────────────────────────────────
   async function handleUpdateBalance(cardId: string) {
+    // [PR106-DEBUG] (a) Handler fires at all
+    console.log("[PR106-DEBUG] (a) handleUpdateBalance entry", {
+      cardId,
+      editBalancesValue: editBalances[cardId],
+      editBalancesValueType: typeof editBalances[cardId],
+      isNaN: Number.isNaN(editBalances[cardId]),
+      editBalancesKeys: Object.keys(editBalances),
+    });
+
     const newBal = editBalances[cardId];
-    if (newBal === undefined) return;
+    if (newBal === undefined) {
+      console.log("[PR106-DEBUG] (a.x) EARLY RETURN: newBal === undefined");
+      return;
+    }
 
     const validation = validatePoints(newBal);
     if (!validation.ok) {
+      console.log("[PR106-DEBUG] (a.y) EARLY RETURN: validatePoints failed", validation);
       setRowErrors((prev) => ({ ...prev, [cardId]: validation.reason || "Invalid value" }));
       return;
     }
@@ -188,7 +201,17 @@ export default function WalletSetupPage() {
       const flags = collectSanityFlags([
         { cardName: card.card_name, program: card.program, value: newBal },
       ]);
+      // [PR106-DEBUG] (b) Gate fired, show what flags came back
+      console.log("[PR106-DEBUG] (b) collectSanityFlags returned", {
+        cardName: card.card_name,
+        program: card.program,
+        value: newBal,
+        flagsLength: flags.length,
+        flags,
+      });
       if (flags.length > 0) {
+        // [PR106-DEBUG] (c) About to call setConfirmation
+        console.log("[PR106-DEBUG] (c) calling setConfirmation with", { entries: flags });
         setConfirmation({
           entries: flags,
           onConfirm: () => {
@@ -197,8 +220,13 @@ export default function WalletSetupPage() {
         });
         return;
       }
+    } else {
+      console.log("[PR106-DEBUG] (b.x) BUG: no card found in savedCards for cardId", cardId, {
+        savedCardIds: savedCards.map((c) => c.id),
+      });
     }
 
+    console.log("[PR106-DEBUG] (d) FALLTHROUGH to proceedUpdateBalance — no flags, saving directly");
     await proceedUpdateBalance(cardId, newBal);
   }
 
