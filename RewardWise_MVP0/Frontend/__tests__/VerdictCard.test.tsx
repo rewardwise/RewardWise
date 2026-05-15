@@ -24,7 +24,7 @@ vi.mock("@/context/AlertContext", () => ({
   useAlerts: () => mocks.alertState,
 }));
 
-// Stub child components so this test only exercises the reasoning-toggle scope.
+// Stub child components so this test only exercises VerdictCard's own rendering.
 vi.mock("@/components/verdict/VerdictTopRow", () => ({
   default: ({ recommendationHeadline }: { recommendationHeadline: string }) => (
     <div data-testid="verdict-top-row">
@@ -44,11 +44,6 @@ vi.mock("@/components/verdict/FlightSection", () => ({
 vi.mock("@/components/verdict/AwardDetailsSection", () => ({
   __esModule: true,
   default: () => <div data-testid="award-details-stub" />,
-}));
-
-vi.mock("@/components/verdict/HowToBookSection", () => ({
-  __esModule: true,
-  default: () => <div data-testid="how-to-book-stub" />,
 }));
 
 vi.mock("@/components/verdict/MultiHandoffGrid", () => ({
@@ -111,11 +106,11 @@ const baseVerdict = {
   },
 };
 
-function renderCard() {
+function renderCard(verdictOverrides: Partial<typeof baseVerdict> = {}) {
   act(() => {
     root.render(
       <VerdictCard
-        verdict={baseVerdict}
+        verdict={{ ...baseVerdict, ...verdictOverrides }}
         cashPrice={800}
         origin="SFO"
         destination="NRT"
@@ -126,69 +121,37 @@ function renderCard() {
   });
 }
 
-function clickHideReasoning() {
-  const buttons = Array.from(container.querySelectorAll("button"));
-  const toggle = buttons.find((b) => b.textContent?.includes("Hide reasoning"));
-  expect(toggle, "Hide reasoning toggle must be present when reasoning is open").toBeTruthy();
-  act(() => {
-    toggle!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-  });
-}
-
-describe("VerdictCard — hide reasoning scope", () => {
-  it("collapses the description paragraph when reasoning is hidden", () => {
+describe("VerdictCard — surface cleanup contract", () => {
+  it("renders the reasoning block unconditionally (no toggle gate)", () => {
     renderCard();
-    // Open state: description is rendered.
+    const block = container.querySelector('[data-testid="verdict-reasoning-block"]');
+    expect(block, "verdict-reasoning-block must be present in the DOM").not.toBeNull();
     expect(container.textContent).toContain(EXPLANATION);
-
-    clickHideReasoning();
-
-    // Collapsed state: description paragraph is gone with the rest of the reasoning block.
-    expect(container.querySelector('[data-testid="verdict-reasoning-block"]')).toBeNull();
-    expect(container.textContent).not.toContain(EXPLANATION);
-  });
-
-  it("collapses the metrics row when reasoning is hidden", () => {
-    renderCard();
     expect(container.textContent).toContain("Cash fare");
     expect(container.textContent).toContain("Best award");
     expect(container.textContent).toContain("Value preserved");
-
-    clickHideReasoning();
-
-    expect(container.textContent).not.toContain("Cash fare");
-    expect(container.textContent).not.toContain("Best award");
-    expect(container.textContent).not.toContain("Value preserved");
   });
 
-  it("collapses the live-cash reasoning blurb when reasoning is hidden", () => {
+  it("does not render a reasoning toggle button", () => {
     renderCard();
-    expect(container.textContent).toContain(REASONING_COPY);
-
-    clickHideReasoning();
-
-    expect(container.textContent).not.toContain(REASONING_COPY);
+    const buttons = Array.from(container.querySelectorAll("button"));
+    const hideToggle = buttons.find((b) => b.textContent?.includes("Hide reasoning"));
+    const showToggle = buttons.find((b) => b.textContent?.includes("See how Zoe decided"));
+    expect(hideToggle, "no Hide reasoning toggle should exist").toBeUndefined();
+    expect(showToggle, "no See how Zoe decided toggle should exist").toBeUndefined();
   });
 
-  it("keeps the action buttons (Listen / Helpful / Needs work) visible in both states", () => {
-    renderCard();
-    expect(container.querySelector('[data-testid="listen-btn"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="helpful-btn"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="needs-work-btn"]')).not.toBeNull();
-
-    clickHideReasoning();
-
-    expect(container.querySelector('[data-testid="listen-btn"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="helpful-btn"]')).not.toBeNull();
-    expect(container.querySelector('[data-testid="needs-work-btn"]')).not.toBeNull();
+  it("does not render the MISSING DATA card even when missing_sources is populated", () => {
+    renderCard({ missing_sources: ["taxes", "operating_airline"] } as Partial<typeof baseVerdict>);
+    expect(container.textContent).not.toContain("Missing data");
+    expect(container.textContent).not.toContain("We could not fully verify");
   });
 
-  it("keeps the flight details section visible in both states", () => {
+  it("does not render the HowToBookSection (component removed)", () => {
     renderCard();
-    expect(container.querySelector('[data-testid="flight-section-stub"]')).not.toBeNull();
-
-    clickHideReasoning();
-
-    expect(container.querySelector('[data-testid="flight-section-stub"]')).not.toBeNull();
+    // The HowToBookSection rendered an "How to book" uppercase eyebrow header.
+    expect(container.textContent).not.toContain("How to book");
+    // And no stub should be present since the import was removed from VerdictCard.
+    expect(container.querySelector('[data-testid="how-to-book-stub"]')).toBeNull();
   });
 });

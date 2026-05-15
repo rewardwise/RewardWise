@@ -101,35 +101,41 @@ export default function MultiHandoffGrid({
   const airlineName = cashAirline.airline || "the airline";
   const url = cashAirline.bookingUrl || null;
   const linkDomain = url ? domainFromUrl(url) : `${airlineName.toLowerCase().replace(/\s+/g, "")}.com`;
+
+  const cardContent = (
+    <div className="flex flex-col gap-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/[0.06] p-5 md:flex-row md:items-center md:justify-between">
+      <div className="min-w-0">
+        <p className="text-base font-extrabold text-white">
+          Visit {linkDomain}
+          {url ? <ExternalLink className="ml-2 inline h-4 w-4 align-text-bottom text-emerald-300" /> : null}
+        </p>
+        {cashAirline.cashPrice != null ? (
+          <p className="mt-1 text-sm text-slate-300">
+            Cash fare around {fmtMoneyShort(cashAirline.cashPrice)}.
+          </p>
+        ) : null}
+        <p className="mt-1 text-xs text-slate-500">
+          {routeLabel} · {bestDate} · {travelersLabel}
+        </p>
+      </div>
+    </div>
+  );
+
   return (
     <section className="mt-6">
-      <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-300">
-        Book direct with the airline
-      </p>
-      <div className="flex flex-col gap-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/[0.06] p-5 md:flex-row md:items-center md:justify-between">
-        <div className="min-w-0">
-          <p className="text-base font-extrabold text-white">Visit {linkDomain}</p>
-          {cashAirline.cashPrice != null ? (
-            <p className="mt-1 text-sm text-slate-300">
-              Cash fare around {fmtMoneyShort(cashAirline.cashPrice)}.
-            </p>
-          ) : null}
-          <p className="mt-1 text-xs text-slate-500">
-            {routeLabel} · {bestDate} · {travelersLabel}
-          </p>
-        </div>
-        {url ? (
-          <a
-            href={url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center justify-center gap-2 self-start rounded-xl bg-emerald-400 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-emerald-300 md:self-auto"
-          >
-            Open {linkDomain}
-            <ExternalLink className="h-4 w-4" />
-          </a>
-        ) : null}
-      </div>
+      {url ? (
+        <a
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={`Book on ${airlineName} (opens in new tab)`}
+          className="block rounded-2xl transition-colors hover:bg-white/[0.05] focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-400/40"
+        >
+          {cardContent}
+        </a>
+      ) : (
+        cardContent
+      )}
     </section>
   );
 }
