@@ -1,0 +1,49 @@
+# dependencies
+node_modules
+**/node_modules
+
+# Next / build outputs
+.next
+**/.next
+dist
+build
+out
+coverage
+.turbo
+.vercel
+
+# Python/runtime caches
+__pycache__
+**/__pycache__
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.venv
+venv
+env
+
+# env/secrets
+.env
+.env.*
+!.env.example
+
+# local monitor/generated state
+**/.monitor_snapshots.json
+**/.monitor_candidates.json
+**/.kb_update_candidates.json
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# package manager generated files usually do not need style-only churn
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# large/generated backend data artifacts
+RewardWise_MVP0/Backend/app/data/airport_metadata.json
+RewardWise_MVP0/Backend/app/services/flight_pricing/mock_data/*.json
