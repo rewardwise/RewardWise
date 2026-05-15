@@ -3,16 +3,22 @@ zoe/grounding.py
 ─────────────────
 Assembles all ground truth data injected into every respond call.
 
+ARCHITECTURE CHANGE (v2):
+  - valid_as_of citation added to every KB chunk
+  - Zoe must surface the date when citing policies, fees, or program rules
+  - Grounding rule updated: staleness disclaimer required for time-sensitive data
+
 Sources:
-  - Wallet data (from DB / frontend payload)
-  - Verdict object (from active search result)
-  - KB chunks — Layer 1 (published articles)
+  - Wallet data (from DB)
+  - Verdict object (from active search result — injected on "Ask Zoe" click)
+  - KB chunks — Layer 1 (published articles, with staleness date)
   - Interaction examples — Layer 2 (high-signal response pairs)
   - PM corrections — Layer 3 (negative examples, highest priority)
 
 The grounding rule (enforced in every system prompt):
   "Every factual claim must come from one of the injected sources.
-   If a fact is not here, say so and offer to search. Never guess."
+   If a fact is not here, say so. Never guess.
+   Always surface valid_as_of when citing policies or fees."
 """
 
 from __future__ import annotations
@@ -26,7 +32,7 @@ def format_wallet(wallet: list[dict]) -> str:
     lines = ["WALLET (cite these exact balances — do not invent or estimate):"]
     for w in wallet:
         program = w.get("program") or w.get("program_name") or "Unknown Program"
-        points = w.get("points") or w.get("points_balance") or 0
+        points  = w.get("points") or w.get("points_balance") or 0
         lines.append(f"  - {program}: {int(points):,} points")
     return "\n".join(lines)
 
@@ -41,29 +47,55 @@ def format_verdict(verdict_context: str | None) -> str:
 
 
 def format_kb_chunks(chunks: list[dict]) -> str:
+    """
+    Layer 1: Format KB chunks with staleness citation.
+
+    Each chunk surfaces its valid_as_of date so Zoe can cite it:
+      "Per United's award chart as of Q1 2025 — verify before booking."
+
+    This is non-negotiable for:
+      - Airline fees and policies
+      - Program award charts
+      - Transfer ratios and partner lists
+      - Close-in booking fee rules
+    """
     if not chunks:
         return ""
-    lines = ["KNOWLEDGE BASE (ground truth — only cite facts from here):"]
+
+    lines = ["KNOWLEDGE BASE (ground truth — cite valid_as_of for all policy/fee data):"]
     for i, chunk in enumerate(chunks, 1):
-        title = chunk.get("title", f"Source {i}")
-        content = (chunk.get("content") or "").strip()[:900]
-        if content:
-            lines.append(f"\n[{i}] {title}")
-            lines.append(content)
+        title       = chunk.get("title", f"Source {i}")
+        content     = (chunk.get("content") or "").strip()[:900]
+        valid_as_of = chunk.get("valid_as_of")
+        category    = chunk.get("category", "")
+
+        if not content:
+            continue
+
+        # Build citation line
+        citation = f"[{i}] {title}"
+        if valid_as_of:
+            citation += f" (valid as of: {valid_as_of})"
+        if category:
+            citation += f" [{category}]"
+
+        lines.append(f"\n{citation}")
+        lines.append(content)
+
     return "\n".join(lines)
 
 
 def format_examples(examples: list[dict]) -> str:
     """
-    Layer 2: format interaction examples as implicit few-shot guidance.
-    These show Zoe what good responses look like for similar questions.
+    Layer 2: Interaction examples as implicit few-shot guidance.
+    Shows Zoe what good responses look like for similar questions.
     """
     if not examples:
         return ""
     lines = ["EXAMPLE RESPONSES (reference tone and structure — do not copy verbatim):"]
     for ex in examples[:2]:
-        user_msg = (ex.get("user_message") or "").strip()[:200]
-        zoe_resp = (ex.get("zoe_response") or "").strip()[:400]
+        user_msg  = (ex.get("user_message") or "").strip()[:200]
+        zoe_resp  = (ex.get("zoe_response") or "").strip()[:400]
         if user_msg and zoe_resp:
             lines.append(f"\nExample — User: {user_msg}")
             lines.append(f"Example — Zoe: {zoe_resp}")
@@ -72,17 +104,17 @@ def format_examples(examples: list[dict]) -> str:
 
 def format_corrections(corrections: list[dict]) -> str:
     """
-    Layer 3: format PM corrections as explicit negative examples.
-    Injected with highest priority — Zoe must not repeat these failure patterns.
+    Layer 3: PM corrections as explicit negative examples.
+    Injected with highest priority — Zoe must not repeat these patterns.
     """
     if not corrections:
         return ""
     lines = ["⚠️ KNOWN FAILURE PATTERNS — DO NOT REPEAT THESE:"]
     for c in corrections:
         failure_type = c.get("failure_type", "quality issue")
-        original = (c.get("original_response") or "").strip()[:300]
-        corrected = (c.get("corrected_response") or "").strip()[:300]
-        notes = c.get("notes", "")
+        original     = (c.get("original_response") or "").strip()[:300]
+        corrected    = (c.get("corrected_response") or "").strip()[:300]
+        notes        = c.get("notes", "")
         if original and corrected:
             lines.append(f"\n[Failure: {failure_type}]")
             lines.append(f"BAD (do not do this): {original}")
@@ -92,26 +124,27 @@ def format_corrections(corrections: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def format_resolution_notes(notes: list[str]) -> str:
-    if not notes:
-        return ""
-    return "FIELD RESOLUTIONS:\n" + "\n".join(f"  - {n}" for n in notes)
-
-
 # ── The grounding rule ────────────────────────────────────────────────────────
 
 GROUNDING_RULE = """
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 GROUNDING RULE — NON-NEGOTIABLE:
-Every factual claim you make must come from one of the injected sources above
-(wallet, verdict, knowledge base chunks).
-If a fact is NOT in those sources:
-  • Say "I don't have that specific number — let me point you to a search" OR
-  • Say "I'd want to verify that — run a search and I'll help interpret it"
-Never infer, estimate, or guess:
-  - Point values or CPP figures
+Every factual claim you make must come from the injected sources above.
+If a fact is NOT in those sources, say so — never guess.
+
+CITATION RULE — REQUIRED for policies, fees, and program rules:
+  Always surface the valid_as_of date when citing:
+    - Airline fees (baggage, change, close-in booking fees)
+    - Award chart costs (partner miles, saver rates)
+    - Transfer ratios and processing times
+    - Program partner lists
+  Format: "Per [source], as of [valid_as_of] — verify before booking."
+  If valid_as_of is not provided, say "verify current rates — policies change."
+
+NEVER infer, estimate, or guess:
+  - Point values or CPP figures not in the verdict
   - Award availability or seat counts
-  - Transfer partner lists or ratios
+  - Transfer partner lists or ratios not in KB
   - Cash prices
   - Wallet balances not in the injected wallet
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"""
@@ -126,54 +159,47 @@ def build_ground_truth_block(
     rag_chunks: list[dict] | None = None,
     rag_examples: list[dict] | None = None,
     rag_corrections: list[dict] | None = None,
-    resolution_notes: list[str] | None = None,
 ) -> str:
     """
     Assemble all ground truth sections into a single block
     for injection into the respond-call system prompt.
 
-    Priority order in the prompt:
+    Priority order:
       1. Corrections (Layer 3) — highest, injected first as negative examples
-      2. KB chunks (Layer 1) — factual ground truth
+      2. KB chunks (Layer 1) — factual ground truth with staleness dates
       3. Wallet — user-specific data
-      4. Verdict — search result data
+      4. Verdict — search result data (injected on "Ask Zoe" click)
       5. Examples (Layer 2) — tone/format guidance
-      6. Resolution notes — slot machine annotations
     """
     sections: list[str] = []
 
-    # Layer 3 corrections first — highest priority signal
+    # Layer 3 corrections first — highest priority
     if rag_corrections:
         c = format_corrections(rag_corrections)
         if c:
             sections.append(c)
 
-    # KB ground truth
+    # KB ground truth with citations
     if rag_chunks:
         k = format_kb_chunks(rag_chunks)
         if k:
             sections.append(k)
 
-    # User data
+    # User wallet data
     if wallet is not None:
         sections.append(format_wallet(wallet))
 
+    # Verdict (Ask Zoe flow)
     if verdict_context:
         v = format_verdict(verdict_context)
         if v:
             sections.append(v)
 
-    # Layer 2 examples
+    # Layer 2 examples (tone guidance)
     if rag_examples:
         e = format_examples(rag_examples)
         if e:
             sections.append(e)
-
-    # Slot machine notes
-    if resolution_notes:
-        n = format_resolution_notes(resolution_notes)
-        if n:
-            sections.append(n)
 
     if not sections:
         return ""

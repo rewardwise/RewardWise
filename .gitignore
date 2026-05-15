@@ -223,3 +223,13 @@ repository.txt
 repo-pack.txt
 *.repopack.txt
 *.repomix.txt
+
+# KB monitor local runtime state
+RewardWise_MVP0/Backend/app/agents/.monitor_snapshots.json
+RewardWise_MVP0/Backend/app/agents/.monitor_candidates.json
+RewardWise_MVP0/Backend/app/agents/*candidate*.json
+RewardWise_MVP0/Backend/app/agents/*snapshot*.json
+
+# Optional local editor settings
+.vscode/
+.github/copilot-instructions.md
