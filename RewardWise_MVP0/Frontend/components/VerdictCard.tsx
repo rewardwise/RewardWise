@@ -15,6 +15,7 @@ import {
 import { useAlerts } from "@/context/AlertContext";
 import { fmtMoney } from "@/utils/format";
 import { dedupeByProgram } from "@/utils/awardOptions";
+import { buildOutboundLeg, buildInboundLeg } from "@/utils/flightLegs";
 import VerdictTopRow from "@/components/verdict/VerdictTopRow";
 import ErrorStateCard from "@/components/verdict/ErrorStateCard";
 import FlightSection, { FlightLeg } from "@/components/verdict/FlightSection";
@@ -374,67 +375,19 @@ export default function VerdictCard({
       : `Searched ${formatShortDate(departDate)} to ${formatShortDate(departDateEnd!)}.`
     : null;
 
-  const outboundLeg: FlightLeg | null = (() => {
-    if (recommendation === "use_points" && bestOutbound) {
-      const trip = bestOutbound.trips?.[0];
-      const segments = (trip?.segments ?? []).map((s) => ({
-        flight_number: s.flight_number,
-        carrier: bestOutbound.airlines,
-        origin: s.origin,
-        destination: s.destination,
-        departs_at: s.departs_at,
-        arrives_at: s.arrives_at,
-      }));
-      if (segments.length === 0) return null;
-      return { label: "Outbound", segments, total_duration: trip?.total_duration };
-    }
-    if (recommendation === "pay_cash" && bestCashFlight) {
-      const segments = (bestCashFlight.legs ?? []).map((leg) => ({
-        flight_number: leg.flight_number,
-        carrier: leg.airline,
-        origin: leg.departure_iata,
-        destination: leg.arrival_iata,
-        departs_at: leg.departure_time,
-        arrives_at: leg.arrival_time,
-        duration: leg.duration,
-      }));
-      if (segments.length === 0) return null;
-      return { label: "Outbound", segments, total_duration: bestCashFlight.total_duration };
-    }
-    return null;
-  })();
+  const outboundLeg: FlightLeg | null = buildOutboundLeg({
+    recommendation,
+    bestOutbound,
+    bestCashFlight,
+  });
 
-  const inboundLeg: FlightLeg | null = (() => {
-    if (!isRoundtrip) return null;
-    if (recommendation === "use_points" && bestReturn) {
-      const trip = bestReturn.trips?.[0];
-      const segments = (trip?.segments ?? []).map((s) => ({
-        flight_number: s.flight_number,
-        carrier: bestReturn.airlines,
-        origin: s.origin,
-        destination: s.destination,
-        departs_at: s.departs_at,
-        arrives_at: s.arrives_at,
-      }));
-      if (segments.length === 0) return null;
-      return { label: "Return", segments, total_duration: trip?.total_duration };
-    }
-    if (recommendation === "pay_cash" && bestCashFlight?.return_flight) {
-      const ret = bestCashFlight.return_flight;
-      const segments = (ret.legs ?? []).map((leg) => ({
-        flight_number: leg.flight_number,
-        carrier: leg.airline,
-        origin: leg.departure_iata,
-        destination: leg.arrival_iata,
-        departs_at: leg.departure_time,
-        arrives_at: leg.arrival_time,
-        duration: leg.duration,
-      }));
-      if (segments.length === 0) return null;
-      return { label: "Return", segments, total_duration: ret.total_duration };
-    }
-    return null;
-  })();
+  const inboundLeg: FlightLeg | null = buildInboundLeg({
+    recommendation,
+    isRoundtrip: Boolean(isRoundtrip),
+    bestOutbound,
+    bestReturn,
+    bestCashFlight,
+  });
 
   const operatingAirline: string | null = (() => {
     if (recommendation === "pay_cash") {
@@ -723,39 +676,41 @@ export default function VerdictCard({
               publicPreview={publicPreview}
             />
 
-            <p className="mt-5 max-w-4xl text-lg font-medium leading-8 text-slate-300 md:text-xl">
-              {mainExplanation}
-            </p>
-            {searchedRangeCopy && (
-              <p className="mt-3 inline-flex items-center rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200">
-                {searchedRangeCopy}
-              </p>
-            )}
-
-            {/* Reasoning panel — always visible in public preview, togglable otherwise */}
             {(publicPreview || reasoningOpen) && (
-              <div className="mt-8 rounded-2xl bg-white/[0.04] p-5 md:p-6">
-                <div className="grid gap-5 md:grid-cols-3">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-400">Cash fare</p>
-                    <p className="mt-2 text-2xl font-bold text-white">{fmtMoney(displayCashPrice, displayCashPrice != null && displayCashPrice % 1 !== 0 ? 2 : 0)}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-slate-400">Best award</p>
-                    <p className="mt-2 text-2xl font-bold text-white">
-                      {hasAward ? `${Number(displayPoints).toLocaleString()} pts` : "—"}
-                      {displayTaxes != null && displayTaxes > 0 && <span className="text-base font-semibold text-slate-300"> + {fmtMoney(displayTaxes, 0)}</span>}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-slate-400">Value preserved</p>
-                    <p className="mt-2 text-2xl font-bold text-emerald-400">
-                      {displaySavings != null ? `~${fmtMoney(displaySavings, 0)}` : "—"}
-                    </p>
-                  </div>
-                </div>
+              <div data-testid="verdict-reasoning-block">
+                <p className="mt-5 max-w-4xl text-lg font-medium leading-8 text-slate-300 md:text-xl">
+                  {mainExplanation}
+                </p>
+                {searchedRangeCopy && (
+                  <p className="mt-3 inline-flex items-center rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200">
+                    {searchedRangeCopy}
+                  </p>
+                )}
 
-                <p className="mt-5 text-base leading-7 text-slate-300">{reasoningCopy}</p>
+                {/* Reasoning panel — always visible in public preview, togglable otherwise */}
+                <div className="mt-8 rounded-2xl bg-white/[0.04] p-5 md:p-6">
+                  <div className="grid gap-5 md:grid-cols-3">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-400">Cash fare</p>
+                      <p className="mt-2 text-2xl font-bold text-white">{fmtMoney(displayCashPrice, displayCashPrice != null && displayCashPrice % 1 !== 0 ? 2 : 0)}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-400">Best award</p>
+                      <p className="mt-2 text-2xl font-bold text-white">
+                        {hasAward ? `${Number(displayPoints).toLocaleString()} pts` : "—"}
+                        {displayTaxes != null && displayTaxes > 0 && <span className="text-base font-semibold text-slate-300"> + {fmtMoney(displayTaxes, 0)}</span>}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-400">Value preserved</p>
+                      <p className="mt-2 text-2xl font-bold text-emerald-400">
+                        {displaySavings != null ? `~${fmtMoney(displaySavings, 0)}` : "—"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <p className="mt-5 text-base leading-7 text-slate-300">{reasoningCopy}</p>
+                </div>
               </div>
             )}
 
