@@ -1,3 +1,5 @@
+import type React from "react";
+
 /**
  * Format a numeric value as USD currency with thousands separators.
  * Used across verdict, wallet, concierge, and audio surfaces.
@@ -38,4 +40,65 @@ export function validatePoints(value: number): PointsValidationResult {
   if (Number.isNaN(value)) return { ok: false, reason: "Please enter a number" };
   if (value < 0) return { ok: false, reason: "Cannot be negative" };
   return { ok: true };
+}
+
+// Wires an integer-with-thousands-separators input to a controlled `number`
+// value. Returns `{ value, onChange }` props to spread onto a text input.
+// Display is always comma-formatted (no focus/blur split). On each keystroke
+// the helper counts digits to the left of the cursor in the user's raw
+// keystroke, then after re-formatting places the cursor after that same digit
+// count in the new string, so commas appearing or disappearing don't make the
+// cursor jump.
+export function formatNumberInputProps(args: {
+  value: number | undefined;
+  onValueChange: (next: number) => void;
+}): {
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+} {
+  const { value, onValueChange } = args;
+  const display =
+    value === undefined || Number.isNaN(value) ? "" : value.toLocaleString("en-US");
+
+  return {
+    value: display,
+    onChange: (e) => {
+      const input = e.target;
+      const rawValue = input.value;
+      const cursorBefore = input.selectionStart ?? rawValue.length;
+
+      let digitsBefore = 0;
+      for (let i = 0; i < cursorBefore; i++) {
+        const ch = rawValue[i];
+        if (ch >= "0" && ch <= "9") digitsBefore++;
+      }
+
+      const parsed = parsePointsInput(rawValue);
+      onValueChange(parsed);
+
+      const nextDisplay = Number.isNaN(parsed) ? "" : parsed.toLocaleString("en-US");
+      let newCursor = 0;
+      if (digitsBefore > 0) {
+        let seen = 0;
+        newCursor = nextDisplay.length;
+        for (let i = 0; i < nextDisplay.length; i++) {
+          const ch = nextDisplay[i];
+          if (ch >= "0" && ch <= "9") seen++;
+          if (seen === digitsBefore) {
+            newCursor = i + 1;
+            break;
+          }
+        }
+      }
+
+      requestAnimationFrame(() => {
+        try {
+          input.setSelectionRange(newCursor, newCursor);
+        } catch {
+          // setSelectionRange throws on inputs that have been unmounted or
+          // detached between the change event and the next frame. Swallow.
+        }
+      });
+    },
+  };
 }
