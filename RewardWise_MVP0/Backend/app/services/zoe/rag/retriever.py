@@ -3,14 +3,15 @@ zoe/rag/retriever.py
 ─────────────────────
 Three-layer RAG retrieval pipeline.
 
-IMPORTANT — similarity thresholds:
-  nv-embed-v1 (NVIDIA) produces cosine similarity scores in the 0.08–0.35 range
-  for semantically related content. This is normal for this model — it is NOT
-  the same scale as OpenAI ada-002 (which scores 0.7–0.95 for similar content).
+ARCHITECTURE CHANGE (v2):
+  RAG now fires for ALL intents, including trip_search.
+  New knowledge categories: route_intelligence, airline_policies,
+  program_rules, historical_patterns.
 
-  Thresholds are set accordingly:
-    Layer 1 KB articles:       min_similarity = 0.08
-    Layer 2 interaction corpus: min_similarity = 0.10
+Similarity thresholds:
+  nv-embed-v1 (NVIDIA) produces cosine similarity in the 0.08–0.35 range.
+  This is NOT the same scale as OpenAI ada-002 (0.7–0.95).
+  Thresholds are set accordingly.
 """
 
 from __future__ import annotations
@@ -20,14 +21,47 @@ from app.services.zoe.rag import embedder_fixed
 
 
 # ── Intent → KB category mapping ─────────────────────────────────────────────
+#
+# Each intent retrieves from a specific set of KB categories.
+# Categories correspond to kb_articles.category values in Supabase.
+#
+# trip_search gets route + policy + history so Zoe can give intelligent
+# answers about routes, programs, and booking strategies — not collect form fields.
 
 _INTENT_CATEGORIES: dict[str, list[str]] = {
-    "destination":      ["destinations"],
-    "verdict_strategy": ["airline_programs", "credit_cards", "booking_strategies", "transfers"],
-    "wallet_support":   ["credit_cards", "transfers"],
-    "exploring":        ["destinations", "booking_strategies"],
+    "trip_search": [
+        "route_intelligence",
+        "airline_policies",
+        "historical_patterns",
+        "booking_strategies",
+    ],
+    "verdict_strategy": [
+        "program_rules",
+        "credit_cards",
+        "booking_strategies",
+        "transfers",
+        "airline_policies",
+        "route_intelligence",
+    ],
+    "destination": [
+        "destinations",
+        "route_intelligence",
+        "airline_policies",
+    ],
+    "wallet_support": [
+        "credit_cards",
+        "transfers",
+        "program_rules",
+    ],
+    "exploring": [
+        "destinations",
+        "booking_strategies",
+        "route_intelligence",
+        "historical_patterns",
+    ],
 }
 
+# ALL intents now retrieve — no exclusions
 _RAG_INTENTS = set(_INTENT_CATEGORIES.keys())
 
 
@@ -39,14 +73,14 @@ async def retrieve(
     intent: str,
     query: str,
     *,
-    top_k: int = 3,
+    top_k: int = 4,
 ) -> dict:
     """
     Full three-layer retrieval for a given intent + query.
 
     Returns:
     {
-      "kb_chunks":   [{ id, title, category, content, score }],
+      "kb_chunks":   [{ id, title, category, content, valid_as_of, score }],
       "examples":    [{ user_message, zoe_response, score }],
       "corrections": [{ original_response, corrected_response, failure_type }],
     }
@@ -89,7 +123,6 @@ async def _search_kb_articles(
                 "query_embedding": embedding,
                 "categories": categories,
                 "match_count": top_k,
-                # nv-embed-v1 scores ~0.08–0.35 for semantically related content
                 "min_similarity": 0.08,
             },
         ).execute()
@@ -97,11 +130,12 @@ async def _search_kb_articles(
         rows = result.data or []
         return [
             {
-                "id":       r["id"],
-                "title":    r["title"],
-                "category": r["category"],
-                "content":  r["content"],
-                "score":    round(float(r.get("similarity", 0)), 4),
+                "id":          r["id"],
+                "title":       r["title"],
+                "category":    r["category"],
+                "content":     r["content"],
+                "valid_as_of": r.get("valid_as_of"),   # staleness citation
+                "score":       round(float(r.get("similarity", 0)), 4),
             }
             for r in rows
         ]
@@ -111,7 +145,7 @@ async def _search_kb_articles(
 
 
 async def _kb_keyword_fallback(intent: str, top_k: int) -> list[dict]:
-    """Fallback when vector search fails — returns recent published articles by category."""
+    """Fallback: most recently published articles for this intent's categories."""
     categories = _INTENT_CATEGORIES.get(intent, [])
     if not categories:
         return []
@@ -119,7 +153,7 @@ async def _kb_keyword_fallback(intent: str, top_k: int) -> list[dict]:
         db = get_db_client()
         result = (
             db.table("kb_articles")
-            .select("id, title, category, content")
+            .select("id, title, category, content, valid_as_of")
             .in_("category", categories)
             .not_.is_("published_at", "null")
             .order("published_at", desc=True)
@@ -127,8 +161,14 @@ async def _kb_keyword_fallback(intent: str, top_k: int) -> list[dict]:
             .execute()
         )
         return [
-            {"id": r["id"], "title": r["title"], "category": r["category"],
-             "content": r["content"], "score": 0.0}
+            {
+                "id":          r["id"],
+                "title":       r["title"],
+                "category":    r["category"],
+                "content":     r["content"],
+                "valid_as_of": r.get("valid_as_of"),
+                "score":       0.0,
+            }
             for r in (result.data or [])
         ]
     except Exception as exc:
@@ -172,10 +212,6 @@ async def _search_corpus(
 # ── Layer 3: PM corrections ───────────────────────────────────────────────────
 
 async def _search_evals(intent: str, top_k: int) -> list[dict]:
-    """
-    Pull recent PM corrections for this intent as negative examples.
-    No vector search needed — just grab recent corrections by intent.
-    """
     try:
         db = get_db_client()
         result = (
@@ -186,7 +222,7 @@ async def _search_evals(intent: str, top_k: int) -> list[dict]:
             )
             .not_.is_("corrected_response", "null")
             .order("created_at", desc=True)
-            .limit(top_k * 3)   # fetch more, filter by intent
+            .limit(top_k * 3)
             .execute()
         )
         rows = result.data or []

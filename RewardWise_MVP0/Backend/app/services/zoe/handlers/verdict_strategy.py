@@ -1,11 +1,18 @@
 """
 zoe/handlers/verdict_strategy.py
 ─────────────────────────────────
-Handles verdict interpretation, points strategy, and transfer questions.
+Handles verdict explanation and points strategy questions.
 
-Uses call_llm_with_history() with real multi-turn message history.
-All three RAG layers injected via grounding.py.
-Grounding rule strictly enforced — no invented CPP values or partner lists.
+TWO ENTRY POINTS:
+  1. "Ask Zoe" button on verdict page
+     → verdict_context is injected with the full result object
+     → Zoe explains the specific deal: is it worth it, which program, CPP
+
+  2. General strategy questions (no verdict_context)
+     → Zoe answers from KB: transfer rules, program comparisons, sweet spots
+     → Uses route_intelligence + program_rules + credit_cards KB categories
+
+RAG fully grounded. Citation rule enforced for all fee/policy data.
 """
 
 from __future__ import annotations
@@ -22,19 +29,20 @@ You're answering a question about a flight verdict, loyalty strategy, or points 
 PERSONALITY:
 - Direct and analytical — lead with the answer, not a preamble
 - Honest about uncertainty — never invent numbers or availability
-- Warm but precise — this is financial territory, be careful
+- Warm but precise — this is financial territory
 
 RESPONSE RULES:
-- Anchor every number to the injected verdict data or KB chunks
-  Example: "Based on the verdict, you're getting 1.8 cpp — that's solid."
+- Under 120 words for most answers
+- Lead with the verdict: "Yes, use points — you're getting 2.1 cpp, that's excellent."
+- Anchor every number to injected verdict data or KB chunks
 - Never invent CPP figures, point costs, cash prices, or award availability
 - If the data isn't injected, say so and suggest running a search
-- Under 120 words for most answers
+- Always surface valid_as_of when citing airline policies or program rules
 - No numbered lists unless user explicitly asks for a comparison
 - No markdown headers
 
-CPP BENCHMARKS (for contextualizing verdict data — do not invent CPP values):
-  < 1.0 cpp = poor redemption
+CPP BENCHMARKS:
+  < 1.0 cpp = poor — pay cash
   1.0–1.5 cpp = ok / baseline
   1.5–2.0 cpp = good
   > 2.0 cpp = excellent
@@ -42,22 +50,32 @@ CPP BENCHMARKS (for contextualizing verdict data — do not invent CPP values):
 
 TRANSFER RULES:
 - Only discuss transfer partners that appear in the injected KB chunks
-- Always note: transfers are almost always one-way and irreversible
-- Never confirm processing time unless it's explicitly in the KB data
-- Warn to verify space BEFORE transferring"""
+- Always note: transfers are one-way and irreversible
+- Always say: verify award space BEFORE transferring
+- Surface valid_as_of for all transfer ratio data
+
+ASK ZOE FLOW:
+When verdict_context is injected, the user just clicked "Ask Zoe" on a specific result.
+Lead with a clear verdict: worth it or not, why, and what to do next.
+Keep it under 100 words — they want a quick read on the deal, not an essay."""
 
 
 def _build_system(
+    wallet: list[dict],
+    verdict_context: str | None,
     rag_chunks: list[dict],
     rag_examples: list[dict],
     rag_corrections: list[dict],
     is_voice: bool,
 ) -> str:
     ground_truth = build_ground_truth_block(
-        rag_chunks=rag_chunks or None,
-        rag_examples=rag_examples or None,
-        rag_corrections=rag_corrections or None,
+        wallet=wallet,
+        verdict_context=verdict_context,
+        rag_chunks=rag_chunks,
+        rag_examples=rag_examples,
+        rag_corrections=rag_corrections,
     )
+
     voice_note = "\n[VOICE MODE: plain text only, under 50 words, no markdown, no lists]" if is_voice else ""
 
     if ground_truth:
@@ -76,24 +94,21 @@ async def handle(
     rag_corrections: list[dict] | None = None,
     is_voice: bool = False,
 ) -> dict[str, Any]:
-    system = _build_system(rag_chunks or [], rag_examples or [], rag_corrections or [], is_voice)
-
-    # Wallet + verdict always injected regardless of RAG
-    ground_truth = build_ground_truth_block(
+    system = _build_system(
         wallet=wallet,
         verdict_context=verdict_context,
         rag_chunks=rag_chunks or [],
         rag_examples=rag_examples or [],
         rag_corrections=rag_corrections or [],
+        is_voice=is_voice,
     )
-    full_system = f"{_BASE_SYSTEM}\n\n{ground_truth}" if ground_truth else _BASE_SYSTEM
-    if is_voice:
-        full_system += "\n[VOICE MODE: plain text only, under 50 words, no markdown, no lists]"
 
     reply = await call_llm_with_history(
-        full_system, history, message,
+        system,
+        history,
+        message,
         temperature=0.3,
-        max_tokens=100 if is_voice else 300,
+        max_tokens=80 if is_voice else 250,
     )
 
     return {
