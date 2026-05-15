@@ -20,7 +20,6 @@ import VerdictTopRow from "@/components/verdict/VerdictTopRow";
 import ErrorStateCard from "@/components/verdict/ErrorStateCard";
 import FlightSection, { FlightLeg } from "@/components/verdict/FlightSection";
 import AwardDetailsSection, { AwardProgramOption } from "@/components/verdict/AwardDetailsSection";
-import HowToBookSection from "@/components/verdict/HowToBookSection";
 import MultiHandoffGrid, { MultiHandoffProgram, MultiHandoffCashAirline } from "@/components/verdict/MultiHandoffGrid";
 
 type Confidence = "high" | "medium" | "low";
@@ -329,7 +328,6 @@ export default function VerdictCard({
   const { addToWatchlist, isWatching } = useAlerts();
   const [justAdded, setJustAdded] = useState(false);
   const [speaking, setSpeaking] = useState(false);
-  const [reasoningOpen, setReasoningOpen] = useState(true);
   const [flightDetailsOpen, setFlightDetailsOpen] = useState(false);
   const alreadyWatching = isWatching(origin, destination, departDate);
 
@@ -669,50 +667,50 @@ export default function VerdictCard({
             <VerdictTopRow
               recommendationHeadline={recommendationHeadline}
               confidence={confidence}
-              showPartialDataBadge={Boolean(verdict.data_quality && verdict.data_quality !== "full")}
               speaking={speaking}
               onListenToggle={speak}
               verdictId={verdictId}
               publicPreview={publicPreview}
             />
 
-            {(publicPreview || reasoningOpen) && (
-              <div data-testid="verdict-reasoning-block">
-                <p className="mt-5 max-w-4xl text-lg font-medium leading-8 text-slate-300 md:text-xl">
-                  {mainExplanation}
+            <div
+              data-testid="verdict-reasoning-block"
+              role="region"
+              aria-label="Verdict reasoning"
+            >
+              <p className="mt-5 max-w-4xl text-lg font-medium leading-8 text-slate-300 md:text-xl">
+                {mainExplanation}
+              </p>
+              {searchedRangeCopy && (
+                <p className="mt-3 inline-flex items-center rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200">
+                  {searchedRangeCopy}
                 </p>
-                {searchedRangeCopy && (
-                  <p className="mt-3 inline-flex items-center rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200">
-                    {searchedRangeCopy}
-                  </p>
-                )}
+              )}
 
-                {/* Reasoning panel — always visible in public preview, togglable otherwise */}
-                <div className="mt-8 rounded-2xl bg-white/[0.04] p-5 md:p-6">
-                  <div className="grid gap-5 md:grid-cols-3">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-400">Cash fare</p>
-                      <p className="mt-2 text-2xl font-bold text-white">{fmtMoney(displayCashPrice, displayCashPrice != null && displayCashPrice % 1 !== 0 ? 2 : 0)}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-slate-400">Best award</p>
-                      <p className="mt-2 text-2xl font-bold text-white">
-                        {hasAward ? `${Number(displayPoints).toLocaleString()} pts` : "—"}
-                        {displayTaxes != null && displayTaxes > 0 && <span className="text-base font-semibold text-slate-300"> + {fmtMoney(displayTaxes, 0)}</span>}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-sm font-semibold text-slate-400">Value preserved</p>
-                      <p className="mt-2 text-2xl font-bold text-emerald-400">
-                        {displaySavings != null ? `~${fmtMoney(displaySavings, 0)}` : "—"}
-                      </p>
-                    </div>
+              <div className="mt-8 rounded-2xl bg-white/[0.04] p-5 md:p-6">
+                <div className="grid gap-5 md:grid-cols-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-400">Cash fare</p>
+                    <p className="mt-2 text-2xl font-bold text-white">{fmtMoney(displayCashPrice, displayCashPrice != null && displayCashPrice % 1 !== 0 ? 2 : 0)}</p>
                   </div>
-
-                  <p className="mt-5 text-base leading-7 text-slate-300">{reasoningCopy}</p>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-400">Best award</p>
+                    <p className="mt-2 text-2xl font-bold text-white">
+                      {hasAward ? `${Number(displayPoints).toLocaleString()} pts` : "—"}
+                      {displayTaxes != null && displayTaxes > 0 && <span className="text-base font-semibold text-slate-300"> + {fmtMoney(displayTaxes, 0)}</span>}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-400">Value preserved</p>
+                    <p className="mt-2 text-2xl font-bold text-emerald-400">
+                      {displaySavings != null ? `~${fmtMoney(displaySavings, 0)}` : "—"}
+                    </p>
+                  </div>
                 </div>
+
+                <p className="mt-5 text-base leading-7 text-slate-300">{reasoningCopy}</p>
               </div>
-            )}
+            </div>
 
             {!publicPreview && (
               <>
@@ -728,21 +726,6 @@ export default function VerdictCard({
                   awardOptions={programOptions}
                   userPrograms={userPrograms}
                   travelers={travelers}
-                />
-                <HowToBookSection
-                  recommendation={recommendation}
-                  origin={origin}
-                  destination={destination}
-                  date={bestDate}
-                  returnDate={returnDate}
-                  travelers={travelers}
-                  cabin={cabin}
-                  programName={winner?.program ?? null}
-                  operatingAirline={operatingAirline}
-                  points={displayPoints}
-                  taxes={displayTaxes}
-                  seatsRemaining={bestOutbound?.remaining_seats ?? null}
-                  cashPrice={displayCashPrice}
                 />
                 {recommendation === "use_points" ? (
                   <MultiHandoffGrid
@@ -827,28 +810,10 @@ export default function VerdictCard({
   </div>
 )}
 
-            {/* Missing data */}
-            {verdict.missing_sources && verdict.missing_sources.length > 0 && (
-              <div className="mt-5 rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4">
-                <p className="text-[11px] uppercase tracking-[0.14em] text-amber-200">Missing data</p>
-                <p className="mt-1 text-sm leading-6 text-slate-200">
-                  We could not fully verify: {verdict.missing_sources.map((item) => item.replace(/_/g, " ")).join(", ")}.
-                </p>
-              </div>
-            )}
-
             {/* Footer controls — full app only */}
             {!publicPreview && (
               <div className="mt-8 border-t border-white/10 pt-5">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                  <button
-                    type="button"
-                    onClick={() => setReasoningOpen((v) => !v)}
-                    className="inline-flex items-center gap-2 text-base font-semibold text-slate-300 hover:text-white"
-                  >
-                    {reasoningOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                    {reasoningOpen ? "Hide reasoning" : "See how Zoe decided"}
-                  </button>
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-end">
                   <div className="flex flex-wrap items-center gap-3">
                     <button
                       onClick={handleSetAlert}

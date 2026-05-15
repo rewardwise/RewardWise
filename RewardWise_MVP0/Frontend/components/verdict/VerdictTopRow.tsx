@@ -12,7 +12,6 @@ type Confidence = "high" | "medium" | "low";
 type Props = {
   recommendationHeadline: string;
   confidence: Confidence;
-  showPartialDataBadge: boolean;
   speaking: boolean;
   onListenToggle: () => void;
   verdictId?: string | null;
@@ -34,7 +33,6 @@ function confidenceDot(confidence: Confidence) {
 export default function VerdictTopRow({
   recommendationHeadline,
   confidence,
-  showPartialDataBadge,
   speaking,
   onListenToggle,
   verdictId,
@@ -88,11 +86,6 @@ export default function VerdictTopRow({
             <span className={`h-2 w-2 rounded-full ${confidenceDot(confidence)}`} />
             {confidence} confidence
           </span>
-          {showPartialDataBadge && (
-            <span className="rounded-full border border-amber-400/20 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-200">
-              Partial data
-            </span>
-          )}
         </div>
       </div>
 
