@@ -40,3 +40,13 @@ export function isAbsurdBalance(program: string, value: number): boolean {
   if (Number.isNaN(value) || value <= 0) return false;
   return value > getCeilingFor(program);
 }
+
+// Postgres int4 column max for wallet balance fields. Saving values above this
+// triggers a DB integer overflow error. Used to reject implausibly large
+// balance entries BEFORE attempting save, so the user sees a clear inline
+// error instead of a Postgres "out of range" surface.
+export const INT4_MAX_BALANCE = 2_147_483_647;
+
+export function isOverflowBalance(balance: number): boolean {
+  return balance > INT4_MAX_BALANCE;
+}

@@ -68,7 +68,7 @@ vi.mock("@/utils/supabase/client", () => ({
 }));
 
 import WalletSetupPage from "../app/wallet-setup/page";
-import { isAbsurdBalance } from "../utils/walletSanity";
+import { isAbsurdBalance, isOverflowBalance } from "../utils/walletSanity";
 
 let container: HTMLDivElement;
 let root: Root;
@@ -317,5 +317,41 @@ describe("wallet input formatting: combined zero + absurd modal", () => {
     expect(modalButtons.length, "modal exposes exactly Cancel + Confirm, nothing else").toBe(2);
     expect(modal!.querySelector('[data-testid="wallet-confirm-cancel"]')).not.toBeNull();
     expect(modal!.querySelector('[data-testid="wallet-confirm-confirm"]')).not.toBeNull();
+  });
+});
+
+describe("wallet input formatting: int4 overflow guard", () => {
+  it("test_overflow_balance_rejected_with_clear_error", async () => {
+    await renderPage();
+    const input = container.querySelector<HTMLInputElement>(
+      '[data-testid="wallet-balance-input-card-chase"]'
+    )!;
+    await typeInto(input, "5000000000");
+
+    const save = container.querySelector<HTMLButtonElement>(
+      '[data-testid="wallet-save-card-chase"]'
+    )!;
+    await clickButton(save);
+
+    expect(
+      container.querySelector('[data-testid="wallet-confirmation-modal"]'),
+      "modal must NOT mount when balance overflows int4"
+    ).toBeNull();
+    expect(
+      mocks.updateCalls.length,
+      "supabase.update must NOT be called on overflow"
+    ).toBe(0);
+
+    const errorText = container.textContent ?? "";
+    expect(
+      errorText.includes("2,147,483,647"),
+      "inline error must surface the int4 ceiling so the user knows the limit"
+    ).toBe(true);
+  });
+
+  it("test_overflow_check_uses_int4_max_constant", () => {
+    expect(isOverflowBalance(2_147_483_647)).toBe(false);
+    expect(isOverflowBalance(2_147_483_648)).toBe(true);
+    expect(isOverflowBalance(20_000_000_000)).toBe(true);
   });
 });
