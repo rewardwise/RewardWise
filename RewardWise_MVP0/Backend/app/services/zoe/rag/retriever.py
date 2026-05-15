@@ -3,15 +3,12 @@ zoe/rag/retriever.py
 ─────────────────────
 Three-layer RAG retrieval pipeline.
 
-ARCHITECTURE CHANGE (v2):
-  RAG now fires for ALL intents, including trip_search.
-  New knowledge categories: route_intelligence, airline_policies,
-  program_rules, historical_patterns.
-
-Similarity thresholds:
-  nv-embed-v1 (NVIDIA) produces cosine similarity in the 0.08–0.35 range.
-  This is NOT the same scale as OpenAI ada-002 (0.7–0.95).
-  Thresholds are set accordingly.
+RAG fires for ALL intents. Full category list (2026-Q2):
+  airline_policies, program_rules, route_intelligence,
+  historical_patterns, booking_strategies, transfers,
+  credit_cards, airport_lounges, elite_status,
+  cabin_products, travel_protections, award_tools,
+  destinations
 """
 
 from __future__ import annotations
@@ -21,20 +18,24 @@ from app.services.zoe.rag import embedder_fixed
 
 
 # ── Intent → KB category mapping ─────────────────────────────────────────────
-#
-# Each intent retrieves from a specific set of KB categories.
-# Categories correspond to kb_articles.category values in Supabase.
-#
-# trip_search gets route + policy + history so Zoe can give intelligent
-# answers about routes, programs, and booking strategies — not collect form fields.
 
 _INTENT_CATEGORIES: dict[str, list[str]] = {
+
+    # User is asking about a flight route, booking strategy, fees, or award patterns.
+    # Needs: route data, policies, history, cabin intel, card strategy, protections.
     "trip_search": [
         "route_intelligence",
         "airline_policies",
         "historical_patterns",
         "booking_strategies",
+        "cabin_products",
+        "travel_protections",
+        "award_tools",
+        "program_rules",
     ],
+
+    # User clicked "Ask Zoe" on a verdict or is asking about redemption strategy.
+    # Needs everything — this is Zoe's most knowledge-intensive intent.
     "verdict_strategy": [
         "program_rules",
         "credit_cards",
@@ -42,26 +43,51 @@ _INTENT_CATEGORIES: dict[str, list[str]] = {
         "transfers",
         "airline_policies",
         "route_intelligence",
+        "cabin_products",
+        "travel_protections",
+        "award_tools",
+        "elite_status",
+        "historical_patterns",
     ],
+
+    # User is asking about a specific destination.
+    # Needs: destination guides, route intel, seasonal patterns, cabin products.
     "destination": [
         "destinations",
         "route_intelligence",
         "airline_policies",
+        "historical_patterns",
+        "cabin_products",
+        "booking_strategies",
+        "award_tools",
     ],
+
+    # User is asking about their wallet, cards, programs, or lounge access.
+    # Needs: card guides, program rules, lounge access, elite status, transfers.
     "wallet_support": [
         "credit_cards",
         "transfers",
         "program_rules",
+        "airport_lounges",
+        "elite_status",
+        "award_tools",
+        "booking_strategies",
     ],
+
+    # User is exploring ideas — "where should I go?", "what can I do with my points?"
+    # Needs: destinations, strategy guides, route intel, sweet spots.
     "exploring": [
         "destinations",
         "booking_strategies",
         "route_intelligence",
         "historical_patterns",
+        "cabin_products",
+        "award_tools",
+        "program_rules",
+        "credit_cards",
     ],
 }
 
-# ALL intents now retrieve — no exclusions
 _RAG_INTENTS = set(_INTENT_CATEGORIES.keys())
 
 
@@ -121,9 +147,9 @@ async def _search_kb_articles(
             "search_kb_articles",
             {
                 "query_embedding": embedding,
-                "categories": categories,
-                "match_count": top_k,
-                "min_similarity": 0.08,
+                "categories":      categories,
+                "match_count":     top_k,
+                "min_similarity":  0.08,
             },
         ).execute()
 
@@ -134,7 +160,7 @@ async def _search_kb_articles(
                 "title":       r["title"],
                 "category":    r["category"],
                 "content":     r["content"],
-                "valid_as_of": r.get("valid_as_of"),   # staleness citation
+                "valid_as_of": r.get("valid_as_of"),
                 "score":       round(float(r.get("similarity", 0)), 4),
             }
             for r in rows
@@ -145,7 +171,6 @@ async def _search_kb_articles(
 
 
 async def _kb_keyword_fallback(intent: str, top_k: int) -> list[dict]:
-    """Fallback: most recently published articles for this intent's categories."""
     categories = _INTENT_CATEGORIES.get(intent, [])
     if not categories:
         return []
