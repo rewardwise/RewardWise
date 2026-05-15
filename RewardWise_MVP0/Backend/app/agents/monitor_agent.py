@@ -31,6 +31,11 @@ from pathlib import Path
 from types import ModuleType
 from urllib.parse import urlparse
 
+from dotenv import load_dotenv
+
+load_dotenv()
+load_dotenv(".env")
+
 import httpx
 
 from app.agents.change_gate import (
