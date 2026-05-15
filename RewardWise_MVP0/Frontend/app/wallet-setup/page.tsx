@@ -22,7 +22,12 @@ import {
   formatNumberInputProps,
   validatePoints,
 } from "@/utils/format";
-import { getCeilingFor, isAbsurdBalance } from "@/utils/walletSanity";
+import {
+  getCeilingFor,
+  INT4_MAX_BALANCE,
+  isAbsurdBalance,
+  isOverflowBalance,
+} from "@/utils/walletSanity";
 
 type SavedCard = {
   id: string;
@@ -174,25 +179,20 @@ export default function WalletSetupPage() {
 
   // ── update a single card's balance ─────────────────────────────────────
   async function handleUpdateBalance(cardId: string) {
-    // [PR106-DEBUG] (a) Handler fires at all
-    console.log("[PR106-DEBUG] (a) handleUpdateBalance entry", {
-      cardId,
-      editBalancesValue: editBalances[cardId],
-      editBalancesValueType: typeof editBalances[cardId],
-      isNaN: Number.isNaN(editBalances[cardId]),
-      editBalancesKeys: Object.keys(editBalances),
-    });
-
     const newBal = editBalances[cardId];
-    if (newBal === undefined) {
-      console.log("[PR106-DEBUG] (a.x) EARLY RETURN: newBal === undefined");
-      return;
-    }
+    if (newBal === undefined) return;
 
     const validation = validatePoints(newBal);
     if (!validation.ok) {
-      console.log("[PR106-DEBUG] (a.y) EARLY RETURN: validatePoints failed", validation);
       setRowErrors((prev) => ({ ...prev, [cardId]: validation.reason || "Invalid value" }));
+      return;
+    }
+
+    if (isOverflowBalance(newBal)) {
+      setRowErrors((prev) => ({
+        ...prev,
+        [cardId]: `Value exceeds maximum of ${INT4_MAX_BALANCE.toLocaleString()} points. Please reduce the amount.`,
+      }));
       return;
     }
 
@@ -201,17 +201,7 @@ export default function WalletSetupPage() {
       const flags = collectSanityFlags([
         { cardName: card.card_name, program: card.program, value: newBal },
       ]);
-      // [PR106-DEBUG] (b) Gate fired, show what flags came back
-      console.log("[PR106-DEBUG] (b) collectSanityFlags returned", {
-        cardName: card.card_name,
-        program: card.program,
-        value: newBal,
-        flagsLength: flags.length,
-        flags,
-      });
       if (flags.length > 0) {
-        // [PR106-DEBUG] (c) About to call setConfirmation
-        console.log("[PR106-DEBUG] (c) calling setConfirmation with", { entries: flags });
         setConfirmation({
           entries: flags,
           onConfirm: () => {
@@ -220,13 +210,8 @@ export default function WalletSetupPage() {
         });
         return;
       }
-    } else {
-      console.log("[PR106-DEBUG] (b.x) BUG: no card found in savedCards for cardId", cardId, {
-        savedCardIds: savedCards.map((c) => c.id),
-      });
     }
 
-    console.log("[PR106-DEBUG] (d) FALLTHROUGH to proceedUpdateBalance — no flags, saving directly");
     await proceedUpdateBalance(cardId, newBal);
   }
 
@@ -277,7 +262,29 @@ export default function WalletSetupPage() {
       return;
     }
 
-    const flagRows = dirtyArray.flatMap((cardId) => {
+    const overflowErrors: Record<string, string> = {};
+    const survivingArray = dirtyArray.filter((cardId) => {
+      const newBal = editBalances[cardId];
+      if (newBal !== undefined && isOverflowBalance(newBal)) {
+        overflowErrors[cardId] = `Value exceeds maximum of ${INT4_MAX_BALANCE.toLocaleString()} points. Please reduce the amount.`;
+        return false;
+      }
+      return true;
+    });
+    if (Object.keys(overflowErrors).length > 0) {
+      setRowErrors((prev) => ({ ...prev, ...overflowErrors }));
+    }
+    if (survivingArray.length === 0) {
+      flash(
+        `${Object.keys(overflowErrors).length} row${
+          Object.keys(overflowErrors).length !== 1 ? "s" : ""
+        } exceed the maximum balance. Reduce and try again.`,
+        "error"
+      );
+      return;
+    }
+
+    const flagRows = survivingArray.flatMap((cardId) => {
       const card = savedCards.find((c) => c.id === cardId);
       const val = editBalances[cardId];
       if (!card || val === undefined) return [];
@@ -288,13 +295,13 @@ export default function WalletSetupPage() {
       setConfirmation({
         entries: flags,
         onConfirm: () => {
-          void proceedSaveAll(dirtyArray);
+          void proceedSaveAll(survivingArray);
         },
       });
       return;
     }
 
-    await proceedSaveAll(dirtyArray);
+    await proceedSaveAll(survivingArray);
   }
 
   async function proceedSaveAll(dirtyArray: string[]) {
@@ -388,9 +395,32 @@ export default function WalletSetupPage() {
   async function handleAddCards() {
     if (!user || selectedNewCards.length === 0) return;
 
-    const selectedData = selectedNewCards.map(
+    const allSelectedData = selectedNewCards.map(
       (id) => AVAILABLE_CARDS.find((c) => c.id === id)!
     );
+
+    const overflowNames: string[] = [];
+    const selectedData = allSelectedData.filter((card) => {
+      const raw = newBalances[card.id];
+      if (raw !== undefined && !Number.isNaN(raw) && isOverflowBalance(raw)) {
+        overflowNames.push(card.name);
+        return false;
+      }
+      return true;
+    });
+
+    if (overflowNames.length > 0) {
+      flash(
+        `${overflowNames.length} card${
+          overflowNames.length !== 1 ? "s" : ""
+        } exceed the maximum of ${INT4_MAX_BALANCE.toLocaleString()} points and were skipped: ${overflowNames.join(
+          ", "
+        )}`,
+        "error"
+      );
+    }
+
+    if (selectedData.length === 0) return;
 
     const flagRows = selectedData.map((card) => {
       const raw = newBalances[card.id];
