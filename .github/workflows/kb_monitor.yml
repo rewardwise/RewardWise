@@ -1,0 +1,79 @@
+on:
+  schedule:
+    # 9am UTC daily
+    - cron: '0 9 * * *'
+    # 9pm UTC daily
+    - cron: '0 21 * * *'
+  workflow_dispatch:
+    inputs:
+      cadence:
+        description: 'weekly / monthly / quarterly / all'
+        required: false
+        default: 'all'
+      dry_run:
+        description: 'true = no DB writes'
+        required: false
+        default: 'false'
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: RewardWise_MVP0/Backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Determine cadence
+        id: cadence
+        run: |
+          DAY=$(date +%d)
+          MONTH=$(date +%m)
+          DOW=$(date +%u)   # 1=Mon 4=Thu
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "cadence=${{ github.event.inputs.cadence }}" >> $GITHUB_OUTPUT
+
+          # Quarterly: 1st of Jan, Apr, Jul, Oct
+          elif [ "$DAY" = "01" ] && echo "01 04 07 10" | grep -qw "$MONTH"; then
+            echo "cadence=quarterly" >> $GITHUB_OUTPUT
+
+          # Monthly: 1st and 15th
+          elif [ "$DAY" = "01" ] || [ "$DAY" = "15" ]; then
+            echo "cadence=monthly" >> $GITHUB_OUTPUT
+
+          # Weekly: Monday and Thursday
+          elif [ "$DOW" = "1" ] || [ "$DOW" = "4" ]; then
+            echo "cadence=weekly" >> $GITHUB_OUTPUT
+
+          # Default: nothing (skip)
+          else
+            echo "cadence=skip" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run KB Monitor
+        if: steps.cadence.outputs.cadence != 'skip'
+        env:
+          GROQ_API_KEY:  ${{ secrets.GROQ_API_KEY }}
+          SUPABASE_URL:  ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY:  ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          CADENCE="${{ steps.cadence.outputs.cadence }}"
+          DRY_RUN="${{ github.event.inputs.dry_run }}"
+          FLAGS=""
+          [ "$DRY_RUN" = "true" ] && FLAGS="--dry-run"
+
+          if [ "$CADENCE" = "all" ]; then
+            python -m app.agents.monitor_agent $FLAGS
+          else
+            python -m app.agents.monitor_agent --cadence=$CADENCE $FLAGS
+          fi
