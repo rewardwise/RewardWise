@@ -19,10 +19,10 @@ import { useAuth } from "@/context/AuthProvider";
 import { AVAILABLE_CARDS } from "@/data/cards";
 import {
   fmtMoney,
-  formatPointsForDisplay,
-  parsePointsInput,
+  formatNumberInputProps,
   validatePoints,
 } from "@/utils/format";
+import { getCeilingFor, isAbsurdBalance } from "@/utils/walletSanity";
 
 type SavedCard = {
   id: string;
@@ -62,6 +62,20 @@ export default function WalletSetupPage() {
   const [selectedNewCards, setSelectedNewCards] = useState<string[]>([]);
   const [newBalances, setNewBalances] = useState<Record<string, number>>({});
   const [adding, setAdding] = useState(false);
+
+  // sanity-check confirmation modal: gates a pending save when one or more
+  // rows hit a zero balance or exceed the per-program plausibility ceiling.
+  type ConfirmationEntry = {
+    cardName: string;
+    program: string;
+    value: number;
+    kind: "zero" | "absurd";
+    ceiling?: number;
+  };
+  const [confirmation, setConfirmation] = useState<
+    | { entries: ConfirmationEntry[]; onConfirm: () => void }
+    | null
+  >(null);
 
   // derived totals
   const totalPoints = savedCards.reduce((s, c) => s + (c.points_balance || 0), 0);
@@ -134,6 +148,30 @@ export default function WalletSetupPage() {
     return () => window.removeEventListener("beforeunload", handler);
   }, [dirtyIds]);
 
+  useEffect(() => {
+    if (!confirmation) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setConfirmation(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [confirmation]);
+
+  function collectSanityFlags(
+    rows: { cardName: string; program: string; value: number }[]
+  ): ConfirmationEntry[] {
+    const entries: ConfirmationEntry[] = [];
+    for (const r of rows) {
+      if (Number.isNaN(r.value)) continue;
+      if (r.value === 0) {
+        entries.push({ ...r, kind: "zero" });
+      } else if (isAbsurdBalance(r.program, r.value)) {
+        entries.push({ ...r, kind: "absurd", ceiling: getCeilingFor(r.program) });
+      }
+    }
+    return entries;
+  }
+
   // ── update a single card's balance ─────────────────────────────────────
   async function handleUpdateBalance(cardId: string) {
     const newBal = editBalances[cardId];
@@ -145,6 +183,26 @@ export default function WalletSetupPage() {
       return;
     }
 
+    const card = savedCards.find((c) => c.id === cardId);
+    if (card) {
+      const flags = collectSanityFlags([
+        { cardName: card.card_name, program: card.program, value: newBal },
+      ]);
+      if (flags.length > 0) {
+        setConfirmation({
+          entries: flags,
+          onConfirm: () => {
+            void proceedUpdateBalance(cardId, newBal);
+          },
+        });
+        return;
+      }
+    }
+
+    await proceedUpdateBalance(cardId, newBal);
+  }
+
+  async function proceedUpdateBalance(cardId: string, newBal: number) {
     setSavingId(cardId);
     setError(null);
 
@@ -191,6 +249,27 @@ export default function WalletSetupPage() {
       return;
     }
 
+    const flagRows = dirtyArray.flatMap((cardId) => {
+      const card = savedCards.find((c) => c.id === cardId);
+      const val = editBalances[cardId];
+      if (!card || val === undefined) return [];
+      return [{ cardName: card.card_name, program: card.program, value: val }];
+    });
+    const flags = collectSanityFlags(flagRows);
+    if (flags.length > 0) {
+      setConfirmation({
+        entries: flags,
+        onConfirm: () => {
+          void proceedSaveAll(dirtyArray);
+        },
+      });
+      return;
+    }
+
+    await proceedSaveAll(dirtyArray);
+  }
+
+  async function proceedSaveAll(dirtyArray: string[]) {
     setSavingAll(true);
     setError(null);
 
@@ -280,12 +359,37 @@ export default function WalletSetupPage() {
   // ── add new cards ───────────────────────────────────────────────────────
   async function handleAddCards() {
     if (!user || selectedNewCards.length === 0) return;
-    setAdding(true);
-    setError(null);
 
     const selectedData = selectedNewCards.map(
       (id) => AVAILABLE_CARDS.find((c) => c.id === id)!
     );
+
+    const flagRows = selectedData.map((card) => {
+      const raw = newBalances[card.id];
+      const val = raw === undefined || Number.isNaN(raw) ? 0 : raw;
+      return { cardName: card.name, program: card.program, value: val };
+    });
+    const flags = collectSanityFlags(flagRows);
+    if (flags.length > 0) {
+      setConfirmation({
+        entries: flags,
+        onConfirm: () => {
+          void proceedAddCards(selectedData);
+        },
+      });
+      return;
+    }
+
+    await proceedAddCards(selectedData);
+  }
+
+  async function proceedAddCards(
+    selectedData: (typeof AVAILABLE_CARDS)[number][]
+  ) {
+    if (!user) return;
+    setAdding(true);
+    setError(null);
+
     const programNames = [...new Set(selectedData.map((c) => c.program))];
 
     const { data: programs, error: programError } = await supabase
@@ -421,6 +525,7 @@ export default function WalletSetupPage() {
           {viewMode === "portfolio" && (
             <div className="flex items-center gap-2">
               <button
+                data-testid="wallet-save-all"
                 onClick={handleSaveAll}
                 disabled={dirtyIds.size === 0 || savingAll}
                 className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-700 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-all"
@@ -500,45 +605,47 @@ export default function WalletSetupPage() {
 
                   {/* Inline balance editor */}
                   <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={
-                        focusedId === card.id
-                          ? Number.isNaN(editBalances[card.id])
-                            ? ""
-                            : String(editBalances[card.id] ?? card.points_balance)
-                          : formatPointsForDisplay(
-                              editBalances[card.id] ?? card.points_balance
-                            )
-                      }
-                      onFocus={() => setFocusedId(card.id)}
-                      onBlur={() => {
-                        setFocusedId(null);
-                        const current = editBalances[card.id];
-                        if (current === undefined || Number.isNaN(current)) {
-                          setEditBalances((prev) => {
-                            const next = { ...prev };
-                            delete next[card.id];
-                            return next;
-                          });
-                          clearDirty(card.id);
-                          clearRowError(card.id);
-                        }
-                      }}
-                      onChange={(e) => {
-                        const parsed = parsePointsInput(e.target.value);
-                        setEditBalances((prev) => ({ ...prev, [card.id]: parsed }));
-                        markDirty(card.id, parsed, card.points_balance);
-                        clearRowError(card.id);
-                      }}
-                      className={`min-w-0 flex-1 bg-gray-900 border rounded-lg py-2 px-3 text-white text-sm focus:outline-none focus:ring-2 ${
-                        rowErrors[card.id]
-                          ? "border-red-500 focus:ring-red-500"
-                          : "border-gray-700 focus:ring-emerald-500"
-                      }`}
-                      placeholder="Points balance"
-                    />
+                    {(() => {
+                      const current = editBalances[card.id] ?? card.points_balance;
+                      const { value: displayValue, onChange: liveOnChange } =
+                        formatNumberInputProps({
+                          value: current,
+                          onValueChange: (parsed) => {
+                            setEditBalances((prev) => ({ ...prev, [card.id]: parsed }));
+                            markDirty(card.id, parsed, card.points_balance);
+                            clearRowError(card.id);
+                          },
+                        });
+                      return (
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          data-testid={`wallet-balance-input-${card.id}`}
+                          value={displayValue}
+                          onFocus={() => setFocusedId(card.id)}
+                          onBlur={() => {
+                            setFocusedId(null);
+                            const v = editBalances[card.id];
+                            if (v === undefined || Number.isNaN(v)) {
+                              setEditBalances((prev) => {
+                                const next = { ...prev };
+                                delete next[card.id];
+                                return next;
+                              });
+                              clearDirty(card.id);
+                              clearRowError(card.id);
+                            }
+                          }}
+                          onChange={liveOnChange}
+                          className={`min-w-0 flex-1 bg-gray-900 border rounded-lg py-2 px-3 text-white text-sm focus:outline-none focus:ring-2 ${
+                            rowErrors[card.id]
+                              ? "border-red-500 focus:ring-red-500"
+                              : "border-gray-700 focus:ring-emerald-500"
+                          }`}
+                          placeholder="Points balance"
+                        />
+                      );
+                    })()}
                     <span className="text-emerald-400 text-xs font-medium bg-emerald-500/10 px-2 py-2 rounded whitespace-nowrap">
                       ~${Math.round(
                         (Number.isNaN(editBalances[card.id])
@@ -547,6 +654,7 @@ export default function WalletSetupPage() {
                       ).toLocaleString()}
                     </span>
                     <button
+                      data-testid={`wallet-save-${card.id}`}
                       onClick={() => handleUpdateBalance(card.id)}
                       disabled={savingId === card.id}
                       className="bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700 disabled:opacity-50 text-white text-xs font-semibold px-3 py-2 rounded-lg flex items-center gap-1.5 whitespace-nowrap transition-all"
@@ -701,39 +809,40 @@ export default function WalletSetupPage() {
                           className="mt-3 flex items-center gap-2"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            value={
-                              focusedId === `add:${card.id}`
-                                ? newBalances[card.id] === undefined ||
-                                  Number.isNaN(newBalances[card.id])
-                                  ? ""
-                                  : String(newBalances[card.id])
-                                : newBalances[card.id] === undefined ||
-                                  Number.isNaN(newBalances[card.id])
-                                ? ""
-                                : formatPointsForDisplay(newBalances[card.id])
-                            }
-                            onFocus={() => setFocusedId(`add:${card.id}`)}
-                            onBlur={() => {
-                              setFocusedId(null);
-                              const current = newBalances[card.id];
-                              if (current !== undefined && Number.isNaN(current)) {
-                                setNewBalances((prev) => {
-                                  const next = { ...prev };
-                                  delete next[card.id];
-                                  return next;
-                                });
-                              }
-                            }}
-                            onChange={(e) => {
-                              const parsed = parsePointsInput(e.target.value);
-                              setNewBalances((prev) => ({ ...prev, [card.id]: parsed }));
-                            }}
-                            placeholder="Points balance"
-                            className="min-w-0 flex-1 bg-gray-900 border border-gray-700 rounded py-2 px-3 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                          />
+                          {(() => {
+                            const { value: displayValue, onChange: liveOnChange } =
+                              formatNumberInputProps({
+                                value: newBalances[card.id],
+                                onValueChange: (parsed) =>
+                                  setNewBalances((prev) => ({
+                                    ...prev,
+                                    [card.id]: parsed,
+                                  })),
+                              });
+                            return (
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                data-testid={`wallet-add-balance-input-${card.id}`}
+                                value={displayValue}
+                                onFocus={() => setFocusedId(`add:${card.id}`)}
+                                onBlur={() => {
+                                  setFocusedId(null);
+                                  const v = newBalances[card.id];
+                                  if (v !== undefined && Number.isNaN(v)) {
+                                    setNewBalances((prev) => {
+                                      const next = { ...prev };
+                                      delete next[card.id];
+                                      return next;
+                                    });
+                                  }
+                                }}
+                                onChange={liveOnChange}
+                                placeholder="Points balance"
+                                className="min-w-0 flex-1 bg-gray-900 border border-gray-700 rounded py-2 px-3 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                              />
+                            );
+                          })()}
                           {bal > 0 && (
                             <span className="text-emerald-400 text-xs font-medium bg-emerald-500/10 px-2 py-1 rounded flex-shrink-0">
                               ~{fmtMoney(bal * 0.015)}
@@ -776,6 +885,83 @@ export default function WalletSetupPage() {
                   ? `Add ${selectedNewCards.length} to Wallet`
                   : "Add to Wallet"}
               </button>
+            </div>
+          </div>
+        )}
+
+        {confirmation && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            data-testid="wallet-confirmation-modal"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+            onClick={() => setConfirmation(null)}
+          >
+            <div
+              className="w-full max-w-md bg-gray-900 border border-white/10 rounded-2xl p-6 space-y-4 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-white text-base font-semibold">
+                Confirm balances
+              </h3>
+
+              {confirmation.entries.some((x) => x.kind === "zero") && (
+                <div data-testid="wallet-confirm-zero-section" className="space-y-2">
+                  <p className="text-amber-300 text-xs font-semibold uppercase tracking-wide">
+                    Zero balance
+                  </p>
+                  <ul className="text-sm text-gray-300 space-y-1">
+                    {confirmation.entries
+                      .filter((x) => x.kind === "zero")
+                      .map((x) => (
+                        <li key={`zero-${x.cardName}-${x.program}`}>
+                          You entered 0 points for {x.program} ({x.cardName}). Are
+                          you sure?
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              )}
+
+              {confirmation.entries.some((x) => x.kind === "absurd") && (
+                <div data-testid="wallet-confirm-absurd-section" className="space-y-2">
+                  <p className="text-amber-300 text-xs font-semibold uppercase tracking-wide">
+                    Higher than typical
+                  </p>
+                  <ul className="text-sm text-gray-300 space-y-1">
+                    {confirmation.entries
+                      .filter((x) => x.kind === "absurd")
+                      .map((x) => (
+                        <li key={`absurd-${x.cardName}-${x.program}`}>
+                          {x.cardName} ({x.program}):{" "}
+                          {x.value.toLocaleString()} pts is higher than typical
+                          balances (~{x.ceiling?.toLocaleString()}). Confirm?
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              )}
+
+              <div className="flex gap-3 justify-end pt-2">
+                <button
+                  data-testid="wallet-confirm-cancel"
+                  onClick={() => setConfirmation(null)}
+                  className="border border-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-800/50 text-sm transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  data-testid="wallet-confirm-confirm"
+                  onClick={() => {
+                    const fn = confirmation.onConfirm;
+                    setConfirmation(null);
+                    fn();
+                  }}
+                  className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold px-4 py-2 rounded-lg text-sm transition-all"
+                >
+                  Confirm
+                </button>
+              </div>
             </div>
           </div>
         )}
