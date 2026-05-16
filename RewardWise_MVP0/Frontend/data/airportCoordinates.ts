@@ -45373,5 +45373,11 @@ export const AIRPORT_COORDINATES: Record<string, AirportCoordinate> = {
 
 export function getAirportCoordinate(iata?: string | null): AirportCoordinate | undefined {
   if (!iata) return undefined;
-  return AIRPORT_COORDINATES[iata.trim().toUpperCase()];
+  const normalized = iata.trim().toUpperCase();
+  if (!normalized.includes(",")) return AIRPORT_COORDINATES[normalized];
+  for (const code of normalized.split(",")) {
+    const hit = AIRPORT_COORDINATES[code.trim()];
+    if (hit) return hit;
+  }
+  return undefined;
 }
