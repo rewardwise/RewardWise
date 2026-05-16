@@ -80,7 +80,7 @@ const REASONING_COPY =
 
 const baseVerdict = {
   verdict: "Use points",
-  recommendation: "use_points" as const,
+  recommendation: "use_points" as "use_points" | "pay_cash" | "wait",
   winner: {
     program: "United",
     points: 35000,
@@ -153,5 +153,72 @@ describe("VerdictCard — surface cleanup contract", () => {
     expect(container.textContent).not.toContain("How to book");
     // And no stub should be present since the import was removed from VerdictCard.
     expect(container.querySelector('[data-testid="how-to-book-stub"]')).toBeNull();
+  });
+});
+
+// Bug B (ClickUp 86b9vjxgb): the Use Points verdict headline used to render
+// "Use Points · Save $X" using estimated_savings, which is unreliable while
+// Ankur's P0 cash-benchmark inflation (86b9twp77) is open. The headline now
+// anchors on the cash fare baseline instead, formatted as
+// "Use Points · Cash fare $X".
+describe("VerdictCard — Use Points headline shows cash fare baseline (Bug B)", () => {
+  // Query the headline <p> directly inside the VerdictTopRow stub, not the
+  // whole stub div, so adjacent button labels (Listen / Helpful / Needs work)
+  // do not bleed into the headline assertion.
+  function headlineText(): string {
+    const topRow = container.querySelector('[data-testid="verdict-top-row"]');
+    const headline = topRow?.querySelector("p");
+    return headline?.textContent?.trim() ?? "";
+  }
+
+  it("use_points headline includes the Cash fare label and the cash baseline amount", () => {
+    renderCard({ metrics: { cash_price: 737, points_cost: 35000, taxes: 5.6, estimated_savings: 200 } });
+    const headline = headlineText();
+    expect(headline).toContain("Use Points");
+    expect(headline).toContain("Cash fare $737");
+    // The old "Save $X" framing must be gone from the headline entirely.
+    // Stricter than "Save $" so any "Save" anywhere in the headline fails.
+    expect(headline).not.toContain("Save");
+  });
+
+  it("pay_cash headline is unchanged (no Cash fare label on this branch)", () => {
+    renderCard({
+      recommendation: "pay_cash" as const,
+      pay_cash: true,
+      metrics: { cash_price: 169, points_cost: 35000, taxes: 5.6, estimated_savings: 200 },
+    });
+    const headline = headlineText();
+    expect(headline).toContain("Pay Cash");
+    expect(headline).toContain("$169");
+    // Pay Cash branch deliberately keeps the original framing.
+    expect(headline).not.toContain("Cash fare");
+  });
+
+  it("use_points headline renders bare when cash price is missing (no null/undefined leak)", () => {
+    // Null out every source of displayCashPrice in production:
+    //   metrics.cash_price ?? cashPrice ?? bestCashFlight?.price ?? null
+    // 1. metrics.cash_price = null (explicit)
+    // 2. cashPrice prop = undefined (omitted)
+    // 3. flights = [] (omitted, prop default at VerdictCard.tsx:314)
+    act(() => {
+      root.render(
+        <VerdictCard
+          verdict={{
+            ...baseVerdict,
+            metrics: { cash_price: null as unknown as number, points_cost: 35000, taxes: 5.6 },
+          }}
+          cashPrice={null}
+          origin="SFO"
+          destination="NRT"
+          departDate="2026-06-15"
+          travelers={1}
+        />
+      );
+    });
+    const headline = headlineText();
+    // Headline is literally "Use Points" with nothing after it.
+    expect(headline).toBe("Use Points");
+    expect(headline).not.toMatch(/null|undefined|NaN/);
+    expect(headline).not.toContain("Cash fare");
   });
 });
