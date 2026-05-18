@@ -233,3 +233,8 @@ RewardWise_MVP0/Backend/app/agents/*snapshot*.json
 # Optional local editor settings
 .vscode/
 .github/copilot-instructions.md
+
+# Re-include Next.js Frontend lib/ (the Python-template `lib/` rule on line 17
+# is for virtualenvs and unintentionally caught the frontend code dir).
+!RewardWise_MVP0/Frontend/lib/
+!RewardWise_MVP0/Frontend/lib/**

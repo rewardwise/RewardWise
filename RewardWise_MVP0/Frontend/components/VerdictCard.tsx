@@ -163,6 +163,8 @@ interface VerdictCardProps {
   departDateEnd?: string | null;
   winningDate?: string | null;
   returnDate?: string | null;
+  returnDateEnd?: string | null;
+  winningReturnDate?: string | null;
   cabin?: string;
   travelers: number;
   isRoundtrip?: boolean;
@@ -306,6 +308,8 @@ export default function VerdictCard({
   departDateEnd = null,
   winningDate = null,
   returnDate,
+  returnDateEnd = null,
+  winningReturnDate = null,
   cabin,
   travelers,
   isRoundtrip,
@@ -366,12 +370,24 @@ export default function VerdictCard({
     return verdict.verdict_label ?? "Wait";
   })();
 
-  const isFlexibleSearch = Boolean(departDateEnd && departDateEnd !== departDate);
-  const searchedRangeCopy = isFlexibleSearch
+  const isOutboundFlex = Boolean(departDateEnd && departDateEnd !== departDate);
+  const isReturnFlex = Boolean(
+    returnDate && returnDateEnd && returnDateEnd !== returnDate,
+  );
+  const bothLegsFlex = isOutboundFlex && isReturnFlex;
+  const outboundLabel = bothLegsFlex ? "Outbound: searched" : "Searched";
+  const outboundCopy = isOutboundFlex
     ? winningDate && winningDate !== departDate
-      ? `Searched ${formatShortDate(departDate)} to ${formatShortDate(departDateEnd!)}, best is ${formatShortDate(winningDate)}.`
-      : `Searched ${formatShortDate(departDate)} to ${formatShortDate(departDateEnd!)}.`
+      ? `${outboundLabel} ${formatShortDate(departDate)} to ${formatShortDate(departDateEnd!)}, best is ${formatShortDate(winningDate)}.`
+      : `${outboundLabel} ${formatShortDate(departDate)} to ${formatShortDate(departDateEnd!)}.`
     : null;
+  const returnCopy = isReturnFlex
+    ? winningReturnDate && winningReturnDate !== returnDate
+      ? `Return: searched ${formatShortDate(returnDate!)} to ${formatShortDate(returnDateEnd!)}, best is ${formatShortDate(winningReturnDate)}.`
+      : `Return: searched ${formatShortDate(returnDate!)} to ${formatShortDate(returnDateEnd!)}.`
+    : null;
+  const searchedRangeCopy =
+    [outboundCopy, returnCopy].filter(Boolean).join(" ") || null;
 
   const outboundLeg: FlightLeg | null = buildOutboundLeg({
     recommendation,

@@ -40,9 +40,16 @@ def find_search_verdict_in_db(
     supabase: Client,
     params: SearchParams,
 ) -> SearchDbLookupResult | None:
-    origin, destination, departure, departure_date_end, return_date, passengers, cabin = (
-        normalize_search_params(params)
-    )
+    (
+        origin,
+        destination,
+        departure,
+        departure_date_end,
+        return_date,
+        return_date_end,
+        passengers,
+        cabin,
+    ) = normalize_search_params(params)
 
     since_ms = (time.time() * 1000) - SEARCH_DB_CACHE["MAX_AGE_MS"]
     since_iso = datetime.fromtimestamp(since_ms / 1000, tz=timezone.utc).isoformat()
@@ -84,6 +91,7 @@ def find_search_verdict_in_db(
             and normalize_date(row.get("departure_date") or "") == departure
             and normalize_date(row.get("departure_date_end") or "") == departure_date_end
             and normalize_date(row.get("return_date") or "") == return_date
+            and normalize_date(row.get("return_date_end") or "") == return_date_end
             and int(row.get("passengers") or 0) == passengers
             and normalize_cabin(row.get("cabin")) == cabin
         ):
