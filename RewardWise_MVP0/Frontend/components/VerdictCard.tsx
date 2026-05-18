@@ -354,8 +354,8 @@ export default function VerdictCard({
 
   const recommendationHeadline = (() => {
     if (recommendation === "use_points") {
-      return displaySavings != null
-        ? `Use Points · Save ${fmtMoney(Math.round(displaySavings))}`
+      return displayCashPrice != null
+        ? `Use Points · Cash fare ${fmtMoney(displayCashPrice, displayCashPrice % 1 === 0 ? 0 : 2)}`
         : "Use Points";
     }
     if (recommendation === "pay_cash") {
