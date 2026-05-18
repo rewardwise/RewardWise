@@ -30,21 +30,35 @@ def normalize_cabin(cabin: str | None) -> str:
     return normalize(cabin or "economy") or "ECONOMY"
 
 
-def normalize_search_params(params: SearchParams) -> tuple[str, str, str, str, str, int, str]:
-    """Return (origin, destination, departure, departure_date_end, return_date, passengers, cabin)
-    normalized for cache-key building and DB matching.
+def normalize_search_params(
+    params: SearchParams,
+) -> tuple[str, str, str, str, str, str, int, str]:
+    """Return (origin, destination, departure, departure_date_end, return_date,
+    return_date_end, passengers, cabin) normalized for cache-key building and
+    DB matching.
 
-    departure_date_end is empty string for single-date searches; otherwise the
-    end of a flexible-date window. Position matters: callers destructure by index.
+    departure_date_end / return_date_end are empty string when that leg is not
+    flexible; otherwise the end of a flexible-date window. Position matters:
+    callers destructure by index.
     """
     origin = normalize(params.get("origin") or "")
     destination = normalize(params.get("destination") or "")
     departure = normalize_date(params.get("departure_date") or "")
     departure_date_end = normalize_date(params.get("departure_date_end") or "")
     return_date = normalize_date(params.get("return_date") or "")
+    return_date_end = normalize_date(params.get("return_date_end") or "")
     passengers = max(1, int(params.get("passengers") or 1))
     cabin = normalize_cabin(params.get("cabin"))
-    return origin, destination, departure, departure_date_end, return_date, passengers, cabin
+    return (
+        origin,
+        destination,
+        departure,
+        departure_date_end,
+        return_date,
+        return_date_end,
+        passengers,
+        cabin,
+    )
 
 
 def to_departure_ms(d: str | int) -> int:

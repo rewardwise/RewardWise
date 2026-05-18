@@ -35,6 +35,7 @@ class SearchParams(BaseModel):
     cabin: CabinClass = CabinClass.economy
     travelers: int = 1
     return_date: Optional[str] = None
+    return_date_end: Optional[str] = None
 
     @field_validator("origin", "destination")
     @classmethod
@@ -47,7 +48,7 @@ class SearchParams(BaseModel):
             )
         return code
 
-    @field_validator("date", "date_end", "return_date", mode="before")
+    @field_validator("date", "date_end", "return_date", "return_date_end", mode="before")
     @classmethod
     def validate_date_format(cls, v: Optional[str]) -> Optional[str]:
         if v is None:
@@ -87,6 +88,13 @@ class SearchParams(BaseModel):
             ret = datetime.strptime(self.return_date, "%Y-%m-%d").date()
             if ret <= dep:
                 raise ValueError("return_date must be after departure date")
+        if self.return_date_end:
+            if not self.return_date:
+                raise ValueError("return_date_end requires return_date")
+            ret = datetime.strptime(self.return_date, "%Y-%m-%d").date()
+            ret_end = datetime.strptime(self.return_date_end, "%Y-%m-%d").date()
+            if ret_end < ret:
+                raise ValueError("return_date_end must be on or after return_date")
 
 
 # ---------------------------------------------------------------------------

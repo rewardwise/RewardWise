@@ -6,6 +6,7 @@ from app.api.validators import SearchParams, limiter  # RW-047
 from app.cache import find_search_verdict_in_db, get_search_memory_cache
 from app.cache.types import SearchParams as CacheSearchParams
 from app.db import get_server_supabase, insert_one, insert_one_return_id
+from app.services.pair_ranker import rank_pairs
 from app.services.pricing_service import get_cash_price
 from app.services.seats_service import search_award_availability
 from app.services.verdict_service import generate_verdict  # RW-VerdictGenerator
@@ -23,6 +24,7 @@ def get_search_params(
     travelers: int = Query(default=1),
     return_date: Optional[str] = Query(default=None),
     date_end: Optional[str] = Query(default=None),
+    return_date_end: Optional[str] = Query(default=None),
 ) -> SearchParams:
     """Dependency that validates and returns typed search params (RW-047)."""
     try:
@@ -34,6 +36,7 @@ def get_search_params(
             cabin=cabin,
             travelers=travelers,
             return_date=return_date,
+            return_date_end=return_date_end,
         )
     except Exception as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -81,6 +84,7 @@ async def search(
     cabin = params.cabin.value
     travelers = params.travelers
     return_date = params.return_date
+    return_date_end = params.return_date_end
 
     # --- Auth: identify the user ---
     auth_header = request.headers.get("authorization")
@@ -125,6 +129,7 @@ async def search(
         "departure_date": departure_date,
         "departure_date_end": departure_date_end,
         "return_date": return_date,
+        "return_date_end": return_date_end,
         "passengers": travelers,
         "cabin": cabin,
     }
@@ -173,7 +178,13 @@ async def search(
     async def return_task():
         if not return_date:
             return []
-        raw = await search_award_availability(destination, origin, return_date, cabin)
+        raw = await search_award_availability(
+            destination,
+            origin,
+            return_date,
+            cabin,
+            end_date=return_date_end,
+        )
         return [a for a in raw if a.get("remaining_seats", 0) >= travelers]
 
     outbound_awards, cash_data, return_awards = await asyncio.gather(
@@ -212,7 +223,6 @@ async def search(
         })
     results.sort(key=lambda x: x["cpp"] or 0, reverse=True)
     award_options = results
-    winning_date = award_options[0].get("date") if award_options else None
 
     # --- Build return award options with CPP ---
     return_results = []
@@ -233,12 +243,33 @@ async def search(
             "remaining_seats": award.get("remaining_seats"),
             "direct": award.get("direct", False),
             "airlines": award.get("airlines", ""),
+            "date": award.get("date"),
             "trip_ids": award.get("trip_ids", []),
             "trips": award.get("trips", []),
             "source": award.get("source"),
         })
     return_results.sort(key=lambda x: x["cpp"] or 0, reverse=True)
     return_award_options = return_results
+
+    # --- Pair-rank when both legs are flexible ---
+    winning_date = award_options[0].get("date") if award_options else None
+    winning_return_date = (
+        return_award_options[0].get("date") if return_award_options else None
+    )
+    if (
+        departure_date_end
+        and return_date_end
+        and award_options
+        and return_award_options
+    ):
+        best_out, best_ret = rank_pairs(award_options, return_award_options)
+        if best_out is not None and best_ret is not None:
+            award_options = [best_out] + [a for a in award_options if a is not best_out]
+            return_award_options = [best_ret] + [
+                r for r in return_award_options if r is not best_ret
+            ]
+            winning_date = best_out.get("date")
+            winning_return_date = best_ret.get("date")
 
     # --- AI Verdict ---
     verdict_details: dict
@@ -316,6 +347,8 @@ async def search(
         "depart_date_end": departure_date_end,
         "winning_date": winning_date,
         "return_date": return_date,
+        "return_date_end": return_date_end,
+        "winning_return_date": winning_return_date,
         "cabin": cabin,
         "travelers": travelers,
         "is_roundtrip": return_date is not None,

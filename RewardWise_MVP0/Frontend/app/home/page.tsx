@@ -13,6 +13,7 @@ import SearchLoadingExperience from "@/components/SearchLoadingExperience";
 import AirportSearch from "@/components/AirportSearch";
 import ZoeChat from "@/components/zoe/ZoeChat";
 import { trackAnalyticsEvent } from "@/utils/analytics/client";
+import { buildSearchQueryParams } from "@/lib/searchQuery";
 import {
 	Calendar,
 	Plane,
@@ -111,6 +112,8 @@ interface SearchResult {
 	travelers: number;
 	is_roundtrip: boolean;
 	return_date: string | null;
+	return_date_end?: string | null;
+	winning_return_date?: string | null;
 	cash_price: number | null;
 	price_level: string | null;
 	typical_price_range: [number, number] | null;
@@ -132,19 +135,6 @@ function formatDuration(mins: number) {
 	const h = Math.floor(mins / 60);
 	const m = mins % 60;
 	return `${h}h ${m}m`;
-}
-
-function shiftIsoDate(iso: string, days: number): string {
-	const [y, m, d] = iso.split("-").map(Number);
-	if (!y || !m || !d) return iso;
-	const dt = new Date(Date.UTC(y, m - 1, d));
-	dt.setUTCDate(dt.getUTCDate() + days);
-	return dt.toISOString().slice(0, 10);
-}
-
-function clampToToday(iso: string): string {
-	const today = new Date().toISOString().slice(0, 10);
-	return iso < today ? today : iso;
 }
 
 // ─── CASH FLIGHT CARD ─────────────────────────────────────────────────────────
@@ -397,25 +387,16 @@ export default function HomePage() {
 		});
 
 		try {
-			const isFlexible = dateMode === "flexible" && Boolean(departDate);
-			const flexibleStart = isFlexible
-				? clampToToday(shiftIsoDate(departDate, -3))
-				: departDate;
-			const flexibleEnd = isFlexible ? shiftIsoDate(departDate, 3) : null;
-
-			const params = new URLSearchParams({
+			const params = buildSearchQueryParams({
 				origin,
 				destination,
-				date: flexibleStart,
+				departDate,
+				dateMode: dateMode as "exact" | "flexible",
+				returnDate,
+				tripType,
 				cabin,
-				travelers: travelers.toString(),
+				travelers,
 			});
-			if (flexibleEnd) {
-				params.append("date_end", flexibleEnd);
-			}
-			if (tripType === "roundtrip" && returnDate) {
-				params.append("return_date", returnDate);
-			}
 
 			const API_URL = process.env.NEXT_PUBLIC_API_URL;
 			if (!session?.access_token) {
@@ -708,6 +689,8 @@ export default function HomePage() {
 									departDateEnd={results.depart_date_end ?? null}
 									winningDate={results.winning_date ?? null}
 									returnDate={results.return_date}
+									returnDateEnd={results.return_date_end ?? null}
+									winningReturnDate={results.winning_return_date ?? null}
 									cabin={results.cabin}
 									travelers={numTravelers}
 									isRoundtrip={results.is_roundtrip}
