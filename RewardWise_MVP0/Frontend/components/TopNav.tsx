@@ -144,9 +144,10 @@ export default function TopNav() {
 							onClick={() => setDrawerOpen(true)}
 							aria-label="Open navigation menu"
 							aria-expanded={drawerOpen}
-							className="sm:hidden inline-flex items-center justify-center min-h-11 min-w-11 p-2 -ml-2 text-gray-300 hover:text-white rounded-lg"
+							className="sm:hidden inline-flex flex-col items-center justify-center min-h-11 min-w-11 p-2 -ml-2 text-gray-300 hover:text-white rounded-lg"
 						>
 							<Menu className="w-5 h-5" />
+							<span className="text-[10px] leading-none mt-0.5">Menu</span>
 						</button>
 
 						<div
@@ -183,10 +184,11 @@ export default function TopNav() {
 						<div className="relative">
 							<button
 								onClick={() => setShowAlerts(!showAlerts)}
-								aria-label="Notifications"
-								className="relative inline-flex items-center justify-center min-h-11 min-w-11 px-3 py-2.5 text-gray-400 hover:text-white"
+								aria-label="Alerts"
+								className="relative inline-flex flex-col items-center justify-center min-h-11 min-w-11 px-3 py-2.5 text-gray-400 hover:text-white"
 							>
 								<Bell className="w-4 h-4" />
+								<span className="sm:hidden text-[10px] leading-none mt-0.5">Alerts</span>
 
 								{totalCount > 0 && (
 									<span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-[10px] text-white flex items-center justify-center">
