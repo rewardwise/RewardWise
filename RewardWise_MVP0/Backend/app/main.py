@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-from app.api import health, wallet, search, verdict
+from app.api import health, wallet, search, verdict, newsletter
 from app.api.zoe import router as zoe_router
 from app.api.validators import limiter
 from app.admin.zoe_eval_routes import router as zoe_admin_router
@@ -36,6 +36,7 @@ app.include_router(health.router,     prefix="/api")
 app.include_router(wallet.router,     prefix="/api")
 app.include_router(search.router,     prefix="/api")
 app.include_router(verdict.router,    prefix="/api")
+app.include_router(newsletter.router, prefix="/api")
 app.include_router(zoe_router)
 app.include_router(zoe_admin_router)
 app.include_router(zoe_stt_router)
