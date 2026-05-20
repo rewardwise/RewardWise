@@ -2,9 +2,10 @@
 
 Migrations are auto-applied to production on merge to `main` by
 `.github/workflows/supabase-migrations.yml`. This doc covers the
-file layout, how to add a migration, the one-time backfill that
-seeds the existing 6 migrations, and the additive-only constraint
-that the workflow does not enforce mechanically.
+file layout, how to add a migration, the 2026-05-19 reconciliation
+event (one-time, do not repeat), the forward process, and the
+additive-only constraint that the workflow does not enforce
+mechanically.
 
 ## File layout
 
@@ -41,25 +42,46 @@ Set under `Settings -> Secrets and variables -> Actions`:
 | `SUPABASE_PROJECT_REF` | 20-char ref in the project URL `https://<ref>.supabase.co` |
 | `SUPABASE_DB_PASSWORD` | Project -> Database -> Connection string (password set at project creation) |
 
-## One-time backfill (run once after this PR merges)
+## 2026-05-19 reconciliation event
 
-The 6 pre-existing migrations were created before the workflow
-existed and are already applied in production. The backfill script
-records them as applied in the migrations tracking table so the
-workflow's `db push` does not try to re-run them.
+PR #116 introduced the auto-apply workflow. On first push to main
+it surfaced 10 migration timestamps in the production
+`schema_migrations` ledger that had no corresponding files in the
+repo (applied via the Supabase dashboard SQL editor between
+2026-05-06 and 2026-05-15). Reconciled by:
+
+1. `supabase migration repair --status reverted` on the 10 timestamps
+   (drops their ledger entries; the schema they created stays intact
+   in production).
+2. `supabase migration repair --status applied` on the 6 local
+   timestamps (affirms ledger alignment with files in the repo).
+3. `supabase db dump --linked --schema public` → captured the
+   cumulative post-reconciliation schema as
+   `supabase/snapshots/2026-05-19_post_reconciliation.sql`.
+
+The 6 captured migration files are not self-contained -- they
+depend on objects created by the 10 dropped dashboard migrations
+(verified by shadow-DB replay failure during `supabase db pull`).
+For local dev setup, apply the snapshot first:
 
 ```bash
-brew install supabase/tap/supabase
-export SUPABASE_ACCESS_TOKEN=<token>
-export SUPABASE_DB_PASSWORD=<password>
-cd RewardWise_MVP0
-supabase link --project-ref <ref>
-./scripts/one-time-backfill.sh
+supabase start
+psql "$DATABASE_URL" -f supabase/snapshots/2026-05-19_post_reconciliation.sql
+supabase db reset
 ```
 
-The script is idempotent. Verify with `supabase migration list`:
-all 6 timestamps should show `Local | Remote | Time` with the remote
-column populated.
+## Going forward
+
+Effective 2026-05-19, all schema changes go through this flow:
+
+1. Add a new file to `supabase/migrations/` following the naming
+   convention above.
+2. Open PR; CI runs (no schema mutation yet).
+3. Merge to main → workflow auto-applies the migration to production.
+4. Verify in `supabase migration list` that local + remote align.
+
+No more direct dashboard SQL editor mutations. They cause ledger
+drift that requires the reconciliation event above.
 
 ## Additive-only constraint
 
@@ -87,7 +109,7 @@ a follow-up migration).
 | Bad `SUPABASE_DB_PASSWORD` | Auth error from `db push` | Rotate secret, re-run workflow from Actions tab |
 | Supabase outage | `link` or `push` step network error | Re-run workflow once Supabase is healthy |
 | Two PRs merge near-simultaneously | Second run queues behind first via concurrency lane | No action; both apply in merge order |
-| Backfill not run yet | First auto-run errors when trying to re-apply existing migrations | Run `scripts/one-time-backfill.sh`, then re-run workflow |
+| Ledger drift (file in repo but not in remote ledger, or vice versa) | `db push` errors with migration history mismatch | Use `supabase migration repair` to align; see 2026-05-19 reconciliation event above |
 
 ## Why this exists
 
