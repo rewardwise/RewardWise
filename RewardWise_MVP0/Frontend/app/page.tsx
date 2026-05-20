@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 
 import AirportSearch from "@/components/AirportSearch";
+import NewsletterSignup from "@/components/NewsletterSignup";
 import SearchLoadingExperience from "@/components/SearchLoadingExperience";
 import VerdictCard from "@/components/VerdictCard";
 import { useAuth } from "@/context/AuthProvider";
@@ -1175,6 +1176,8 @@ function LandingPageContent() {
 							))}
 						</div>
 					</section>
+
+					<NewsletterSignup />
 				</main>
 
 				{/* ------------------------------------------------------------------ */}

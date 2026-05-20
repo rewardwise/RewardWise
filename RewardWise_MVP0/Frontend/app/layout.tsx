@@ -27,7 +27,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
 	title: "MyTravelWallet",
 	description:
-		"Travel smarter. Spend wiser. Join the MyTravelWallet early access waitlist.",
+		"Travel smarter. Spend wiser. Get travel-rewards tips and product updates from MyTravelWallet.",
 };
 
 export const viewport: Viewport = {
