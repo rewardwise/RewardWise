@@ -2,6 +2,7 @@
 "use client";
 
 import { Sparkles } from "lucide-react";
+import { TRANSFER_PARTNERS } from "@/utils/transferPartners";
 
 type Recommendation = "use_points" | "pay_cash" | "wait";
 
@@ -78,6 +79,14 @@ export default function AwardDetailsSection({
   const seats = best.remaining_seats;
   const badge = valueBadge(best.cpp);
 
+  const bestSlug = best.program.toLowerCase();
+  const isNativeHeld = walletSet.has(bestSlug);
+  const allPartners = TRANSFER_PARTNERS[bestSlug] ?? [];
+  const filteredPartners = userPrograms.length > 0
+    ? allPartners.filter((p) => walletSet.has(p.sourceCard.toLowerCase()))
+    : allPartners;
+  const transferPartners = isNativeHeld ? [] : filteredPartners.slice(0, 3);
+
   return (
     <section className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-5 md:p-6">
       <div className="flex items-start gap-3">
@@ -99,6 +108,19 @@ export default function AwardDetailsSection({
             {travelers > 1 ? ` (${best.points.toLocaleString()} × ${travelers})` : ""}
             {taxes > 0 ? ` plus $${Number(taxes).toFixed(0)} in taxes` : " with no fuel surcharges"}.
           </p>
+
+          {transferPartners.length > 0 ? (
+            <p className="mt-2 text-sm leading-6 text-slate-400">
+              Transfer from{" "}
+              {transferPartners.map((p, i) => (
+                <span key={p.short}>
+                  <span className="font-semibold text-slate-200">{p.short}</span>{" "}
+                  ({p.ratio}{p.speed === "instant" ? "" : `, ${p.speed}`})
+                  {i < transferPartners.length - 1 ? ", " : ""}
+                </span>
+              ))}.
+            </p>
+          ) : null}
 
           <div className="mt-4 flex flex-wrap items-center gap-2">
             {seats != null && seats > 0 ? (
