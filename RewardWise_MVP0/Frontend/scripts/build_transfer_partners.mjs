@@ -139,15 +139,25 @@ function render(map, sourcePath) {
   return lines.join("\n");
 }
 
+function parseOutPath(argv) {
+  // Supports `--out=<path>` for tests / dry-runs without touching the
+  // committed file. Defaults to OUTPUT_PATH for production use.
+  for (const arg of argv) {
+    if (arg.startsWith("--out=")) return resolve(arg.slice("--out=".length));
+  }
+  return OUTPUT_PATH;
+}
+
 function main() {
+  const outPath = parseOutPath(process.argv.slice(2));
   const json = JSON.parse(readFileSync(SOURCE_PATH, "utf8"));
   const map = buildMap(json);
   const output = render(map, SOURCE_PATH);
-  writeFileSync(OUTPUT_PATH, output, "utf8");
+  writeFileSync(outPath, output, "utf8");
   const total = Object.values(map).reduce((n, arr) => n + arr.length, 0);
   const covered = Object.values(map).filter((arr) => arr.length > 0).length;
   console.log(
-    `[build_transfer_partners] wrote ${OUTPUT_PATH} — ${covered}/${Object.keys(map).length} slugs with partners, ${total} total rows`,
+    `[build_transfer_partners] wrote ${outPath} — ${covered}/${Object.keys(map).length} slugs with partners, ${total} total rows`,
   );
 }
 
