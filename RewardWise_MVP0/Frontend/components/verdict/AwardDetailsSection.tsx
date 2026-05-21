@@ -79,13 +79,19 @@ export default function AwardDetailsSection({
   const seats = best.remaining_seats;
   const badge = valueBadge(best.cpp);
 
+  // Wallet-aware filtering is intentionally NOT applied here. The backend
+  // `user_programs` field is a list of seats.aero airline slugs the user
+  // could book via PROGRAM_ALIASES reverse-lookup (e.g. a Chase UR holder
+  // gets ["aeroplan","united",...] without directly holding any of those
+  // airline programs). It does not tell us which flex currency the user
+  // actually holds, so any filter on `sourceCard` here would be wrong.
+  // Wallet-aware framing is deferred to a follow-up PR that plumbs owned
+  // currencies separately.
   const bestSlug = best.program.toLowerCase();
-  const isNativeHeld = walletSet.has(bestSlug);
+  const slugIsKnown = Object.prototype.hasOwnProperty.call(TRANSFER_PARTNERS, bestSlug);
   const allPartners = TRANSFER_PARTNERS[bestSlug] ?? [];
-  const filteredPartners = userPrograms.length > 0
-    ? allPartners.filter((p) => walletSet.has(p.sourceCard.toLowerCase()))
-    : allPartners;
-  const transferPartners = isNativeHeld ? [] : filteredPartners.slice(0, 3);
+  const transferPartners = allPartners.slice(0, 3);
+  const showNoTransfersFallback = slugIsKnown && allPartners.length === 0;
 
   return (
     <section className="mt-6 rounded-2xl border border-white/10 bg-white/[0.03] p-5 md:p-6">
@@ -113,12 +119,17 @@ export default function AwardDetailsSection({
             <p className="mt-2 text-sm leading-6 text-slate-400">
               Transfer from{" "}
               {transferPartners.map((p, i) => (
-                <span key={p.short}>
+                <span key={p.sourceCard}>
                   <span className="font-semibold text-slate-200">{p.short}</span>{" "}
                   ({p.ratio}{p.speed === "instant" ? "" : `, ${p.speed}`})
                   {i < transferPartners.length - 1 ? ", " : ""}
                 </span>
               ))}.
+            </p>
+          ) : showNoTransfersFallback ? (
+            <p className="mt-2 text-sm leading-6 text-slate-400">
+              {fmtProgram(best.program)} doesn&rsquo;t accept point transfers.
+              You&rsquo;ll need to earn miles by flying or buy them directly.
             </p>
           ) : null}
 

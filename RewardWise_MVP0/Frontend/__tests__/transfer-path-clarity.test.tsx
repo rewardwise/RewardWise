@@ -40,11 +40,20 @@ const aeroplanOption: AwardProgramOption = {
   direct: true,
 };
 
-const saudiaOption: AwardProgramOption = {
-  program: "saudia",
+const alaskaOption: AwardProgramOption = {
+  program: "alaska",
+  points: 25000,
+  taxes: 12,
+  cpp: 1.6,
+  remaining_seats: 3,
+  direct: true,
+};
+
+const unknownProgramOption: AwardProgramOption = {
+  program: "etihad_guest_xyz_unknown_slug",
   points: 30000,
-  taxes: 50,
-  cpp: 1.4,
+  taxes: 25,
+  cpp: 1.3,
   remaining_seats: 2,
   direct: true,
 };
@@ -68,52 +77,59 @@ describe("AwardDetailsSection transfer-path clarity", () => {
     expect(text).not.toContain("Bilt"); // 4th in list, sliced to top 3
   });
 
-  it("authed with native program (holds aeroplan): suppresses transfer line", () => {
+  it("authed user (any userPrograms): wallet-agnostic, still shows top 3", () => {
+    // user_programs is a list of seats.aero airline slugs (e.g. "aeroplan",
+    // "united") — NOT flex-currency holdings. The transfer line is therefore
+    // shown wallet-agnostically here; wallet-aware framing is a follow-up PR.
     render(
       <AwardDetailsSection
         recommendation="use_points"
         operatingAirline="Air Canada"
         awardOptions={[aeroplanOption]}
-        userPrograms={["aeroplan"]}
-        travelers={1}
-      />,
-    );
-    const text = container.textContent || "";
-    expect(text).not.toContain("Transfer from");
-  });
-
-  it("authed without native (holds Chase UR only, verdict is aeroplan): shows Chase UR only", () => {
-    render(
-      <AwardDetailsSection
-        recommendation="use_points"
-        operatingAirline="Air Canada"
-        awardOptions={[aeroplanOption]}
-        userPrograms={["chase ultimate rewards"]}
+        userPrograms={["aeroplan", "united"]}
         travelers={1}
       />,
     );
     const text = container.textContent || "";
     expect(text).toContain("Transfer from");
     expect(text).toContain("Chase UR");
-    expect(text).not.toContain("Amex MR");
-    expect(text).not.toContain("Cap1 Miles");
+    expect(text).toContain("Amex MR");
+    expect(text).toContain("Cap1 Miles");
   });
 
-  it("program with empty TRANSFER_PARTNERS entry (saudia): no transfer line", () => {
+  it("program with empty TRANSFER_PARTNERS entry (alaska): shows no-transfers fallback", () => {
     render(
       <AwardDetailsSection
         recommendation="use_points"
-        operatingAirline="Saudia"
-        awardOptions={[saudiaOption]}
+        operatingAirline="Alaska Airlines"
+        awardOptions={[alaskaOption]}
         userPrograms={[]}
         travelers={1}
       />,
     );
     const text = container.textContent || "";
     expect(text).not.toContain("Transfer from");
+    expect(text).toContain("doesn’t accept point transfers");
+    expect(text).toContain("earn miles by flying or buy them directly");
+    expect(text).toContain("Alaska");
   });
 
-  it("mobile viewport (375px): no horizontal scroll on transfer line", () => {
+  it("unknown program slug (not in TRANSFER_PARTNERS map): no transfer line, no fallback", () => {
+    render(
+      <AwardDetailsSection
+        recommendation="use_points"
+        operatingAirline="Etihad"
+        awardOptions={[unknownProgramOption]}
+        userPrograms={[]}
+        travelers={1}
+      />,
+    );
+    const text = container.textContent || "";
+    expect(text).not.toContain("Transfer from");
+    expect(text).not.toContain("doesn’t accept point transfers");
+  });
+
+  it("mobile viewport (375px): transfer line renders without nowrap or overflow scroll", () => {
     Object.defineProperty(window, "innerWidth", { value: 375, configurable: true });
     render(
       <AwardDetailsSection
