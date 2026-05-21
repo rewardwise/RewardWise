@@ -804,7 +804,10 @@ function LandingPageContent() {
 												userPrograms={[]}
 												verdictId={results.verdict_id}
 												publicPreview
-												onPublicPreviewSignup={() => handleAuthRoute("/signup")}
+												onPublicPreviewSignup={() => {
+													if (origin || destination || departDate) savePendingSearch();
+													router.push("/signup?utm_source=landing-verdict");
+												}}
 												onPublicPreviewSignin={() => handleAuthRoute("/login")}
 											/>
 

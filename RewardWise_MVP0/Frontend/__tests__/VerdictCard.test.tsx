@@ -222,3 +222,77 @@ describe("VerdictCard — Use Points headline shows cash fare baseline (Bug B)",
     expect(headline).not.toContain("Cash fare");
   });
 });
+
+// Ticket 86ba11m1f: guest landing-page verdicts default to "pay_cash" because
+// no wallet info is available. Add a "Why cash?" explainer + static wallet
+// examples to convert guests to signup. Gated on publicPreview && pay_cash.
+describe("VerdictCard — guest wallet-framing preview gating", () => {
+  function renderWithProps(props: {
+    publicPreview?: boolean;
+    recommendation: "use_points" | "pay_cash" | "wait";
+    onPublicPreviewSignup?: () => void;
+  }) {
+    act(() => {
+      root.render(
+        <VerdictCard
+          verdict={{
+            ...baseVerdict,
+            recommendation: props.recommendation,
+            pay_cash: props.recommendation === "pay_cash",
+          }}
+          cashPrice={800}
+          origin="SFO"
+          destination="NRT"
+          departDate="2026-06-15"
+          travelers={1}
+          publicPreview={props.publicPreview}
+          onPublicPreviewSignup={props.onPublicPreviewSignup}
+        />
+      );
+    });
+  }
+
+  it("guest (publicPreview) + pay_cash: 'Why cash?' framing is visible", () => {
+    renderWithProps({ publicPreview: true, recommendation: "pay_cash" });
+    expect(container.textContent).toContain("Why cash?");
+  });
+
+  it("guest (publicPreview) + use_points: framing is hidden (verdict already has a wallet-y answer)", () => {
+    renderWithProps({ publicPreview: true, recommendation: "use_points" });
+    expect(container.textContent).not.toContain("Why cash?");
+  });
+
+  it("authenticated user (no publicPreview) + pay_cash: framing is hidden (regression guard)", () => {
+    renderWithProps({ publicPreview: false, recommendation: "pay_cash" });
+    expect(container.textContent).not.toContain("Why cash?");
+  });
+
+  it("signup handler from VerdictCard reaches the framing CTA", () => {
+    const onSignup = vi.fn();
+    renderWithProps({
+      publicPreview: true,
+      recommendation: "pay_cash",
+      onPublicPreviewSignup: onSignup,
+    });
+    // Open the expander to reveal the inline CTA.
+    const header = Array.from(container.querySelectorAll("button")).find((b) =>
+      (b.textContent || "").includes("Why cash?"),
+    );
+    expect(header).toBeTruthy();
+    if (header) {
+      act(() => {
+        header.click();
+      });
+    }
+    const ctaButton = Array.from(container.querySelectorAll("button")).find((b) =>
+      (b.textContent || "").includes("Sign up to unlock wallet-aware verdicts"),
+    );
+    expect(ctaButton).toBeTruthy();
+    if (ctaButton) {
+      act(() => {
+        ctaButton.click();
+      });
+    }
+    expect(onSignup).toHaveBeenCalledTimes(1);
+  });
+});

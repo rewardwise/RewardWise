@@ -21,6 +21,7 @@ import ErrorStateCard from "@/components/verdict/ErrorStateCard";
 import FlightSection, { FlightLeg } from "@/components/verdict/FlightSection";
 import AwardDetailsSection, { AwardProgramOption } from "@/components/verdict/AwardDetailsSection";
 import MultiHandoffGrid, { MultiHandoffProgram, MultiHandoffCashAirline } from "@/components/verdict/MultiHandoffGrid";
+import WalletFramingPreview from "@/components/verdict/WalletFramingPreview";
 
 type Confidence = "high" | "medium" | "low";
 
@@ -761,6 +762,13 @@ export default function VerdictCard({
                   />
                 ) : null}
               </>
+            )}
+
+            {/* Guest-only wallet framing — shown when verdict defaults to cash
+                because no wallet info is available. Conversion play: surface
+                what wallets would change about the verdict (ticket 86ba11m1f). */}
+            {publicPreview && recommendation === "pay_cash" && (
+              <WalletFramingPreview onSignup={onPublicPreviewSignup} />
             )}
 
             {/* Zoe locked features — public preview filler to balance height */}
