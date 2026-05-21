@@ -13,7 +13,6 @@ interface WalletExample {
   transferTo: string;
   pointsUsed: number;
   taxes: number;
-  cashBaseline: number;
   savings: number;
 }
 
@@ -22,27 +21,24 @@ interface WalletExample {
 // Cash baseline = $800 economy long-haul; all flex currencies redeem at ~1 cpp.
 const ECONOMY_EXAMPLES: WalletExample[] = [
   {
-    wallet: "~50K Chase Ultimate Rewards",
+    wallet: "~50K Chase Ultimate Rewards balance",
     transferTo: "Aeroplan",
     pointsUsed: 35000,
     taxes: 80,
-    cashBaseline: 350,
     savings: 370,
   },
   {
-    wallet: "~80K Amex Membership Rewards",
+    wallet: "~80K Amex Membership Rewards balance",
     transferTo: "Flying Blue",
     pointsUsed: 50000,
     taxes: 90,
-    cashBaseline: 500,
     savings: 210,
   },
   {
-    wallet: "~60K Capital One Miles",
+    wallet: "~60K Capital One Miles balance",
     transferTo: "British Airways Avios",
     pointsUsed: 30000,
     taxes: 55,
-    cashBaseline: 300,
     savings: 445,
   },
 ];
@@ -88,7 +84,7 @@ export default function WalletFramingPreview({ onSignup }: Props) {
                 key={ex.wallet}
                 className="rounded-xl border border-white/10 bg-white/[0.03] p-3"
               >
-                <p className="text-xs text-slate-400">With {ex.wallet}</p>
+                <p className="text-xs text-slate-400">From a {ex.wallet}</p>
                 <p className="mt-1 text-sm text-slate-200">
                   Transfer to{" "}
                   <span className="font-semibold text-white">

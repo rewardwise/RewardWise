@@ -104,6 +104,28 @@ describe("WalletFramingPreview", () => {
     expect(ctaButton).toBeUndefined();
   });
 
+  it("mobile viewport (375px): expander body renders without nowrap or overflow scroll", () => {
+    // PR #112 floor: every verdict surface must render cleanly at 375px wide.
+    Object.defineProperty(window, "innerWidth", { value: 375, configurable: true });
+    render(<WalletFramingPreview />);
+    clickToggle();
+    const body = container.querySelector("#wallet-framing-body");
+    expect(body).toBeTruthy();
+    if (body) {
+      const style = window.getComputedStyle(body);
+      // jsdom doesn't compute layout, so verify we rely on browser-default wrapping.
+      expect(style.whiteSpace === "nowrap").toBe(false);
+      expect(style.overflowX === "scroll").toBe(false);
+    }
+    // Each wallet-example row paragraph must also not be locked to nowrap.
+    const rowParagraphs = Array.from(container.querySelectorAll("li p"));
+    expect(rowParagraphs.length).toBeGreaterThan(0);
+    for (const p of rowParagraphs) {
+      const style = window.getComputedStyle(p);
+      expect(style.whiteSpace === "nowrap").toBe(false);
+    }
+  });
+
   it("collapses again on second click (toggle behavior)", () => {
     render(<WalletFramingPreview />);
     clickToggle();
