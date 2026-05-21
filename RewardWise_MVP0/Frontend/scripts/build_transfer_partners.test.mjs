@@ -5,7 +5,7 @@
 //   node Frontend/scripts/build_transfer_partners.mjs
 
 import { spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync, mkdtempSync, copyFileSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,32 +34,27 @@ function test(name, fn) {
 console.log("build_transfer_partners.test.mjs");
 
 test("generated transferPartners.ts matches committed file (byte-for-byte)", () => {
-  const committed = readFileSync(COMMITTED_PATH, "utf8");
-  // Re-run the generator into a tmp copy of the output, compare bytes.
-  // We do this by copying the committed file out, running the script
-  // (which overwrites in place), reading the result, then restoring.
-  const backup = mkdtempSync(join(tmpdir(), "tp-test-"));
-  const backupFile = join(backup, "transferPartners.ts");
+  // Run the generator into a tmp output path via --out=, then byte-compare
+  // against the committed file. This never touches the committed file, so
+  // there is no corruption window even on SIGKILL during the spawn.
+  const tmp = mkdtempSync(join(tmpdir(), "tp-test-"));
+  const tmpOut = join(tmp, "transferPartners.ts");
   try {
-    copyFileSync(COMMITTED_PATH, backupFile);
-    const result = spawnSync("node", [SCRIPT_PATH], { encoding: "utf8" });
+    const result = spawnSync("node", [SCRIPT_PATH, `--out=${tmpOut}`], { encoding: "utf8" });
     assert.equal(result.status, 0, `generator exited ${result.status}: ${result.stderr}`);
-    const regenerated = readFileSync(COMMITTED_PATH, "utf8");
+    const committed = readFileSync(COMMITTED_PATH, "utf8");
+    const regenerated = readFileSync(tmpOut, "utf8");
     if (regenerated !== committed) {
-      // Show a small diff hint.
       const cLines = committed.split("\n");
       const rLines = regenerated.split("\n");
       const firstDiff = cLines.findIndex((l, i) => l !== rLines[i]);
       throw new Error(
         `Drift detected. Run: node Frontend/scripts/build_transfer_partners.mjs && git add Frontend/utils/transferPartners.ts\n` +
-          `First differing line ${firstDiff + 1}:\n  committed:  ${cLines[firstDiff]}\n  regenerated: ${rLines[firstDiff]}`,
+          `First differing line ${firstDiff + 1}:\n  committed:   ${cLines[firstDiff]}\n  regenerated: ${rLines[firstDiff]}`,
       );
     }
   } finally {
-    // Restore the committed file in case the assertion above passed (no-op)
-    // or failed (write back what was on disk before the run).
-    copyFileSync(backupFile, COMMITTED_PATH);
-    rmSync(backup, { recursive: true, force: true });
+    rmSync(tmp, { recursive: true, force: true });
   }
 });
 
