@@ -445,6 +445,17 @@ export default function VerdictCard({
         },
       ]
     : [];
+  const topReturnAward = selectTopProgram(returnAwardOptions, userPrograms, userCards);
+  const returnHandoffPrograms: MultiHandoffProgram[] = topReturnAward
+    ? [
+        {
+          program: topReturnAward.program,
+          points: topReturnAward.points * travelers,
+          taxes: topReturnAward.taxes,
+        },
+      ]
+    : [];
+  const bestReturnDate = winningReturnDate || returnDate || "";
   const cashHandoff: MultiHandoffCashAirline | null = bestCashFlight
     ? {
         airline: bestCashFlight.legs?.[0]?.airline || "the airline",
@@ -760,13 +771,26 @@ export default function VerdictCard({
                   travelers={travelers}
                 />
                 {recommendation === "use_points" ? (
-                  <MultiHandoffGrid
-                    recommendation="use_points"
-                    programs={handoffPrograms}
-                    bestDate={bestDate}
-                    routeLabel={routeLabel}
-                    travelersLabel={travelersLabel}
-                  />
+                  <>
+                    <MultiHandoffGrid
+                      recommendation="use_points"
+                      programs={handoffPrograms}
+                      bestDate={bestDate}
+                      routeLabel={routeLabel}
+                      travelersLabel={travelersLabel}
+                      legLabel={isRoundtrip ? "Outbound" : undefined}
+                    />
+                    {isRoundtrip && returnHandoffPrograms.length > 0 ? (
+                      <MultiHandoffGrid
+                        recommendation="use_points"
+                        programs={returnHandoffPrograms}
+                        bestDate={bestReturnDate}
+                        routeLabel={routeLabel}
+                        travelersLabel={travelersLabel}
+                        legLabel="Return"
+                      />
+                    ) : null}
+                  </>
                 ) : recommendation === "pay_cash" ? (
                   <MultiHandoffGrid
                     recommendation="pay_cash"

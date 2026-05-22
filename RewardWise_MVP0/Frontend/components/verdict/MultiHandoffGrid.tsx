@@ -24,6 +24,7 @@ type Props = {
   bestDate: string;
   routeLabel: string;
   travelersLabel: string;
+  legLabel?: string;
 };
 
 function domainFromUrl(url: string) {
@@ -71,14 +72,18 @@ export default function MultiHandoffGrid({
   bestDate,
   routeLabel,
   travelersLabel,
+  legLabel,
 }: Props) {
   if (recommendation === "use_points") {
     const items = programs ?? [];
     if (items.length === 0) return null;
+    const heading = legLabel
+      ? `Book ${legLabel.toLowerCase()} through your program`
+      : "Book through your program";
     return (
       <section className="mt-6">
         <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-300">
-          Book through your program
+          {heading}
         </p>
         <div className={items.length > 1 ? "grid gap-4 md:grid-cols-2" : "grid gap-4"}>
           {items.map((item) => {
