@@ -48,7 +48,7 @@ _ORIGIN_DEST_RE = re.compile(
 )
 _DATE_RE = re.compile(r"\bon\s+(\d{4}-\d{2}-\d{2})\b", re.IGNORECASE)
 _CABIN_RE = re.compile(
-    r"\b(business|first|economy)\s+class\b",
+    r"\b(premium[ _]economy|business|first|economy)\s+class\b",
     re.IGNORECASE,
 )
 _BASE_POINTS_RE = re.compile(
@@ -69,8 +69,11 @@ def _parse_verdict_context(text: str) -> Optional[dict[str, Any]]:
         return None
 
     cabin_raw = cm.group(1).lower()
-    cabin = "business" if "business" in cabin_raw else (
-        "first" if "first" in cabin_raw else "economy"
+    cabin = (
+        "business" if "business" in cabin_raw
+        else "first" if "first" in cabin_raw
+        else "premium_economy" if ("premium economy" in cabin_raw or "premium_economy" in cabin_raw)
+        else "economy"
     )
 
     base_points: Optional[int] = None
