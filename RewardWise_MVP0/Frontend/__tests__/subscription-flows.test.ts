@@ -489,6 +489,11 @@ describe("POST /api/payments/cancel-subscription", () => {
   });
 
   it("rejects a request with no JSON body before touching Stripe", async () => {
+    const { client } = makeCancelRouteSupabase({
+      user: { id: TEST_USER_ID, email: TEST_USER_EMAIL },
+    });
+    mocks.createRouteHandlerClient.mockResolvedValue(client);
+
     const response = await cancelSubscription(
       new Request("https://app.test/api/payments/cancel-subscription", {
         method: "POST",
@@ -496,18 +501,39 @@ describe("POST /api/payments/cancel-subscription", () => {
     );
 
     expect(response.status).toBe(400);
-    expect(mocks.createRouteHandlerClient).not.toHaveBeenCalled();
     expect(mocks.getStripe).not.toHaveBeenCalled();
   });
 
   it("rejects an unknown reason_code", async () => {
+    const { client } = makeCancelRouteSupabase({
+      user: { id: TEST_USER_ID, email: TEST_USER_EMAIL },
+    });
+    mocks.createRouteHandlerClient.mockResolvedValue(client);
+
     const response = await cancelSubscription(
       makeCancelRequest({ reason_code: "spite", free_text: null }),
     );
 
     expect(response.status).toBe(400);
-    expect(mocks.createRouteHandlerClient).not.toHaveBeenCalled();
     expect(mocks.getStripe).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unauthenticated request before reading the body — no enum leak", async () => {
+    const { client } = makeCancelRouteSupabase({ user: null });
+    mocks.createRouteHandlerClient.mockResolvedValue(client);
+
+    // Even with a syntactically valid reason, an unauthenticated caller
+    // must get 401, not 400 — otherwise the response code probes the enum.
+    const responseValid = await cancelSubscription(
+      makeCancelRequest({ reason_code: "too_expensive", free_text: null }),
+    );
+    expect(responseValid.status).toBe(401);
+
+    mocks.createRouteHandlerClient.mockResolvedValue(client);
+    const responseInvalid = await cancelSubscription(
+      makeCancelRequest({ reason_code: "spite", free_text: null }),
+    );
+    expect(responseInvalid.status).toBe(401);
   });
 
   it("stores null free_text when omitted, and persists reason code on the feedback row", async () => {
