@@ -9,6 +9,7 @@ import {
 	tierLabel,
 	turnaroundLabel,
 } from "@/utils/concierge-display";
+import { cabinLabel } from "@/utils/cabin";
 import { createClient } from "@/utils/supabase/client";
 import { fmtMoney } from "@/utils/format";
 import { ArrowLeft, Loader2 } from "lucide-react";
@@ -42,16 +43,6 @@ function formatDate(d: string | null | undefined) {
 		day: "numeric",
 		year: "numeric",
 	});
-}
-
-function cabinLabel(cabin?: string | null) {
-	if (!cabin) return "—";
-	const labels: Record<string, string> = {
-		economy: "Economy",
-		business: "Business",
-		first: "First",
-	};
-	return labels[cabin] ?? cabin;
 }
 
 export default function ConciergeRequestDetailPage() {
@@ -211,7 +202,7 @@ export default function ConciergeRequestDetailPage() {
 									</div>
 									<div>
 										<dt className="text-gray-500 text-xs">Cabin</dt>
-										<dd>{cabinLabel(row.cabin)}</dd>
+										<dd>{row.cabin ? cabinLabel(row.cabin) : "—"}</dd>
 									</div>
 									<div>
 										<dt className="text-gray-500 text-xs">Budget (cash)</dt>

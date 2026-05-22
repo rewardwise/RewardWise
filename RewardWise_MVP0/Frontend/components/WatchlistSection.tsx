@@ -5,6 +5,7 @@
 import { useRouter } from "next/navigation";
 
 import { useAlerts } from "@/context/AlertContext";
+import { cabinLabel } from "@/utils/cabin";
 
 import { Bell, Plus, X, Plane } from "lucide-react";
 
@@ -29,12 +30,6 @@ function timeAgo(iso: string) {
 	if (days < 7) return `${days} days ago`;
 	const weeks = Math.floor(days / 7);
 	return weeks === 1 ? "1 week ago" : `${weeks} weeks ago`;
-}
-
-function cabinLabel(c: string) {
-	return (
-		({ economy: "Economy", premium: "Premium", business: "Business", first: "First" } as Record<string, string>)[c] ?? c
-	);
 }
 
 export default function WatchlistSection() {

@@ -8,6 +8,7 @@ import { geoMercator, geoPath } from "d3-geo";
 import { feature } from "topojson-client";
 import worldTopology from "world-atlas/countries-50m.json";
 import { getAirportCoordinate } from "@/data/airportCoordinates";
+import { cabinLabel } from "@/utils/cabin";
 
 type SearchLoadingExperienceProps = {
   origin?: string;
@@ -29,15 +30,6 @@ const MAP_HEIGHT = 300;
  */
 const PAD_X = MAP_WIDTH  * 0.18; // 18% → dots in ~162–738 px horizontally
 const PAD_Y = MAP_HEIGHT * 0.20; // 20% → dots in ~60–240 px vertically
-
-function cabinLabel(cabin?: string) {
-  const labels: Record<string, string> = {
-    economy: "economy",
-    business: "business",
-    first: "first class",
-  };
-  return labels[cabin || "economy"] || cabin || "economy";
-}
 
 function getObject(topology: unknown, objectName: string) {
   const objects = (topology as { objects?: Record<string, unknown> })?.objects || {};
@@ -287,7 +279,7 @@ export default function SearchLoadingExperience({
         </h2>
 
         <p className="mt-2 text-sm text-slate-400">
-          {travelers} traveler{travelers === 1 ? "" : "s"} · {cabinLabel(cabin)} · {isRoundtrip ? "round trip" : "one way"}
+          {travelers} traveler{travelers === 1 ? "" : "s"} · {cabin ? cabinLabel(cabin) : ""} · {isRoundtrip ? "round trip" : "one way"}
         </p>
 
         <RouteMap origin={origin} destination={destination} />
