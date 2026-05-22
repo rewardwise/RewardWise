@@ -41,6 +41,7 @@ from app.services.zoe.interaction_logger import log as log_interaction
 from app.services.zoe.handlers import (
     trip_search,
     verdict_strategy,
+    alt_dates,
     destination,
     wallet_support,
     off_topic,
@@ -163,18 +164,19 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
     # STEP 2: Classify intent (regex router — no LLM call needed)
     # ─────────────────────────────────────────────────────────────────────────
 
-    # If verdict_context is present, the user clicked "Ask Zoe" —
-    # always route to verdict_strategy regardless of message content.
-    if verdict_context:
-        intent  = "verdict_strategy"
-        is_voice_flag = is_voice
-    else:
-        route_result = classify(
-            text,
-            has_verdict_context=bool(verdict_context),
-            is_voice=is_voice,
-        )
-        intent = route_result.intent
+    # When verdict_context is present, the user clicked "Ask Zoe" on a
+    # search result. Run the router with has_verdict_context=True so the
+    # alt_dates intent can preempt verdict_strategy on phrases like
+    # "any cheaper dates around this?" — otherwise it still falls through
+    # to verdict_strategy as the default for the Ask-Zoe flow.
+    route_result = classify(
+        text,
+        has_verdict_context=bool(verdict_context),
+        is_voice=is_voice,
+    )
+    intent = route_result.intent
+    if verdict_context and intent not in ("alt_dates", "verdict_strategy", "off_topic"):
+        intent = "verdict_strategy"
 
     print(f"🧭 ZOE INTENT: {intent}")
 
@@ -195,6 +197,18 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
 
     if intent == "verdict_strategy":
         result = await verdict_strategy.handle(
+            text,
+            session.history,
+            wallet,
+            verdict_context=verdict_context,
+            rag_chunks=rag.kb_chunks,
+            rag_examples=rag.examples,
+            rag_corrections=rag.corrections,
+            is_voice=is_voice,
+        )
+
+    elif intent == "alt_dates":
+        result = await alt_dates.handle(
             text,
             session.history,
             wallet,

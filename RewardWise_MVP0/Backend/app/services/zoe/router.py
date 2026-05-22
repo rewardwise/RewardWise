@@ -26,6 +26,7 @@ from typing import Literal
 Intent = Literal[
     "trip_search",
     "verdict_strategy",
+    "alt_dates",
     "destination",
     "wallet_support",
     "off_topic",
@@ -55,6 +56,22 @@ _TRIP_SIGNALS = re.compile(
     r"look(?:ing)? for flights?|"
     r"i (?:want|need|d like) to (?:fly|go|travel)|"
     r"how (?:long|much) (?:is|does|would) (?:a )?(?:flight|trip)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+_ALT_DATES_SIGNALS = re.compile(
+    r"\b("
+    r"(?:any |some |other )?alternative dates?|"
+    r"alt dates?|other dates?|different dates?|"
+    r"(?:any )?cheaper (?:dates?|days?|options?|alternatives?)|"
+    r"nearby dates?|surrounding dates?|"
+    r"(?:flex(?:ible)?|adjust(?:ing)?|shift(?:ing)?|move|change|moving) (?:my )?(?:dates?|travel dates?|departure)|"
+    r"(?:save|saving)(?: money)? (?:around|near|by shifting)|"
+    r"(?:on )?(?:any )?other (?:day|days)|"
+    r"(?:fly|leave|depart|return)(?:[\w ]{0,20})?(?:earlier|later)|"
+    r"earlier or later|"
+    r"around (?:my|the|that|those) dates?"
     r")\b",
     re.IGNORECASE,
 )
@@ -163,6 +180,17 @@ def classify(
     # 1. Off-topic — exit immediately
     if _OFF_TOPIC_SIGNALS.search(text) and not _TRIP_SIGNALS.search(text):
         return RouteResult(intent="off_topic", needs_wallet=False, is_voice=is_voice)
+
+    # 1b. Alt-dates — only meaningful when an active verdict is in context.
+    # Without verdict_context we have no origin/destination/date to range-search,
+    # so the same phrasing falls through to trip_search where history can fill in.
+    if has_verdict_context and _ALT_DATES_SIGNALS.search(text):
+        return RouteResult(
+            intent="alt_dates",
+            needs_wallet=True,
+            needs_verdict=True,
+            is_voice=is_voice,
+        )
 
     # 2. Verdict / points strategy
     verdict_lang = bool(_VERDICT_SIGNALS.search(text))
