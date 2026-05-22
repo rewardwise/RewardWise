@@ -357,3 +357,19 @@ def test_internal_trip_candidates_stripped_from_response(monkeypatch):
     assert len(results) == 2
     for r in results:
         assert "_trip_candidates" not in r
+
+
+# ---------- CABIN_MAP premium_economy coverage (86ba25eq0) --------------------
+
+def test_cabin_map_premium_economy_is_W():
+    assert seats_service.CABIN_MAP["premium_economy"] == "W"
+
+
+def test_cabin_map_covers_all_four_cabins():
+    assert seats_service.CABIN_MAP == {
+        "economy": "Y",
+        "premium_economy": "W",
+        "business": "J",
+        "first": "F",
+    }
+

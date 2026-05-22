@@ -9,7 +9,7 @@ not become a hidden dep. The logic is pure given inputs, so no mocking.
 
 import asyncio
 
-from app.services.verdict_service import generate_verdict
+from app.services.verdict_service import _build_next_step, generate_verdict
 
 
 def _run(**overrides):
@@ -221,3 +221,41 @@ def test_T16_cpp_1p7_use_points_gray_zone_messaging():
     assert "Aeroplan" in result["explanation"]
     assert "55,000 points" in result["explanation"]
     assert result["next_step"] is None
+
+
+# ---- premium_economy is_premium branch (86ba25eq0) ---------------------------
+
+def test_premium_economy_treated_as_premium_for_pay_cash_low_cpp():
+    """premium_economy + pay_cash + cpp<1.25 hits the premium next-step,
+    not the economy 'save your points for a bigger trip' branch."""
+    step = _build_next_step(
+        "pay_cash", "JFK", "LHR", "premium_economy",
+        cpp=1.0, cash_price=1800.0,
+    )
+    assert step is not None
+    assert step["label"] == "There's probably a better deal"
+    assert "Premium awards" in step["prompt"]
+
+
+def test_premium_economy_skips_economy_cash_floor():
+    """premium_economy + pay_cash + cash<=250 must NOT hit the economy
+    early-return (None). Should fall through to the is_premium branch when
+    cpp is also low, or return None otherwise. Asserting it doesn't take
+    the economy-only short-circuit by giving it a low cpp and verifying
+    the premium next-step fires."""
+    step = _build_next_step(
+        "pay_cash", "JFK", "LHR", "premium_economy",
+        cpp=1.0, cash_price=200.0,
+    )
+    assert step is not None
+    assert step["label"] == "There's probably a better deal"
+
+
+def test_economy_baseline_unchanged_uses_save_for_bigger_trip():
+    """Sanity: bare economy still routes to the economy branch."""
+    step = _build_next_step(
+        "pay_cash", "JFK", "LHR", "economy",
+        cpp=1.0, cash_price=1800.0,
+    )
+    assert step is not None
+    assert step["label"] == "Save your points for a bigger trip"
