@@ -26,7 +26,6 @@ import SearchLoadingExperience from "@/components/SearchLoadingExperience";
 import VerdictCard from "@/components/VerdictCard";
 import { useAuth } from "@/context/AuthProvider";
 import { useSearchFill } from "@/context/SearchFillContext";
-
 import type { Cabin } from "@/utils/cabin";
 
 interface VerdictWinner {
@@ -748,6 +747,7 @@ function LandingPageContent() {
 														className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
 													>
 														<option value="economy">Economy</option>
+														<option value="premium_economy">Premium Economy</option>
 														<option value="business">Business</option>
 														<option value="first">First</option>
 													</select>
