@@ -111,20 +111,20 @@ export async function POST(request: Request) {
 
     getStripeEnv();
 
-    const reason = await parseReason(request);
-    if (!reason) {
-      return NextResponse.json(
-        { error: "A cancellation reason is required." },
-        { status: 400 },
-      );
-    }
-
     const supabase = await createRouteHandlerClient();
     const {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const reason = await parseReason(request);
+    if (!reason) {
+      return NextResponse.json(
+        { error: "A cancellation reason is required." },
+        { status: 400 },
+      );
     }
 
     const { data: sub, error: subError } = await supabase
