@@ -23,6 +23,7 @@ import FlightSection, { FlightLeg } from "@/components/verdict/FlightSection";
 import AwardDetailsSection, { AwardProgramOption } from "@/components/verdict/AwardDetailsSection";
 import MultiHandoffGrid, { MultiHandoffProgram, MultiHandoffCashAirline } from "@/components/verdict/MultiHandoffGrid";
 import WalletFramingPreview from "@/components/verdict/WalletFramingPreview";
+import { selectTopProgram } from "@/utils/topProgramSelection";
 
 type Confidence = "high" | "medium" | "low";
 
@@ -174,6 +175,7 @@ interface VerdictCardProps {
   returnAwardOptions?: AwardOption[];
   flights?: CashFlight[];
   userPrograms?: string[];
+  userCards?: string[];
   verdictId?: string | null;
   onAskZoe?: (context: string) => void;
   publicPreview?: boolean;
@@ -319,6 +321,7 @@ export default function VerdictCard({
   returnAwardOptions: rawReturnAwardOptions = [],
   flights = [],
   userPrograms = [],
+  userCards = [],
   verdictId,
   onAskZoe,
   publicPreview = false,
@@ -430,15 +433,18 @@ export default function VerdictCard({
     direct: opt.direct,
   }));
 
-  const walletSet = new Set(userPrograms.map((p) => p.toLowerCase()));
-  const inWalletAwards = awardOptions.filter((opt) => walletSet.has(opt.program.toLowerCase()));
-  const handoffPrograms: MultiHandoffProgram[] = (inWalletAwards.length > 0 ? inWalletAwards : awardOptions.slice(0, 1)).map(
-    (opt) => ({
-      program: opt.program,
-      points: opt.points * travelers,
-      taxes: opt.taxes,
-    }),
-  );
+  // Top-1 program per leg: wallet-fit-adjusted cpp, single card not five.
+  // selectTopProgram returns null if all awards have null/zero cpp.
+  const topOutboundAward = selectTopProgram(awardOptions, userPrograms, userCards);
+  const handoffPrograms: MultiHandoffProgram[] = topOutboundAward
+    ? [
+        {
+          program: topOutboundAward.program,
+          points: topOutboundAward.points * travelers,
+          taxes: topOutboundAward.taxes,
+        },
+      ]
+    : [];
   const cashHandoff: MultiHandoffCashAirline | null = bestCashFlight
     ? {
         airline: bestCashFlight.legs?.[0]?.airline || "the airline",
