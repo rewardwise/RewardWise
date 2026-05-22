@@ -22,6 +22,7 @@ import {
 	Search,
 	Loader2,
 	ArrowRight,
+	ArrowLeftRight,
 } from "lucide-react";
 
 // ─── INTERFACES ───────────────────────────────────────────────────────────────
@@ -246,6 +247,11 @@ export default function HomePage() {
 
 	const [origin, setOrigin] = useState("");
 	const [destination, setDestination] = useState("");
+
+	const swapOriginDestination = () => {
+		setOrigin(destination);
+		setDestination(origin);
+	};
 	const [departDate, setDepartDate] = useState("");
 	const [returnDate, setReturnDate] = useState("");
 	const [travelers, setTravelers] = useState(1);
@@ -565,13 +571,23 @@ export default function HomePage() {
 					</div>
 
 					{/* SEARCH ROW 1 */}
-					<div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+					<div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr_1fr] gap-3 mb-3">
 						<AirportSearch
 							label="FROM"
 							value={origin}
 							onChange={setOrigin}
 							placeholder="City or airport"
 						/>
+						<div className="flex justify-center sm:contents">
+							<button
+								type="button"
+								aria-label="Swap origin and destination"
+								onClick={swapOriginDestination}
+								className="self-end mb-1 p-2 rounded-lg bg-gray-800 border border-gray-700 hover:bg-gray-700 hover:border-emerald-500 transition focus:outline-none focus:ring-2 focus:ring-emerald-500"
+							>
+								<ArrowLeftRight className="w-4 h-4 text-emerald-400" />
+							</button>
+						</div>
 						<AirportSearch
 							label="TO"
 							value={destination}
