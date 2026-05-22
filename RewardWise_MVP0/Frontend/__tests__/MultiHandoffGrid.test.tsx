@@ -61,6 +61,99 @@ describe("MultiHandoffGrid — pay_cash airline card", () => {
   });
 });
 
+// Ticket 86ba25kaa: when bookingUrl is missing, fall back to a real
+// homepage URL via KNOWN_AIRLINE_DOMAINS override (for US carriers
+// whose canonical domain isn't {slug}.com) or slug synthesis (for
+// the rest). Hide the card entirely when neither resolves.
+function renderPayCashWithAirline(airline: string, bookingUrl: string | null = null) {
+  act(() => {
+    root.render(
+      <MultiHandoffGrid
+        recommendation="pay_cash"
+        cashAirline={{
+          airline,
+          cashPrice: 2503,
+          bookingUrl,
+        }}
+        bestDate="Jun 15"
+        routeLabel="ADL → YYZ"
+        travelersLabel="1 traveler"
+      />
+    );
+  });
+}
+
+describe("MultiHandoffGrid — cash card URL fallback (Ticket 86ba25kaa)", () => {
+  it("falls back to slug-synthesized homepage when bookingUrl is null (Virgin Australia)", () => {
+    renderPayCashWithAirline("Virgin Australia", null);
+    const anchor = container.querySelector<HTMLAnchorElement>("a");
+    expect(anchor, "card must be wrapped in an anchor when synthesis succeeds").not.toBeNull();
+    expect(anchor!.getAttribute("href")).toBe("https://www.virginaustralia.com");
+    expect(anchor!.getAttribute("target")).toBe("_blank");
+    expect(anchor!.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(anchor!.textContent).toContain("Visit virginaustralia.com");
+  });
+
+  it("slug synthesis strips whitespace (Air New Zealand)", () => {
+    renderPayCashWithAirline("Air New Zealand", null);
+    const anchor = container.querySelector<HTMLAnchorElement>("a");
+    expect(anchor!.getAttribute("href")).toBe("https://www.airnewzealand.com");
+  });
+
+  it("override map fires before slug — United Airlines maps to united.com (not unitedairlines.com)", () => {
+    renderPayCashWithAirline("United Airlines", null);
+    const anchor = container.querySelector<HTMLAnchorElement>("a");
+    expect(anchor!.getAttribute("href")).toBe("https://www.united.com");
+    expect(anchor!.getAttribute("href")).not.toContain("unitedairlines");
+  });
+
+  it("override map: Southwest Airlines -> southwest.com (slug would be southwestairlines.com)", () => {
+    renderPayCashWithAirline("Southwest Airlines", null);
+    const anchor = container.querySelector<HTMLAnchorElement>("a");
+    expect(anchor!.getAttribute("href")).toBe("https://www.southwest.com");
+    expect(anchor!.getAttribute("href")).not.toContain("southwestairlines");
+  });
+
+  it("override map: American Airlines -> aa.com (slug would be americanairlines.com)", () => {
+    renderPayCashWithAirline("American Airlines", null);
+    const anchor = container.querySelector<HTMLAnchorElement>("a");
+    expect(anchor!.getAttribute("href")).toBe("https://www.aa.com");
+  });
+
+  it("slug fallback still fires for unknown carriers (Some Regional Carrier)", () => {
+    renderPayCashWithAirline("Some Regional Carrier", null);
+    const anchor = container.querySelector<HTMLAnchorElement>("a");
+    expect(anchor!.getAttribute("href")).toBe("https://www.someregionalcarrier.com");
+  });
+
+  it("hides the card entirely when bookingUrl is null AND airline is empty string", () => {
+    renderPayCashWithAirline("", null);
+    expect(container.querySelector("a")).toBeNull();
+    expect(container.textContent).not.toContain("Visit");
+  });
+
+  it("hides the card entirely when bookingUrl is null AND airline is whitespace only", () => {
+    renderPayCashWithAirline("   ", null);
+    expect(container.querySelector("a")).toBeNull();
+    expect(container.textContent).not.toContain("Visit");
+  });
+
+  it("synthesized URL anchor preserves target=_blank and rel=noopener noreferrer", () => {
+    renderPayCashWithAirline("Cathay Pacific", null);
+    const anchor = container.querySelector<HTMLAnchorElement>("a");
+    expect(anchor!.getAttribute("target")).toBe("_blank");
+    expect(anchor!.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(anchor!.getAttribute("href")).toBe("https://www.cathaypacific.com");
+  });
+
+  it("real bookingUrl wins over synthesis when both are available", () => {
+    renderPayCashWithAirline("United Airlines", "https://booking.example.com/uniqueid");
+    const anchor = container.querySelector<HTMLAnchorElement>("a");
+    expect(anchor!.getAttribute("href")).toBe("https://booking.example.com/uniqueid");
+    expect(anchor!.getAttribute("href")).not.toContain("united.com");
+  });
+});
+
 // Ticket 86ba262xj: when a partner program needs a transfer from a flex
 // currency (e.g. Aeroplan ← Chase UR / Amex MR / Cap1 Miles), the booking
 // card must make Step 1 — Transfer the primary action, not bury it.
