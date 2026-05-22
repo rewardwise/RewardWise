@@ -395,6 +395,10 @@ export default function VerdictCard({
     recommendation,
     bestOutbound,
     bestCashFlight,
+    origin,
+    destination,
+    departDate,
+    winningDate,
   });
 
   const inboundLeg: FlightLeg | null = buildInboundLeg({
@@ -403,6 +407,10 @@ export default function VerdictCard({
     bestOutbound,
     bestReturn,
     bestCashFlight,
+    origin,
+    destination,
+    returnDate,
+    winningReturnDate,
   });
 
   const operatingAirline: string | null = (() => {
