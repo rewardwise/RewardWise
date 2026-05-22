@@ -35,9 +35,9 @@ export function buildSearchQueryParams(input: SearchQueryInputs): URLSearchParam
 	} = input;
 	const isFlexible = dateMode === "flexible" && Boolean(departDate);
 	const flexibleStart = isFlexible
-		? clampToToday(shiftIsoDate(departDate, -3))
+		? clampToToday(shiftIsoDate(departDate, -7))
 		: departDate;
-	const flexibleEnd = isFlexible ? shiftIsoDate(departDate, 3) : null;
+	const flexibleEnd = isFlexible ? shiftIsoDate(departDate, 7) : null;
 
 	const params = new URLSearchParams({
 		origin,
@@ -52,7 +52,7 @@ export function buildSearchQueryParams(input: SearchQueryInputs): URLSearchParam
 	if (tripType === "roundtrip" && returnDate) {
 		params.append("return_date", returnDate);
 		if (isFlexible) {
-			params.append("return_date_end", shiftIsoDate(returnDate, 3));
+			params.append("return_date_end", shiftIsoDate(returnDate, 7));
 		}
 	}
 	return params;

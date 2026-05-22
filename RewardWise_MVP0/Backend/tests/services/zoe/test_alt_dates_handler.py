@@ -226,7 +226,7 @@ def test_handler_call_passes_window_range_to_seats_aero():
     # ±7 days around 2026-07-04
     assert captured["date"] == "2026-06-27"
     assert captured["end_date"] == "2026-07-11"
-    assert captured["take"] == 100
+    assert captured["take"] == 200
 
 
 # ── Cash-only verdict regression (code-review H1) ─────────────────────────────
