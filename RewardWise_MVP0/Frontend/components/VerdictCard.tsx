@@ -13,6 +13,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useAlerts } from "@/context/AlertContext";
+import { cabinLabel } from "@/utils/cabin";
 import { fmtMoney } from "@/utils/format";
 import { dedupeByProgram } from "@/utils/awardOptions";
 import { buildOutboundLeg, buildInboundLeg } from "@/utils/flightLegs";
@@ -438,7 +439,7 @@ export default function VerdictCard({
       }
     : null;
   const routeLabel = isRoundtrip ? `${origin} ⇄ ${destination}` : `${origin} → ${destination}`;
-  const travelersLabel = `${travelers} traveler${travelers !== 1 ? "s" : ""}, ${(cabin || "economy").replace(/_/g, " ")}`;
+  const travelersLabel = `${travelers} traveler${travelers !== 1 ? "s" : ""}, ${cabinLabel(cabin || "economy").toLowerCase()}`;
 
   const reasoningCopy = verdict.confidence_reason || (
     recommendation === "pay_cash"
@@ -859,7 +860,7 @@ export default function VerdictCard({
                         const savingsStr = displaySavings != null ? `saving roughly ${fmtMoney(Math.round(displaySavings))}` : null;
                         const parts = [
                           `The search returned a verdict for ${origin} → ${destination}`,
-                          `on ${bestDate}${returnDate ? ` returning ${returnDate}` : ""}, ${travelers} traveler${travelers !== 1 ? "s" : ""}, ${(cabin || "economy").replace(/_/g, " ")} class.`,
+                          `on ${bestDate}${returnDate ? ` returning ${returnDate}` : ""}, ${travelers} traveler${travelers !== 1 ? "s" : ""}, ${cabinLabel(cabin || "economy").toLowerCase()} class.`,
                           `Verdict: ${recommendationLabel}.`,
                           cashStr ? `Cash fare: ${cashStr}.` : null,
                           ptsStr && progStr ? `Best award: ${ptsStr} via ${progStr}.` : null,
