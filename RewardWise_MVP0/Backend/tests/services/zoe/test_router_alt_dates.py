@@ -51,7 +51,16 @@ def test_verdict_strategy_still_fires_for_non_alt_phrases_with_verdict():
 
 
 def test_off_topic_still_wins_over_alt_dates():
-    """Off-topic check happens before alt_dates; weird mixed messages shouldn't
-    leak into the award-search handler."""
+    """Off-topic check happens before alt_dates (when no trip signals present);
+    weird mixed messages shouldn't leak into the award-search handler."""
     r = classify("write me a poem about other dates", has_verdict_context=True)
     assert r.intent == "off_topic"
+
+
+def test_off_topic_guard_yields_to_trip_signals_then_alt_dates():
+    """Existing router contract: off-topic guard only fires when no trip
+    signals are present. 'tell me a joke about flying earlier' has both,
+    and the trip-signal exemption lets alt_dates take over — this is
+    preserved post-PR, not changed."""
+    r = classify("tell me a joke about flying earlier", has_verdict_context=True)
+    assert r.intent == "alt_dates"

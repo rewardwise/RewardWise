@@ -227,3 +227,92 @@ def test_handler_call_passes_window_range_to_seats_aero():
     assert captured["date"] == "2026-06-27"
     assert captured["end_date"] == "2026-07-11"
     assert captured["take"] == 100
+
+
+# ── Cash-only verdict regression (code-review H1) ─────────────────────────────
+
+CASH_ONLY_VERDICT = (
+    "The search returned a verdict for JFK → LHR on 2026-07-04, 1 traveler, "
+    "business class. Verdict: PAY CASH. Cash fare: $1,200. "
+    "Confidence: HIGH."
+)
+
+
+def test_handler_cash_only_verdict_does_not_claim_cheaper_than():
+    """When the verdict has no award baseline, the lead line must NOT claim
+    'cheaper than your date' — we have no number to compare against."""
+    results = [
+        {"date": "2026-07-01", "points": 48_000, "program": "united"},
+        {"date": "2026-07-05", "points": 55_000, "program": "united"},
+    ]
+    with patch.object(
+        alt_dates_handler, "search_award_availability", _stub_search(results)
+    ):
+        out = _call({"verdict_context": CASH_ONLY_VERDICT})
+
+    msg = out["message"]
+    # We do still surface the available award space honestly.
+    assert "48,000" in msg
+    assert "Jul 1" in msg
+    # But we must NOT make a comparison claim we can't substantiate.
+    assert "cheaper than" not in msg.lower()
+    assert "drops further" not in msg.lower()
+    # And we must be honest that the verdict didn't include an award cost.
+    assert "didn't include an award cost" in msg or "no award baseline" in msg.lower()
+    # Disclaimer still present.
+    assert "verify" in msg.lower()
+
+
+def test_handler_cash_only_verdict_no_alts_stays_honest():
+    """No alts + cash-only verdict — must not invent a 'best available' claim."""
+    with patch.object(
+        alt_dates_handler, "search_award_availability", _stub_search([])
+    ):
+        out = _call({"verdict_context": CASH_ONLY_VERDICT})
+
+    msg = out["message"]
+    assert "cheaper than" not in msg.lower()
+    assert "best available" not in msg.lower()  # would imply we knew a base cost
+    # Disclaimer must be present on every branch.
+    assert "verify" in msg.lower()
+
+
+# ── seats.aero date-shape normalization (code-review M1) ──────────────────────
+
+def test_normalize_date_handles_plain_and_iso_timestamp():
+    assert alt_dates_handler._normalize_date("2026-07-04") == "2026-07-04"
+    assert alt_dates_handler._normalize_date("2026-07-04T00:00:00+00:00") == "2026-07-04"
+    assert alt_dates_handler._normalize_date("2026-07-04T12:34:56Z") == "2026-07-04"
+
+
+def test_normalize_date_rejects_garbage():
+    assert alt_dates_handler._normalize_date(None) is None
+    assert alt_dates_handler._normalize_date("") is None
+    assert alt_dates_handler._normalize_date("not a date") is None
+    assert alt_dates_handler._normalize_date("20260704") is None
+    assert alt_dates_handler._normalize_date(20260704) is None
+
+
+def test_handler_strips_iso_timestamp_dates_from_seats_aero():
+    """If seats.aero returns ISO timestamps, the base date must still be
+    excluded and the rendered output must show YYYY-MM-DD, not the raw ISO."""
+    results = [
+        # base date with timestamp shape — must be excluded
+        {"date": "2026-07-04T00:00:00+00:00", "points": 70_000, "program": "united"},
+        {"date": "2026-07-01T00:00:00+00:00", "points": 48_000, "program": "united"},
+    ]
+    with patch.object(
+        alt_dates_handler, "search_award_availability", _stub_search(results)
+    ):
+        out = _call({"verdict_context": VERDICT_TEXT})
+
+    msg = out["message"]
+    # Base date (Jul 4) must NOT be rendered as the lead alternative even
+    # though seats.aero returned it with a T-suffix.
+    assert "Jul 4 has award space" not in msg
+    # ISO timestamp must not leak into the rendered text.
+    assert "T00:00:00" not in msg
+    assert "+00:00" not in msg
+    # Real cheaper alt (Jul 1, 48k) should still surface.
+    assert "Jul 1" in msg
+    assert "48,000" in msg

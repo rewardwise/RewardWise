@@ -48,7 +48,7 @@ _ORIGIN_DEST_RE = re.compile(
 )
 _DATE_RE = re.compile(r"\bon\s+(\d{4}-\d{2}-\d{2})\b", re.IGNORECASE)
 _CABIN_RE = re.compile(
-    r"\b(economy|premium economy|business|first)\s+class\b",
+    r"\b(business|first|economy)\s+class\b",
     re.IGNORECASE,
 )
 _BASE_POINTS_RE = re.compile(
@@ -92,16 +92,41 @@ def _parse_verdict_context(text: str) -> Optional[dict[str, Any]]:
 
 # ── Cheapest-per-date reduction ───────────────────────────────────────────────
 
+def _normalize_date(raw: Any) -> Optional[str]:
+    """Coerce seats.aero `Date` to plain YYYY-MM-DD.
+
+    seats.aero has historically returned both `"2026-07-04"` and
+    `"2026-07-04T00:00:00+00:00"` shapes depending on endpoint. We key,
+    pop, and render exclusively off the 10-char prefix so the base-date
+    exclusion and the human formatter never fall apart on a `T`-suffix.
+    """
+    if not isinstance(raw, str) or len(raw) < 10:
+        return None
+    candidate = raw[:10]
+    # Cheap shape check — prevents accidentally accepting garbage.
+    if candidate[4] != "-" or candidate[7] != "-":
+        return None
+    return candidate
+
+
 def _cheapest_by_date(results: list[dict]) -> dict[str, dict]:
-    """For each award date, keep the entry with the lowest points cost."""
+    """For each award date, keep the entry with the lowest points cost.
+
+    Keyed on normalized YYYY-MM-DD so the downstream base-date pop and
+    date formatter behave regardless of whether seats.aero returned a
+    plain date or a timestamp.
+    """
     best: dict[str, dict] = {}
     for r in results:
-        d = r.get("date")
+        d = _normalize_date(r.get("date"))
         pts = r.get("points")
         if not d or pts is None:
             continue
         prev = best.get(d)
         if prev is None or pts < prev["points"]:
+            # Stamp the normalized date back on the record so all downstream
+            # consumers (sort key, renderer) work off the same shape.
+            r = {**r, "date": d}
             best[d] = r
     return best
 
@@ -121,6 +146,9 @@ def _format_points(p: int) -> str:
 
 # ── Response rendering ────────────────────────────────────────────────────────
 
+_DISCLAIMER = "Availability changes fast — verify before transferring points."
+
+
 def _render_alternatives(
     parsed: dict[str, Any],
     alts: list[dict],
@@ -135,13 +163,15 @@ def _render_alternatives(
                 f"{parsed['origin']} → {parsed['destination']} "
                 f"({parsed['cabin']}) — nothing cheaper than your "
                 f"{_format_points(base_pts)} points showed up. "
-                "Your current date is the best available right now."
+                f"Your current date is the best available right now. {_DISCLAIMER}"
             )
+        # No base award cost in the verdict — can't claim "best available",
+        # just say we didn't find award space worth flagging.
         return (
             f"I checked ±{WINDOW_DAYS} days around {base_date_h} for "
             f"{parsed['origin']} → {parsed['destination']} "
-            f"({parsed['cabin']}) — no clearly cheaper dates surfaced. "
-            "Run the search again if availability changes."
+            f"({parsed['cabin']}) — no clearly cheaper award dates surfaced. "
+            f"Run the search again if availability changes. {_DISCLAIMER}"
         )
 
     lines: list[str] = []
@@ -156,19 +186,28 @@ def _render_alternatives(
             f"({base_date_h})."
         )
     else:
+        # Cash-only verdict (no points anchor parsed). Don't claim
+        # "cheaper than your date" — we have no number to compare against.
+        # Just report what's actually available in the window.
         lines.append(
-            f"{lead_date} has award space at {lead_pts} points via "
-            f"{lead_prog} — cheaper than the {base_date_h} option you're "
-            "looking at."
+            f"Your verdict didn't include an award cost to compare against, "
+            f"but I found award space near {base_date_h}: "
+            f"{lead_date} at {lead_pts} points via {lead_prog}."
         )
 
     for alt in alts[1:]:
         d_h = _format_date_human(alt["date"])
         pts_h = _format_points(alt["points"])
         prog = (alt.get("program") or "partner").replace("_", " ")
-        lines.append(f"{d_h} drops further to {pts_h} via {prog}.")
+        if base_pts:
+            # Lead anchored "cheaper than" claim — followups can keep the
+            # "drops further" framing.
+            lines.append(f"{d_h} drops further to {pts_h} via {prog}.")
+        else:
+            # No baseline — neutral framing for each alt.
+            lines.append(f"{d_h} shows {pts_h} via {prog}.")
 
-    lines.append("Availability changes fast — verify before transferring points.")
+    lines.append(_DISCLAIMER)
     return " ".join(lines)
 
 
