@@ -12,20 +12,20 @@ import { buildSearchQueryParams } from "../lib/searchQuery";
 // ---------------------------------------------------------------------------
 
 describe("buildSearchQueryParams — both-flexible round-trip", () => {
-	it("flex roundtrip sends both date_end and return_date_end", () => {
+	it("flex roundtrip sends both date_end and return_date_end (±7)", () => {
 		const params = buildSearchQueryParams({
 			origin: "JFK",
 			destination: "LAX",
 			departDate: "2099-06-15",
 			dateMode: "flexible",
-			returnDate: "2099-06-22",
+			returnDate: "2099-06-29",
 			tripType: "roundtrip",
 			cabin: "economy",
 			travelers: 1,
 		});
-		expect(params.get("date_end")).toBe("2099-06-18");
-		expect(params.get("return_date")).toBe("2099-06-22");
-		expect(params.get("return_date_end")).toBe("2099-06-25");
+		expect(params.get("date_end")).toBe("2099-06-22");
+		expect(params.get("return_date")).toBe("2099-06-29");
+		expect(params.get("return_date_end")).toBe("2099-07-06");
 	});
 
 	it("flex one-way sends only date_end (no return params at all)", () => {
@@ -39,7 +39,7 @@ describe("buildSearchQueryParams — both-flexible round-trip", () => {
 			cabin: "economy",
 			travelers: 1,
 		});
-		expect(params.get("date_end")).toBe("2099-06-18");
+		expect(params.get("date_end")).toBe("2099-06-22");
 		expect(params.get("return_date")).toBeNull();
 		expect(params.get("return_date_end")).toBeNull();
 	});

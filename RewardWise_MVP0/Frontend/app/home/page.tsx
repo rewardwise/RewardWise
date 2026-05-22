@@ -559,7 +559,7 @@ export default function HomePage() {
 								onChange={() => setDateMode("flexible")}
 								className="accent-emerald-500"
 							/>
-							Flexible (±3 days)
+							Flexible (±7 days)
 						</label>
 					</div>
 

@@ -765,7 +765,7 @@ _BOOKING_STRATEGIES: list[dict] = [
             "Point.me (free/paid): searches award inventory across all programs you could transfer to. "
             "AwardHacker: find which programs can book a specific route. "
             "Award booking tips: "
-            "(1) Be flexible on dates: shift ±3 days to find availability. Off-peak dates (Tue/Wed) "
+            "(1) Be flexible on dates: shift ±7 days to find availability. Off-peak dates (Tue/Wed) "
             "often have better premium cabin availability. "
             "(2) Try alternative routing: if JFK→NRT is unavailable, try EWR→ORD→NRT or JFK→LAX→NRT. "
             "(3) Mixed-cabin awards: some programs let you book business one-way + economy return "

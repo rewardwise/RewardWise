@@ -57,7 +57,9 @@ async def search_award_availability(
     }
     resolved_end_date = end_date or date
     is_range = resolved_end_date != date
-    resolved_take = take if take is not None else (100 if is_range else 50)
+    # ±7 range mode = up to 15 dates × multiple programs per date — bumped from
+    # 100 to 200 to avoid silent truncation on busy routes (JFK→LHR business).
+    resolved_take = take if take is not None else (200 if is_range else 50)
     params = {
         "origin_airport": origin.upper(),
         "destination_airport": destination.upper(),

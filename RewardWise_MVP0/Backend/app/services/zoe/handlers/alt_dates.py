@@ -259,7 +259,7 @@ async def handle(
             start,
             parsed["cabin"],
             end_date=end,
-            take=100,
+            take=200,
         )
     except Exception as exc:
         print("⚠️ alt_dates seats.aero error:", exc)
