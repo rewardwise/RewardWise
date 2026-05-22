@@ -141,41 +141,78 @@ function synthesizeSegmentFromSearchParams(
 }
 
 export function buildOutboundLeg(args: BuildLegArgs): FlightLeg | null {
-  const { recommendation, bestOutbound, bestCashFlight } = args;
+  const { recommendation, bestOutbound, bestCashFlight, origin, destination, departDate, winningDate } = args;
 
   if (recommendation === "wait") return null;
 
-  if (recommendation === "use_points" && bestOutbound) {
-    const trip = bestOutbound.trips?.[0];
-    const segments = awardTripToSegments(trip, bestOutbound.airlines);
-    if (segments.length > 0) {
+  if (recommendation === "use_points") {
+    // Tier 1: detailed segments from bestOutbound.trips[0]
+    if (bestOutbound) {
+      const trip = bestOutbound.trips?.[0];
+      const segments = awardTripToSegments(trip, bestOutbound.airlines);
+      if (segments.length > 0) {
+        return {
+          label: "Outbound",
+          segments,
+          total_duration: trip?.total_duration,
+          data_quality: "detailed",
+        };
+      }
+    }
+    // Tier 3: synthesize from bestOutbound top-level fields
+    const fromAward = synthesizeSegmentFromAward(bestOutbound);
+    if (fromAward) {
       return {
         label: "Outbound",
-        segments,
-        total_duration: trip?.total_duration,
-        data_quality: "detailed",
+        segments: [fromAward],
+        data_quality: "summary",
       };
     }
-    const summary = synthesizeSummarySegment(bestOutbound);
-    if (summary) {
+    // Tier 4: synthesize from search params
+    const fromParams = synthesizeSegmentFromSearchParams(
+      winningDate ?? departDate,
+      origin,
+      destination,
+      "Outbound flight"
+    );
+    if (fromParams) {
       return {
         label: "Outbound",
-        segments: [summary],
+        segments: [fromParams],
         data_quality: "summary",
       };
     }
     return null;
   }
 
-  if (recommendation === "pay_cash" && bestCashFlight) {
-    const segments = cashLegsToSegments(bestCashFlight.legs);
-    if (segments.length === 0) return null;
-    return {
-      label: "Outbound",
-      segments,
-      total_duration: bestCashFlight.total_duration,
-      data_quality: "detailed",
-    };
+  if (recommendation === "pay_cash") {
+    // Tier 1: detailed segments from bestCashFlight.legs
+    if (bestCashFlight) {
+      const segments = cashLegsToSegments(bestCashFlight.legs);
+      if (segments.length > 0) {
+        return {
+          label: "Outbound",
+          segments,
+          total_duration: bestCashFlight.total_duration,
+          data_quality: "detailed",
+        };
+      }
+    }
+    // Tier 4: synthesize from search params (pay_cash has no award object for Tier 3)
+    const fromParams = synthesizeSegmentFromSearchParams(
+      winningDate ?? departDate,
+      origin,
+      destination,
+      "Outbound flight"
+    );
+    if (fromParams) {
+      return {
+        label: "Outbound",
+        segments: [fromParams],
+        data_quality: "summary",
+      };
+    }
+    return null;
   }
 
   return null;
