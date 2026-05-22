@@ -14,6 +14,7 @@ import AirportSearch from "@/components/AirportSearch";
 import ZoeChat from "@/components/zoe/ZoeChat";
 import { trackAnalyticsEvent } from "@/utils/analytics/client";
 import { buildSearchQueryParams } from "@/lib/searchQuery";
+import { MAX_ISO_DATE, clampISODate } from "@/utils/dateInput";
 import {
 	Calendar,
 	Plane,
@@ -585,8 +586,9 @@ export default function HomePage() {
 							<input
 								type="date"
 								min={new Date().toISOString().split("T")[0]}
+								max={MAX_ISO_DATE}
 								value={departDate}
-								onChange={(e) => setDepartDate(e.target.value)}
+								onChange={(e) => setDepartDate(clampISODate(e.target.value, departDate))}
 								className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm [color-scheme:dark]"
 							/>
 						</div>
@@ -606,8 +608,9 @@ export default function HomePage() {
 								<input
 									type="date"
 									min={departDate || new Date().toISOString().split("T")[0]}
+									max={MAX_ISO_DATE}
 									value={returnDate}
-									onChange={(e) => setReturnDate(e.target.value)}
+									onChange={(e) => setReturnDate(clampISODate(e.target.value, returnDate))}
 									className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm [color-scheme:dark]"
 								/>
 							</div>
