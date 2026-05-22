@@ -57,6 +57,41 @@ function getSubscriptionPeriodTime(subscription: unknown, field: string) {
   return fromUnixSeconds(getSubscriptionPeriodSeconds(subscription, field));
 }
 
+const ALLOWED_REASON_CODES = new Set([
+  "too_expensive",
+  "not_using",
+  "missing_features",
+  "found_alternative",
+  "other",
+]);
+
+type ParsedReason = {
+  reason_code: string;
+  free_text: string | null;
+};
+
+async function parseReason(request: Request): Promise<ParsedReason | null> {
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return null;
+  }
+  const record = asRecord(body);
+  if (!record) return null;
+  const reasonCode = record.reason_code;
+  if (typeof reasonCode !== "string" || !ALLOWED_REASON_CODES.has(reasonCode)) {
+    return null;
+  }
+  const rawFreeText = record.free_text;
+  let freeText: string | null = null;
+  if (typeof rawFreeText === "string") {
+    const trimmed = rawFreeText.trim();
+    if (trimmed.length > 0) freeText = trimmed.slice(0, 500);
+  }
+  return { reason_code: reasonCode, free_text: freeText };
+}
+
 export async function POST(request: Request) {
   try {
     const ip = getClientIp(request);
@@ -75,6 +110,14 @@ export async function POST(request: Request) {
     }
 
     getStripeEnv();
+
+    const reason = await parseReason(request);
+    if (!reason) {
+      return NextResponse.json(
+        { error: "A cancellation reason is required." },
+        { status: 400 },
+      );
+    }
 
     const supabase = await createRouteHandlerClient();
     const {
@@ -128,6 +171,20 @@ export async function POST(request: Request) {
         updated_at: new Date().toISOString(),
       })
       .eq("user_id", user.id);
+
+    const { error: feedbackError } = await supabase
+      .from("cancellation_feedback")
+      .insert({
+        user_id: user.id,
+        reason_code: reason.reason_code,
+        free_text: reason.free_text,
+        stripe_subscription_id: sub.stripe_subscription_id,
+      });
+    if (feedbackError) {
+      // Don't fail the cancel flow — Stripe already accepted the change.
+      // Surface for ops; retention analysis can backfill from Stripe metadata if needed.
+      console.error("cancel subscription feedback insert:", feedbackError);
+    }
 
     return NextResponse.json({
       ok: true,
