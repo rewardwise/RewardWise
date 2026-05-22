@@ -160,7 +160,7 @@ const cashFlightNoReturn: CashFlightLike = {
   return_flight: null,
 };
 
-describe("Verdict round-trip return flight rendering — 86ba2ze48", () => {
+describe("Verdict round-trip return flight rendering (86ba2ze48)", () => {
   VIEWPORTS.forEach(({ name, width }) => {
     describe(`viewport ${name}`, () => {
       beforeEach(() => setViewport(width));
