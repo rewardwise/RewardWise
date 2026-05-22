@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 import TropicalBackground from "@/components/TropicalBackground";
 import WatchlistSection from "@/components/WatchlistSection";
 import { useAuth } from "@/context/AuthProvider";
+import { cabinLabel } from "@/utils/cabin";
 import { createClient } from "@/utils/supabase/client";
 
 import {
@@ -98,17 +99,6 @@ function formatBookedDate(dateStr?: string | null) {
 		day: "numeric",
 		year: "numeric",
 	});
-}
-
-function cabinLabel(cabin?: string | null) {
-	if (!cabin) return "Economy";
-	const labels: Record<string, string> = {
-		economy: "Economy",
-		premium: "Premium",
-		business: "Business",
-		first: "First",
-	};
-	return labels[cabin] ?? cabin;
 }
 
 function verdictLabel(recommendation: Recommendation) {
