@@ -18,6 +18,7 @@ from pydantic import BaseModel, field_validator
 
 class CabinClass(str, Enum):
     economy = "economy"
+    premium_economy = "premium_economy"
     business = "business"
     first = "first"
 
