@@ -1,5 +1,5 @@
 import asyncio
-from typing import Optional
+from typing import Optional, TypedDict
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from app.api.validators import SearchParams, limiter  # RW-047
@@ -42,12 +42,24 @@ def get_search_params(
         raise HTTPException(status_code=422, detail=str(e))
 
 
-def _get_user_programs(supabase, user_id: str) -> list[str]:
+class UserWallet(TypedDict):
+    # post-PROGRAM_ALIASES seats.aero source slugs (e.g. ["united", "aeroplan"])
+    programs: list[str]
+    # raw reward_programs.name brands (e.g. ["Chase Ultimate Rewards"])
+    cards: list[str]
+
+
+def _get_user_programs(supabase, user_id: str) -> UserWallet:
     """
-    Fetch the user's wallet cards from Supabase, map their reward program names
-    through PROGRAM_ALIASES, and return the list of seats.aero source strings
-    the user can actually redeem (e.g. ["united", "aeroplan", "delta"]).
-    Returns an empty list on any error so the search never hard-fails.
+    Fetch the user's wallet from Supabase and return both representations:
+    - `programs`: seats.aero source slugs the user can redeem via PROGRAM_ALIASES
+      reverse-lookup (e.g. ["united", "aeroplan", "delta"])
+    - `cards`: raw reward_programs.name brands (e.g. ["Chase Ultimate Rewards",
+      "Amex Membership Rewards"])
+    Both are needed downstream: `programs` for award-source filtering, `cards`
+    for wallet-reachability checks against TRANSFER_PARTNERS[slug].sourceCard
+    which is a brand string, not a slug.
+    Returns empty wallet on any error so the search never hard-fails.
     """
     try:
         resp = (
@@ -62,13 +74,14 @@ def _get_user_programs(supabase, user_id: str) -> list[str]:
             for row in (resp.data or [])
             if row.get("reward_programs")
         ]
-        return [
+        programs = [
             source
             for source, aliases in PROGRAM_ALIASES.items()
             if any(alias in owned_program_names for alias in aliases)
         ]
+        return {"programs": programs, "cards": owned_program_names}
     except Exception:
-        return []
+        return {"programs": [], "cards": []}
 
 
 @router.post("/search")
@@ -120,7 +133,9 @@ async def search(
 
 
     # --- Fetch user's redeemable programs from their wallet ---
-    user_programs = _get_user_programs(supabase, user_id)
+    wallet = _get_user_programs(supabase, user_id)
+    user_programs = wallet["programs"]
+    user_cards = wallet["cards"]
 
     # --- L1 memory + L2 Supabase cache lookup ---
     cache_params: CacheSearchParams = {
@@ -360,6 +375,7 @@ async def search(
         "return_award_options": return_award_options,
         "verdict": verdict_details,
         "user_programs": user_programs,
+        "user_cards": user_cards,
     }
 
 async def run_search(request: Request, params):
@@ -523,6 +539,7 @@ async def public_search(
     try:
         # Guest users do not have a saved wallet yet, so award source filtering is broad.
         user_programs: list[str] = []
+        user_cards: list[str] = []
 
         # Keep cache lookup parity with authenticated search.
         cache_params: CacheSearchParams = {
@@ -668,6 +685,7 @@ async def public_search(
             "return_award_options": public_return_award_options,
             "verdict": public_verdict,
             "user_programs": user_programs,
+            "user_cards": user_cards,
             "limited_public_preview": True,
         }
 
