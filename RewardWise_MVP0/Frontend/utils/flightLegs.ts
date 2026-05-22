@@ -219,11 +219,22 @@ export function buildOutboundLeg(args: BuildLegArgs): FlightLeg | null {
 }
 
 export function buildInboundLeg(args: BuildLegArgs): FlightLeg | null {
-  const { recommendation, isRoundtrip, bestOutbound, bestReturn, bestCashFlight } = args;
+  const {
+    recommendation,
+    isRoundtrip,
+    bestOutbound,
+    bestReturn,
+    bestCashFlight,
+    origin,
+    destination,
+    returnDate,
+    winningReturnDate,
+  } = args;
 
   if (!isRoundtrip) return null;
 
   if (recommendation === "use_points") {
+    // Tier 1: detailed segments from bestReturn.trips[0]
     if (bestReturn) {
       const trip = bestReturn.trips?.[0];
       const segments = awardTripToSegments(trip, bestReturn.airlines);
@@ -236,8 +247,8 @@ export function buildInboundLeg(args: BuildLegArgs): FlightLeg | null {
         };
       }
     }
-    // Bug 2 fallback: seats.aero round-trip awards sometimes pack the return
-    // into bestOutbound.trips[1] rather than a separate bestReturn.
+    // Tier 2: seats.aero combined round-trip awards sometimes pack the return
+    // into bestOutbound.trips[1] rather than a separate bestReturn entry.
     if (bestOutbound) {
       const returnTrip = bestOutbound.trips?.[1];
       const segments = awardTripToSegments(returnTrip, bestOutbound.airlines);
@@ -250,19 +261,61 @@ export function buildInboundLeg(args: BuildLegArgs): FlightLeg | null {
         };
       }
     }
+    // Tier 3: synthesize from bestReturn top-level fields (matches outbound symmetry)
+    const fromAward = synthesizeSegmentFromAward(bestReturn);
+    if (fromAward) {
+      return {
+        label: "Return",
+        segments: [fromAward],
+        data_quality: "summary",
+      };
+    }
+    // Tier 4: synthesize from search params (return = destination -> origin swap)
+    const fromParams = synthesizeSegmentFromSearchParams(
+      winningReturnDate ?? returnDate,
+      destination,
+      origin,
+      "Return flight"
+    );
+    if (fromParams) {
+      return {
+        label: "Return",
+        segments: [fromParams],
+        data_quality: "summary",
+      };
+    }
     return null;
   }
 
-  if (recommendation === "pay_cash" && bestCashFlight?.return_flight) {
-    const ret = bestCashFlight.return_flight;
-    const segments = cashLegsToSegments(ret.legs);
-    if (segments.length === 0) return null;
-    return {
-      label: "Return",
-      segments,
-      total_duration: ret.total_duration,
-      data_quality: "detailed",
-    };
+  if (recommendation === "pay_cash") {
+    // Tier 1: detailed segments from bestCashFlight.return_flight.legs
+    if (bestCashFlight?.return_flight) {
+      const ret = bestCashFlight.return_flight;
+      const segments = cashLegsToSegments(ret.legs);
+      if (segments.length > 0) {
+        return {
+          label: "Return",
+          segments,
+          total_duration: ret.total_duration,
+          data_quality: "detailed",
+        };
+      }
+    }
+    // Tier 4: synthesize from search params (pay_cash has no award object for Tier 3)
+    const fromParams = synthesizeSegmentFromSearchParams(
+      winningReturnDate ?? returnDate,
+      destination,
+      origin,
+      "Return flight"
+    );
+    if (fromParams) {
+      return {
+        label: "Return",
+        segments: [fromParams],
+        data_quality: "summary",
+      };
+    }
+    return null;
   }
 
   return null;
