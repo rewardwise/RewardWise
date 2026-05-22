@@ -176,7 +176,7 @@ def _build_next_step(
     """
     program = program_label or "the airline"
     cabin_lower = (cabin or "economy").lower()
-    is_premium = cabin_lower in {"business", "first"}
+    is_premium = cabin_lower in {"premium_economy", "business", "first"}
 
     if recommendation == "use_points":
         if urgency and remaining_seats > 0:

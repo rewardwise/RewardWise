@@ -316,3 +316,23 @@ def test_handler_strips_iso_timestamp_dates_from_seats_aero():
     # Real cheaper alt (Jul 1, 48k) should still surface.
     assert "Jul 1" in msg
     assert "48,000" in msg
+
+
+# ── premium_economy NL parsing (86ba25eq0) ───────────────────────────────────
+
+def test_parse_verdict_context_recognises_premium_economy_phrase():
+    parsed = alt_dates_handler._parse_verdict_context(
+        "for JFK → CDG on 2026-10-04, premium economy class. "
+        "Best award: 50,000 points via Air France."
+    )
+    assert parsed is not None
+    assert parsed["cabin"] == "premium_economy"
+
+
+def test_parse_verdict_context_recognises_premium_economy_underscore():
+    parsed = alt_dates_handler._parse_verdict_context(
+        "for JFK → CDG on 2026-10-04, premium_economy class. "
+        "Best award: 50,000 points via Air France."
+    )
+    assert parsed is not None
+    assert parsed["cabin"] == "premium_economy"
