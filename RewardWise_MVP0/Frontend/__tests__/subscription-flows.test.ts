@@ -38,10 +38,22 @@ const DAY_PASS_HOURS = 24;
 const TEST_USER_ID = "test-user";
 const TEST_USER_EMAIL = "test-user@example.com";
 const TEST_SUBSCRIPTION_ID = "sub_test";
-const TEST_REQUEST = new Request(
-  "https://app.test/api/payments/cancel-subscription",
-  { method: "POST" },
-);
+function makeCancelRequest(body?: unknown) {
+  return new Request("https://app.test/api/payments/cancel-subscription", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+}
+
+const VALID_REASON_PAYLOAD = {
+  reason_code: "too_expensive",
+  free_text: null,
+};
+
+function freshTestRequest() {
+  return makeCancelRequest(VALID_REASON_PAYLOAD);
+}
 
 type SubscriptionRow = {
   status: string;
@@ -110,8 +122,10 @@ function makeProfileSupabase(row: ProfileRow) {
 function makeCancelRouteSupabase(params: {
   user: { id: string; email?: string } | null;
   subscription?: { stripe_subscription_id?: string | null; status?: string } | null;
+  feedbackInsertError?: { message: string } | null;
 }) {
   let updatePayload: Record<string, unknown> | null = null;
+  let feedbackInsertPayload: Record<string, unknown> | null = null;
 
   const lookupQuery = {
     select: vi.fn(),
@@ -129,13 +143,22 @@ function makeCancelRouteSupabase(params: {
     eq: vi.fn(() => Promise.resolve({ error: null })),
   };
 
-  const table = {
+  const subscriptionsTable = {
     select: lookupQuery.select,
     eq: lookupQuery.eq,
     maybeSingle: lookupQuery.maybeSingle,
     update: vi.fn((payload: Record<string, unknown>) => {
       updatePayload = payload;
       return updateQuery;
+    }),
+  };
+
+  const feedbackTable = {
+    insert: vi.fn((payload: Record<string, unknown>) => {
+      feedbackInsertPayload = payload;
+      return Promise.resolve({
+        error: params.feedbackInsertError ?? null,
+      });
     }),
   };
 
@@ -147,16 +170,23 @@ function makeCancelRouteSupabase(params: {
         }),
       ),
     },
-    from: vi.fn(() => table),
+    from: vi.fn((name: string) => {
+      if (name === "cancellation_feedback") return feedbackTable;
+      return subscriptionsTable;
+    }),
   };
 
   return {
     client,
-    table,
+    table: subscriptionsTable,
+    feedbackTable,
     lookupQuery,
     updateQuery,
     get updatePayload() {
       return updatePayload;
+    },
+    get feedbackInsertPayload() {
+      return feedbackInsertPayload;
     },
   };
 }
@@ -366,7 +396,7 @@ describe("POST /api/payments/cancel-subscription", () => {
       retryAfterMs,
     });
 
-    const response = await cancelSubscription(TEST_REQUEST);
+    const response = await cancelSubscription(freshTestRequest());
 
     expect(response.status).toBe(429);
     expect(mocks.createRouteHandlerClient).not.toHaveBeenCalled();
@@ -377,7 +407,7 @@ describe("POST /api/payments/cancel-subscription", () => {
     const { client } = makeCancelRouteSupabase({ user: null });
     mocks.createRouteHandlerClient.mockResolvedValue(client);
 
-    const response = await cancelSubscription(TEST_REQUEST);
+    const response = await cancelSubscription(freshTestRequest());
 
     expect(response.status).toBe(401);
     expect(mocks.getStripe).not.toHaveBeenCalled();
@@ -393,7 +423,7 @@ describe("POST /api/payments/cancel-subscription", () => {
     });
     mocks.createRouteHandlerClient.mockResolvedValue(client);
 
-    const response = await cancelSubscription(TEST_REQUEST);
+    const response = await cancelSubscription(freshTestRequest());
 
     expect(response.status).toBe(404);
     expect(mocks.getStripe).not.toHaveBeenCalled();
@@ -425,7 +455,12 @@ describe("POST /api/payments/cancel-subscription", () => {
       },
     });
 
-    const response = await cancelSubscription(TEST_REQUEST);
+    const response = await cancelSubscription(
+      makeCancelRequest({
+        reason_code: "missing_features",
+        free_text: "  needs better award search  ",
+      }),
+    );
     const body = await response.json();
 
     expect(response.status).toBe(200);
@@ -445,5 +480,102 @@ describe("POST /api/payments/cancel-subscription", () => {
     });
     expectIsoToEqualDate(ctx.updatePayload?.updated_at, now);
     expect(ctx.updateQuery.eq).toHaveBeenCalledWith("user_id", TEST_USER_ID);
+    expect(ctx.feedbackInsertPayload).toEqual({
+      user_id: TEST_USER_ID,
+      reason_code: "missing_features",
+      free_text: "needs better award search",
+      stripe_subscription_id: TEST_SUBSCRIPTION_ID,
+    });
+  });
+
+  it("rejects a request with no JSON body before touching Stripe", async () => {
+    const response = await cancelSubscription(
+      new Request("https://app.test/api/payments/cancel-subscription", {
+        method: "POST",
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(mocks.createRouteHandlerClient).not.toHaveBeenCalled();
+    expect(mocks.getStripe).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unknown reason_code", async () => {
+    const response = await cancelSubscription(
+      makeCancelRequest({ reason_code: "spite", free_text: null }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(mocks.createRouteHandlerClient).not.toHaveBeenCalled();
+    expect(mocks.getStripe).not.toHaveBeenCalled();
+  });
+
+  it("stores null free_text when omitted, and persists reason code on the feedback row", async () => {
+    const now = freezeClock();
+    const stripeCurrentPeriodEnd = toUnixSeconds(addDays(now, 14));
+
+    const ctx = makeCancelRouteSupabase({
+      user: { id: TEST_USER_ID, email: TEST_USER_EMAIL },
+      subscription: {
+        stripe_subscription_id: TEST_SUBSCRIPTION_ID,
+        status: "active",
+      },
+    });
+    mocks.createRouteHandlerClient.mockResolvedValue(ctx.client);
+    mocks.getStripe.mockReturnValue({
+      subscriptions: {
+        update: vi.fn().mockResolvedValue({
+          current_period_end: stripeCurrentPeriodEnd,
+          canceled_at: toUnixSeconds(now),
+        }),
+      },
+    });
+
+    const response = await cancelSubscription(
+      makeCancelRequest({ reason_code: "not_using" }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(ctx.feedbackInsertPayload).toEqual({
+      user_id: TEST_USER_ID,
+      reason_code: "not_using",
+      free_text: null,
+      stripe_subscription_id: TEST_SUBSCRIPTION_ID,
+    });
+  });
+
+  it("still returns 200 if feedback insert fails — Stripe cancel already succeeded", async () => {
+    const now = freezeClock();
+    const stripeCurrentPeriodEnd = toUnixSeconds(addDays(now, 14));
+
+    const ctx = makeCancelRouteSupabase({
+      user: { id: TEST_USER_ID, email: TEST_USER_EMAIL },
+      subscription: {
+        stripe_subscription_id: TEST_SUBSCRIPTION_ID,
+        status: "active",
+      },
+      feedbackInsertError: { message: "rls denied" },
+    });
+    mocks.createRouteHandlerClient.mockResolvedValue(ctx.client);
+    mocks.getStripe.mockReturnValue({
+      subscriptions: {
+        update: vi.fn().mockResolvedValue({
+          current_period_end: stripeCurrentPeriodEnd,
+          canceled_at: toUnixSeconds(now),
+        }),
+      },
+    });
+
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const response = await cancelSubscription(
+      makeCancelRequest(VALID_REASON_PAYLOAD),
+    );
+
+    expect(response.status).toBe(200);
+    expect(ctx.feedbackInsertPayload).toMatchObject({
+      reason_code: "too_expensive",
+    });
+    consoleSpy.mockRestore();
   });
 });

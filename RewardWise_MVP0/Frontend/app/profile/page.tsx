@@ -31,6 +31,9 @@ import {
 } from "lucide-react";
 
 import TropicalBackground from "@/components/TropicalBackground";
+import CancelReasonModal, {
+  type CancelReasonPayload,
+} from "@/components/billing/CancelReasonModal";
 import { useAuth } from "@/context/AuthProvider";
 import { createClient } from "@/utils/supabase/client";
 import {
@@ -119,6 +122,7 @@ export default function ProfilePage() {
   const [billingLoading, setBillingLoading] = useState<
     "portal" | "cancel" | null
   >(null);
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [timeNow, setTimeNow] = useState(Date.now());
   const [canViewAnalytics, setCanViewAnalytics] = useState(false);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
@@ -285,13 +289,14 @@ export default function ProfilePage() {
     setBillingLoading(null);
   };
 
-  const cancelMonthlySubscription = async () => {
+  const cancelMonthlySubscription = async (reason: CancelReasonPayload) => {
     setBillingError("");
     setBillingLoading("cancel");
     try {
       const res = await fetch("/api/payments/cancel-subscription", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(reason),
       });
       const data = (await res.json()) as {
         ok?: boolean;
@@ -314,6 +319,7 @@ export default function ProfilePage() {
         current_period_end:
           data.accessEndsAt ?? prev?.current_period_end ?? null,
       }));
+      setCancelModalOpen(false);
     } catch {
       setBillingError("Could not schedule cancellation. Please try again.");
     }
@@ -917,8 +923,9 @@ export default function ProfilePage() {
                           ) : (
                             <button
                               type="button"
-                              onClick={cancelMonthlySubscription}
+                              onClick={() => setCancelModalOpen(true)}
                               disabled={billingLoading !== null}
+                              data-testid="open-cancel-modal"
                               className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-slate-950/45 px-3 py-2.5 text-left text-sm font-semibold text-slate-200 transition hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-60 sm:rounded-2xl sm:px-4 sm:py-3"
                             >
                               <span className="inline-flex items-center gap-2">
@@ -1065,6 +1072,15 @@ export default function ProfilePage() {
           </section>
         </main>
       </div>
+
+      <CancelReasonModal
+        open={cancelModalOpen}
+        submitting={billingLoading === "cancel"}
+        onConfirm={cancelMonthlySubscription}
+        onDismiss={() => {
+          if (billingLoading !== "cancel") setCancelModalOpen(false);
+        }}
+      />
     </div>
   );
 }

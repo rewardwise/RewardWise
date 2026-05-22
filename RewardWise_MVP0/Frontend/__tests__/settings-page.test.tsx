@@ -497,9 +497,20 @@ describe("settings page subscription tab", () => {
     await clickElement(findButtonByText(/subscription/i));
     await clickElement(findButtonByText(/cancel at period end/i));
 
+    // The cancel button opens the reason modal; pick a reason then confirm.
+    expect(document.querySelector('[data-testid="cancel-reason-modal"]')).not.toBeNull();
+    const reasonRadio = document.querySelector(
+      'input[type="radio"][value="too_expensive"]',
+    ) as HTMLInputElement;
+    await clickElement(reasonRadio);
+    await clickElement(findButtonByText(/confirm cancellation/i));
+
     expect(mocks.fetchMock).toHaveBeenCalledWith(
       "/api/payments/cancel-subscription",
-      expect.objectContaining({ method: "POST" }),
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ reason_code: "too_expensive", free_text: null }),
+      }),
     );
     expectPageToContain("Your subscription is scheduled to end on");
     expectPageToContain(formatExpectedDate(accessEndsAt));
