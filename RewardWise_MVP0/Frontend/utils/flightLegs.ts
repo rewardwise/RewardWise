@@ -15,7 +15,9 @@ import type { FlightLeg } from "@/components/verdict/FlightSection";
 //           top-level fields (airlines, origin_airport, destination_airport,
 //           date) when trips is empty (use_points only)
 //   Tier 4: synthesize from search params (date + origin/destination) when
-//           no award object is available at all but the search range is known
+//           no award object is available at all but the search range is known.
+//           Pay-cash skips Tier 2/3 (no award object) and falls from Tier 1
+//           straight to Tier 4 when legs / return_flight.legs is empty.
 //   Tier 5: null (truly no data, leg omitted)
 
 interface AwardSegmentLike {
