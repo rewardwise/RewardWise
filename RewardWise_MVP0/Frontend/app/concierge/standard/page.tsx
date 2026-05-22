@@ -499,6 +499,7 @@ function ConciergeStandardInner() {
 										className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white"
 									>
 										<option value="economy">Economy</option>
+										<option value="premium_economy">Premium Economy</option>
 										<option value="business">Business</option>
 										<option value="first">First</option>
 									</select>

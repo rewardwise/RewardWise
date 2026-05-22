@@ -50,6 +50,7 @@ export default function SearchForm({ onResults, onLoading }: SearchFormProps) {
       <input className="border rounded-lg p-2 w-full" type="date" value={date} onChange={e => setDate(e.target.value)} />
       <select className="border rounded-lg p-2 w-full" value={cabin} onChange={e => setCabin(e.target.value)}>
         <option value="economy">Economy</option>
+        <option value="premium_economy">Premium Economy</option>
         <option value="business">Business</option>
         <option value="first">First</option>
       </select>
