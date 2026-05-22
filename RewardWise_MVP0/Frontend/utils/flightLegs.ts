@@ -2,19 +2,21 @@
 
 import type { FlightLeg } from "@/components/verdict/FlightSection";
 
-// Derivation logic extracted from VerdictCard.tsx. Two bug fixes folded in:
+// 5-tier synthesis chain for outbound + inbound flight legs. Both builders
+// route through shared synthesize* helpers so an asymmetric fallback gap
+// cannot recur (the root cause of ticket 86ba2ze48: inbound previously had
+// no summary tier, so production round-trips with empty trips[] hid the
+// return leg entirely while outbound still rendered via summary fallback).
 //
-//   Bug 2 (return leg missing on round-trip use_points):
-//     When isRoundtrip is true but rawReturnAwardOptions is empty, seats.aero
-//     sometimes returns the return leg as the second entry in
-//     bestOutbound.trips. Fall back to trips[1] instead of returning null.
-//
-//   Bug 3 (FlightSection missing on use_points when trips is empty):
-//     When seats.aero /trips hydration is skipped or returns no detail,
-//     bestOutbound.trips is empty. We previously returned null. Now we
-//     synthesize a single summary segment from the top-level award fields
-//     (airlines, origin_airport, destination_airport, date) and mark the leg
-//     data_quality: "summary" so FlightSection can render a disclaimer.
+//   Tier 1: detailed segments from trips[0] (use_points) or legs (pay_cash)
+//   Tier 2: outbound-only fallback to bestOutbound.trips[1] for seats.aero
+//           combined round-trip awards (inbound use_points only)
+//   Tier 3: synthesize a single summary segment from the award object's
+//           top-level fields (airlines, origin_airport, destination_airport,
+//           date) when trips is empty (use_points only)
+//   Tier 4: synthesize from search params (date + origin/destination) when
+//           no award object is available at all but the search range is known
+//   Tier 5: null (truly no data, leg omitted)
 
 interface AwardSegmentLike {
   flight_number?: string;
@@ -66,6 +68,12 @@ export interface BuildLegArgs {
   bestReturn?: AwardOptionLike | null;
   bestCashFlight?: CashFlightLike | null;
   isRoundtrip?: boolean;
+  origin?: string | null;
+  destination?: string | null;
+  departDate?: string | null;
+  winningDate?: string | null;
+  returnDate?: string | null;
+  winningReturnDate?: string | null;
 }
 
 function awardTripToSegments(
@@ -94,7 +102,14 @@ function cashLegsToSegments(legs: CashLegLike[] | undefined): AwardSegmentLike[]
   }));
 }
 
-function synthesizeSummarySegment(award: AwardOptionLike): AwardSegmentLike | null {
+// Tier 3 synthesis: build a single summary segment from an award object's
+// top-level fields. Used when seats.aero /trips hydration was skipped and
+// trips[].segments is empty but the award itself still carries
+// airlines / origin_airport / destination_airport / date.
+function synthesizeSegmentFromAward(
+  award: AwardOptionLike | null | undefined
+): AwardSegmentLike | null {
+  if (!award) return null;
   const origin = award.origin_airport;
   const destination = award.destination_airport;
   if (!origin || !destination) return null;
@@ -103,6 +118,25 @@ function synthesizeSummarySegment(award: AwardOptionLike): AwardSegmentLike | nu
     origin,
     destination,
     departs_at: award.date,
+  };
+}
+
+// Tier 4 synthesis: build a single segment purely from search params when
+// no award object is available. Carrier shows as a generic placeholder so
+// the user still sees the route + date even when the upstream provider
+// returned no structured option for this leg.
+function synthesizeSegmentFromSearchParams(
+  date: string | null | undefined,
+  origin: string | null | undefined,
+  destination: string | null | undefined,
+  placeholderCarrier: string
+): AwardSegmentLike | null {
+  if (!date || !origin || !destination) return null;
+  return {
+    carrier: placeholderCarrier,
+    origin,
+    destination,
+    departs_at: date,
   };
 }
 
