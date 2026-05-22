@@ -27,7 +27,7 @@ import VerdictCard from "@/components/VerdictCard";
 import { useAuth } from "@/context/AuthProvider";
 import { useSearchFill } from "@/context/SearchFillContext";
 
-type Cabin = "economy" | "business" | "first";
+import type { Cabin } from "@/utils/cabin";
 
 interface VerdictWinner {
 	program: string | null;
