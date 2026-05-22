@@ -37,6 +37,33 @@ function fmtMoneyShort(amount: number) {
   return `$${amount % 1 === 0 ? amount.toFixed(0) : amount.toFixed(2)}`;
 }
 
+// Curated map for US carriers whose canonical domain isn't {slug}.com.
+// Slug synthesis would produce a wrong-or-redirecting URL (e.g.
+// "americanairlines.com" instead of "aa.com"). When in doubt, prefer
+// the airline's marketing/booking root over a vanity slug.
+const KNOWN_AIRLINE_DOMAINS: Record<string, string> = {
+  "united airlines": "united.com",
+  "delta air lines": "delta.com",
+  "american airlines": "aa.com",
+  "southwest airlines": "southwest.com",
+  "jetblue airways": "jetblue.com",
+  "alaska airlines": "alaskaair.com",
+  "spirit airlines": "spirit.com",
+  "frontier airlines": "flyfrontier.com",
+  "hawaiian airlines": "hawaiianairlines.com",
+  "allegiant air": "allegiantair.com",
+};
+
+function synthesizeAirlineHomepage(airline: string | null | undefined): string | null {
+  if (!airline) return null;
+  const norm = airline.toLowerCase().trim();
+  if (KNOWN_AIRLINE_DOMAINS[norm]) {
+    return `https://www.${KNOWN_AIRLINE_DOMAINS[norm]}`;
+  }
+  const slug = norm.replace(/[^a-z0-9]+/g, "");
+  return slug ? `https://www.${slug}.com` : null;
+}
+
 export default function MultiHandoffGrid({
   recommendation,
   programs,
@@ -155,15 +182,16 @@ export default function MultiHandoffGrid({
 
   if (!cashAirline) return null;
   const airlineName = cashAirline.airline || "the airline";
-  const url = cashAirline.bookingUrl || null;
-  const linkDomain = url ? domainFromUrl(url) : `${airlineName.toLowerCase().replace(/\s+/g, "")}.com`;
+  const url = cashAirline.bookingUrl || synthesizeAirlineHomepage(cashAirline.airline);
+  if (!url) return null;
+  const linkDomain = domainFromUrl(url);
 
   const cardContent = (
     <div className="flex flex-col gap-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/[0.06] p-5 md:flex-row md:items-center md:justify-between">
       <div className="min-w-0">
         <p className="text-base font-extrabold text-white">
           Visit {linkDomain}
-          {url ? <ExternalLink className="ml-2 inline h-4 w-4 align-text-bottom text-emerald-300" /> : null}
+          <ExternalLink className="ml-2 inline h-4 w-4 align-text-bottom text-emerald-300" />
         </p>
         {cashAirline.cashPrice != null ? (
           <p className="mt-1 text-sm text-slate-300">
@@ -179,19 +207,15 @@ export default function MultiHandoffGrid({
 
   return (
     <section className="mt-6">
-      {url ? (
-        <a
-          href={url}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={`Book on ${airlineName} (opens in new tab)`}
-          className="block rounded-2xl transition-colors hover:bg-white/[0.05] focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-400/40"
-        >
-          {cardContent}
-        </a>
-      ) : (
-        cardContent
-      )}
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label={`Book on ${airlineName} (opens in new tab)`}
+        className="block rounded-2xl transition-colors hover:bg-white/[0.05] focus:bg-white/[0.05] focus:outline-none focus:ring-2 focus:ring-emerald-400/40"
+      >
+        {cardContent}
+      </a>
     </section>
   );
 }
