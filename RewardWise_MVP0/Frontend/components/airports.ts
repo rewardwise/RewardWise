@@ -771,30 +771,91 @@ export const AIRPORTS: Airport[] = [
   { code: "RAB", city: "Rabaul", country: "PG", name: "Tokua Airport" },
 ];
 
-// Search function - matches by code, city, or country (case-insensitive)
+// Country code expansion (e.g. "IN" -> "India") so token-AND queries like
+// "delhi india" can match against the country field, which stores ISO codes.
+const COUNTRY_DISPLAY: Intl.DisplayNames | null = (() => {
+  try {
+    return new Intl.DisplayNames(["en"], { type: "region" });
+  } catch {
+    return null;
+  }
+})();
+
+// Pre-computed lowercase haystack per airport: code + city + country code +
+// country name + airport name. Built once at module load.
+const HAYSTACKS: string[] = AIRPORTS.map((a) => {
+  let countryName = "";
+  if (a.country && COUNTRY_DISPLAY) {
+    try {
+      countryName = COUNTRY_DISPLAY.of(a.country.toUpperCase()) ?? "";
+    } catch {
+      countryName = "";
+    }
+  }
+  return (
+    a.code +
+    " " +
+    a.city +
+    " " +
+    (a.country ?? "") +
+    " " +
+    countryName +
+    " " +
+    (a.name ?? "")
+  ).toLowerCase();
+});
+
+// Search function - tiered match: exact code > code prefix > token-AND haystack
+// > token-AND with short stopwords dropped. Multi-word queries like "New Delhi"
+// hit DEL via the stopword fallback (tokens >=4 chars retained, "new" dropped),
+// while "Los Angeles" / "Hong Kong" hit via the primary token-AND tier. Single
+// -word queries still hit the exact-code / code-prefix tiers first, preserving
+// prior ranking for power users typing "DEL" or "LAX".
 export function searchAirports(query: string, limit = 6): Airport[] {
   if (!query || query.length < 1) return [];
-  const q = query.toUpperCase().trim();
+  const q = query.toLowerCase().trim();
+  if (!q) return [];
+  const tokens = q.split(/\s+/).filter(Boolean);
+  const singleToken = tokens.length === 1 ? tokens[0] : null;
   const results: Airport[] = [];
-  // Exact code match first
-  for (const a of AIRPORTS) {
-    if (a.code === q) { results.push(a); }
+  const seen = new Set<string>();
+  const push = (a: Airport) => {
+    if (!seen.has(a.code) && results.length < limit) {
+      seen.add(a.code);
+      results.push(a);
+    }
+  };
+  // Tier A: exact code match (single token only)
+  if (singleToken) {
+    for (const a of AIRPORTS) {
+      if (a.code.toLowerCase() === singleToken) push(a);
+    }
   }
-  // Code starts-with
-  for (const a of AIRPORTS) {
-    if (a.code !== q && a.code.startsWith(q) && results.length < limit) { results.push(a); }
+  // Tier B: code starts-with (single token only)
+  if (singleToken) {
+    for (const a of AIRPORTS) {
+      if (results.length >= limit) break;
+      if (a.code.toLowerCase().startsWith(singleToken)) push(a);
+    }
   }
-  // City starts-with
-  for (const a of AIRPORTS) {
-    if (!results.includes(a) && a.city.toUpperCase().startsWith(q) && results.length < limit) { results.push(a); }
+  // Tier C: every token substring-matches the haystack
+  for (let i = 0; i < AIRPORTS.length; i++) {
+    if (results.length >= limit) break;
+    const hay = HAYSTACKS[i];
+    if (tokens.every((t) => hay.includes(t))) push(AIRPORTS[i]);
   }
-  // City contains
-  for (const a of AIRPORTS) {
-    if (!results.includes(a) && a.city.toUpperCase().includes(q) && results.length < limit) { results.push(a); }
+  // Tier D: stopword fallback - drop tokens shorter than 4 chars and retry.
+  // Lets "New Delhi" match DEL ("new" dropped, "delhi" retained) without
+  // needing a per-city alias map.
+  if (results.length === 0) {
+    const sig = tokens.filter((t) => t.length >= 4);
+    if (sig.length > 0 && sig.length < tokens.length) {
+      for (let i = 0; i < AIRPORTS.length; i++) {
+        if (results.length >= limit) break;
+        const hay = HAYSTACKS[i];
+        if (sig.every((t) => hay.includes(t))) push(AIRPORTS[i]);
+      }
+    }
   }
-  // Name contains
-  for (const a of AIRPORTS) {
-    if (!results.includes(a) && a.name?.toUpperCase().includes(q) && results.length < limit) { results.push(a); }
-  }
-  return results.slice(0, limit);
+  return results;
 }
