@@ -122,6 +122,7 @@ interface SearchResult {
 	flights: CashFlight[];
 	award_options: any[];
 	return_award_options: any[];
+	user_cards?: string[];
 	verdict: Verdict;
 }
 
@@ -718,6 +719,7 @@ export default function HomePage() {
 									returnAwardOptions={results.return_award_options}
 									flights={results.flights}
 									userPrograms={userPrograms}
+									userCards={results.user_cards ?? []}
 									verdictId={results.verdict_id}
 								/>
 							) : !hasWallet ? (

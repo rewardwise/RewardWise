@@ -802,6 +802,7 @@ function LandingPageContent() {
 												returnAwardOptions={results.return_award_options}
 												flights={results.flights}
 												userPrograms={[]}
+												userCards={[]}
 												verdictId={results.verdict_id}
 												publicPreview
 												onPublicPreviewSignup={() => {

@@ -12,8 +12,6 @@ import { isReachable } from "@/utils/walletReachability";
 export interface AwardOptionInput {
   program: string;
   cpp?: number | null;
-  // Pass-through; callers retrieve the original whole record.
-  [key: string]: unknown;
 }
 
 // Soft penalty for unreachable programs. TUNABLE.
