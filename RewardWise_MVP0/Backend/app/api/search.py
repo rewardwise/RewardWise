@@ -25,6 +25,7 @@ def get_search_params(
     return_date: Optional[str] = Query(default=None),
     date_end: Optional[str] = Query(default=None),
     return_date_end: Optional[str] = Query(default=None),
+    max_stops: str = Query(default="any"),
 ) -> SearchParams:
     """Dependency that validates and returns typed search params (RW-047)."""
     try:
@@ -37,6 +38,7 @@ def get_search_params(
             travelers=travelers,
             return_date=return_date,
             return_date_end=return_date_end,
+            max_stops=max_stops,
         )
     except Exception as e:
         raise HTTPException(status_code=422, detail=str(e))

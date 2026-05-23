@@ -23,6 +23,16 @@ class CabinClass(str, Enum):
     first = "first"
 
 
+class MaxStops(str, Enum):
+    # Validator enum is load-bearing: SerpAPI's out-of-range behavior is
+    # undocumented, so input is constrained to these four values before
+    # any provider mapping happens.
+    any = "any"
+    nonstop = "nonstop"
+    one_or_fewer = "one_or_fewer"
+    two_or_fewer = "two_or_fewer"
+
+
 # ---------------------------------------------------------------------------
 # Shared search params validator
 # Used by both /search and /verdict endpoints via Depends()
@@ -37,6 +47,7 @@ class SearchParams(BaseModel):
     travelers: int = 1
     return_date: Optional[str] = None
     return_date_end: Optional[str] = None
+    max_stops: MaxStops = MaxStops.any
 
     @field_validator("origin", "destination")
     @classmethod
