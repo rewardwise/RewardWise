@@ -83,3 +83,27 @@ regression. Conventions:
   `pr131-round-trip-return.spec.ts` for the pattern).
 - Keep selectors tight enough to fail on the regression and loose enough
   to survive minor copy / layout changes.
+
+## Pre-push gate
+
+`scripts/smoke-spec-gate.sh` makes the "user-visible PR ships with a
+smoke spec" rule mechanical. Run before push:
+
+```bash
+bash scripts/smoke-spec-gate.sh origin/main HEAD
+```
+
+Exit 0 = rule satisfied. Exit 1 = rule violated; the script prints the
+list of user-visible files in the diff and the two ways to resolve.
+
+If the change genuinely does not warrant a spec (pure refactor,
+type-only change, internal abstraction with no DOM impact), bypass with
+a git trailer on any commit message in the branch:
+
+```
+Smoke-Spec-Not-Required: one-line audit-trail reason
+```
+
+Git trailer syntax (a single `Key: value` line at the bottom of the
+message) is what the script keys on, so prose mentions of the marker
+in documentation commits don't false-positive.
