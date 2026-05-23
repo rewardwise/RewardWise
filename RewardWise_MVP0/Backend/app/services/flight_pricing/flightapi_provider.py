@@ -17,6 +17,15 @@ CABIN_CLASS_MAP = {
     "first": "First",
 }
 
+# FlightAPI uses a positional URL schema with no stops slot — filter runs
+# client-side on the normalized response. None = no filter.
+STOPS_CAP = {
+    "any": None,
+    "nonstop": 0,
+    "one_or_fewer": 1,
+    "two_or_fewer": 2,
+}
+
 
 def _empty_response(error: str | None = None, *, is_roundtrip: bool = False) -> dict:
     payload = {
@@ -73,6 +82,31 @@ def _build_flightapi_path(
     return f"/{endpoint}/" + "/".join(safe_parts)
 
 
+def _apply_stops_filter(normalized: dict, max_stops: str) -> dict:
+    """
+    FlightAPI lacks a request-level stops filter, so the cap is enforced on
+    the normalized output. Round-trip itineraries must satisfy the cap on
+    BOTH legs. "any" leaves the response untouched (regression guard).
+    """
+    cap = STOPS_CAP.get(max_stops)
+    if cap is None:
+        return normalized
+    surviving = []
+    for flight in normalized.get("flights", []):
+        outbound_stops = flight.get("stops", 0) or 0
+        if outbound_stops > cap:
+            continue
+        return_obj = flight.get("return_flight")
+        if return_obj is not None:
+            return_stops = return_obj.get("stops", 0) or 0
+            if return_stops > cap:
+                continue
+        surviving.append(flight)
+    normalized["flights"] = surviving
+    normalized["cash_price"] = surviving[0]["price"] if surviving else None
+    return normalized
+
+
 async def get_flightapi_cash_price(
     origin: str,
     destination: str,
@@ -80,6 +114,7 @@ async def get_flightapi_cash_price(
     cabin: str,
     travelers: int = 1,
     return_date: Optional[str] = None,
+    max_stops: str = "any",
 ) -> dict:
     api_key = os.getenv("FLIGHTAPI_KEY") or os.getenv("FLIGHT_API_KEY")
     is_roundtrip = return_date is not None
@@ -106,6 +141,7 @@ async def get_flightapi_cash_price(
             data = response.json()
 
         normalized = normalize_flightapi_response(data, is_roundtrip=is_roundtrip, currency=currency)
+        normalized = _apply_stops_filter(normalized, max_stops)
         if normalized.get("cash_price") is None:
             normalized["error"] = "FlightAPI returned no priced itineraries"
         return normalized

@@ -12,6 +12,18 @@ CABIN_CLASS_MAP = {
     "first": 4,
 }
 
+# SerpAPI google_flights engine 'stops' parameter: integer 0-3 per docs.
+# 0/None = any (omit key, default), 1 = nonstop, 2 = <=1 stop, 3 = <=2 stops.
+# Live probe deferred — validator enum at app.api.validators.MaxStops
+# constrains input to these four documented strings, so SerpAPI's
+# out-of-range integer behavior never reaches this map.
+STOPS_MAP = {
+    "any": None,
+    "nonstop": 1,
+    "one_or_fewer": 2,
+    "two_or_fewer": 3,
+}
+
 
 def _empty_response(source: str = "google_flights", error: str | None = None) -> dict:
     payload = {"cash_price": None, "currency": "USD", "source": source, "flights": []}
@@ -144,6 +156,7 @@ async def get_serpapi_cash_price(
     cabin: str,
     travelers: int = 1,
     return_date: Optional[str] = None,
+    max_stops: str = "any",
 ) -> dict:
     api_key = os.getenv("SERPAPI_KEY")
     if not api_key:
@@ -165,6 +178,9 @@ async def get_serpapi_cash_price(
     }
     if is_roundtrip:
         params["return_date"] = return_date
+    stops_int = STOPS_MAP.get(max_stops)
+    if stops_int is not None:
+        params["stops"] = stops_int
 
     try:
         async with httpx.AsyncClient() as client:

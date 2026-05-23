@@ -100,6 +100,7 @@ async def search(
     travelers = params.travelers
     return_date = params.return_date
     return_date_end = params.return_date_end
+    max_stops = params.max_stops.value
 
     # --- Auth: identify the user ---
     auth_header = request.headers.get("authorization")
@@ -189,6 +190,7 @@ async def search(
             departure_date,
             cabin,
             end_date=departure_date_end,
+            max_stops=max_stops,
         )
         return [a for a in raw if a.get("remaining_seats", 0) >= travelers]
 
@@ -201,12 +203,13 @@ async def search(
             return_date,
             cabin,
             end_date=return_date_end,
+            max_stops=max_stops,
         )
         return [a for a in raw if a.get("remaining_seats", 0) >= travelers]
 
     outbound_awards, cash_data, return_awards = await asyncio.gather(
         outbound_task(),
-        get_cash_price(origin, destination, departure_date, cabin, travelers, return_date),
+        get_cash_price(origin, destination, departure_date, cabin, travelers, return_date, max_stops=max_stops),
         return_task(),
     )
 
@@ -534,6 +537,7 @@ async def public_search(
     cabin = params.cabin.value
     travelers = params.travelers
     return_date = params.return_date
+    max_stops = params.max_stops.value
 
     supabase = get_server_supabase()
     trial_id = _claim_public_search_trial(supabase, request, params)
@@ -585,18 +589,18 @@ async def public_search(
             cached_verdict_details = cached_verdict_row["details"]
 
         async def outbound_task():
-            raw = await search_award_availability(origin, destination, departure_date, cabin)
+            raw = await search_award_availability(origin, destination, departure_date, cabin, max_stops=max_stops)
             return [a for a in raw if a.get("remaining_seats", 0) >= travelers]
 
         async def return_task():
             if not return_date:
                 return []
-            raw = await search_award_availability(destination, origin, return_date, cabin)
+            raw = await search_award_availability(destination, origin, return_date, cabin, max_stops=max_stops)
             return [a for a in raw if a.get("remaining_seats", 0) >= travelers]
 
         outbound_awards, cash_data, return_awards = await asyncio.gather(
             outbound_task(),
-            get_cash_price(origin, destination, departure_date, cabin, travelers, return_date),
+            get_cash_price(origin, destination, departure_date, cabin, travelers, return_date, max_stops=max_stops),
             return_task(),
         )
 

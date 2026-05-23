@@ -15,6 +15,16 @@ CABIN_MAP = {
     "first": "F"
 }
 
+# Numeric cap per MaxStops enum value. seats.aero's Partner API has no
+# max_stops query param, so the filter runs client-side against the parsed
+# trip Stops field. None means "no filter" (regression-guard path).
+MAX_STOPS_CAP = {
+    "any": None,
+    "nonstop": 0,
+    "one_or_fewer": 1,
+    "two_or_fewer": 2,
+}
+
 # Process-local cache for /trips/{id} responses. No TTL by design: trip IDs
 # are immutable for the lifetime of a given availability snapshot, and the
 # parent search call refreshes them on every public search. 100-entry cap
@@ -47,6 +57,7 @@ async def search_award_availability(
     *,
     end_date: Optional[str] = None,
     take: Optional[int] = None,
+    max_stops: str = "any",
 ) -> list:
     api_key = os.getenv("SEATS_AERO_API_KEY")
     if not api_key:
@@ -143,6 +154,25 @@ async def search_award_availability(
                         trip_candidates.append((tid, total_duration, stops))
             except Exception:
                 pass
+
+        # max_stops filter. "any" leaves both trip lists untouched (regression
+        # guard). "nonstop" relies on seats.aero's top-level Direct boolean
+        # because trip data is often unparsed at fan-out time; non-direct
+        # awards are dropped regardless of trip-list state. For one_or_fewer
+        # and two_or_fewer, filter the parsed trips by Stops <= cap; if the
+        # award had trips but ALL exceed the cap, drop the entire row
+        # (filter-contract honesty). If no trips were parsed at all, keep
+        # the award — we can't honestly say it violates the constraint.
+        if max_stops != "any":
+            cabin_direct = avail.get(f"{cabin_prefix}Direct", False)
+            if max_stops == "nonstop" and not cabin_direct:
+                continue
+            cap = MAX_STOPS_CAP[max_stops]
+            had_trips = bool(trip_candidates or trips_detail)
+            trip_candidates = [c for c in trip_candidates if c[2] <= cap]
+            trips_detail = [t for t in trips_detail if t.get("stops", 0) <= cap]
+            if had_trips and not (trip_candidates or trips_detail):
+                continue
 
         # Preserve list[str] contract for downstream consumers (search.py,
         # verdict_service). Candidates first so trip_ids[0] (used by legacy
