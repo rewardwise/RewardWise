@@ -20,6 +20,7 @@ export interface SearchQueryInputs {
 	tripType: string;
 	cabin: string;
 	travelers: number;
+	maxStops?: string;
 }
 
 export function buildSearchQueryParams(input: SearchQueryInputs): URLSearchParams {
@@ -32,6 +33,7 @@ export function buildSearchQueryParams(input: SearchQueryInputs): URLSearchParam
 		tripType,
 		cabin,
 		travelers,
+		maxStops,
 	} = input;
 	const isFlexible = dateMode === "flexible" && Boolean(departDate);
 	const flexibleStart = isFlexible
@@ -54,6 +56,11 @@ export function buildSearchQueryParams(input: SearchQueryInputs): URLSearchParam
 		if (isFlexible) {
 			params.append("return_date_end", shiftIsoDate(returnDate, 7));
 		}
+	}
+	// Backend default is "any"; omit the key when the user didn't narrow the
+	// filter so existing search URLs and analytics stay byte-identical.
+	if (maxStops && maxStops !== "any") {
+		params.append("max_stops", maxStops);
 	}
 	return params;
 }
