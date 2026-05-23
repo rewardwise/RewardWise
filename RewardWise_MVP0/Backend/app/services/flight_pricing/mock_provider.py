@@ -46,6 +46,7 @@ async def get_mock_cash_price(
     travelers: int = 1,
     return_date: Optional[str] = None,
     provider: str = "flightapi",
+    max_stops: str = "any",
 ) -> dict:
     """
     Return provider-shaped fixture data through the same parser used by live calls.
