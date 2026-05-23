@@ -68,6 +68,7 @@ hard-codes balance-dependent assertions.
 | File | Verifies | Linked PR |
 | --- | --- | --- |
 | `pr131-round-trip-return.spec.ts` | Round-trip Use Points search renders BOTH outbound and return flight cards (regression: return leg was silently dropped). | #131 (`a13d418`) |
+| `pr3-stops-filter.spec.ts` | Stops=Nonstop search renders only flight cards labeled "Nonstop" (post-merge guard for the Stops filter end-to-end contract). | #135 (`b1366b9`) |
 
 ## Adding a new spec
 
