@@ -13,6 +13,7 @@ import {
 	CreditCard,
 	Loader2,
 	Plane,
+	Route,
 	Search,
 	Sparkles,
 	User,
@@ -221,6 +222,7 @@ function LandingPageContent() {
 	const [returnDate, setReturnDate] = useState("");
 	const [cabin, setCabin] = useState<Cabin>("economy");
 	const [travelers, setTravelers] = useState("1");
+	const [maxStops, setMaxStops] = useState<string>("any");
 	const [tripType, setTripType] = useState<"roundtrip" | "oneway">("roundtrip");
 	const [showTrySearch, setShowTrySearch] = useState(false);
 	const [searching, setSearching] = useState(false);
@@ -383,6 +385,11 @@ function LandingPageContent() {
 
 			if (tripType === "roundtrip" && returnDate) {
 				params.append("return_date", returnDate);
+			}
+			// Backend default is "any"; omit the key when the user did not narrow
+			// the filter to keep the public-search URL byte-identical to today.
+			if (maxStops !== "any") {
+				params.append("max_stops", maxStops);
 			}
 
 			const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -704,7 +711,7 @@ function LandingPageContent() {
 
 											<div
 												className={`mt-3 grid grid-cols-1 gap-3 ${
-													tripType === "roundtrip" ? "sm:grid-cols-3" : "sm:grid-cols-2"
+													tripType === "roundtrip" ? "sm:grid-cols-4" : "sm:grid-cols-3"
 												}`}
 											>
 												{tripType === "roundtrip" && (
@@ -735,6 +742,21 @@ function LandingPageContent() {
 																{n} Traveler{n > 1 ? "s" : ""}
 															</option>
 														))}
+													</select>
+												</div>
+												<div>
+													<label className="mb-1 flex items-center gap-1 text-xs text-emerald-400">
+														<Route className="h-3 w-3" /> STOPS
+													</label>
+													<select
+														value={maxStops}
+														onChange={(event) => setMaxStops(event.target.value)}
+														className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+													>
+														<option value="any">Any stops</option>
+														<option value="nonstop">Nonstop only</option>
+														<option value="one_or_fewer">1 stop or fewer</option>
+														<option value="two_or_fewer">2 stops or fewer</option>
 													</select>
 												</div>
 												<div>

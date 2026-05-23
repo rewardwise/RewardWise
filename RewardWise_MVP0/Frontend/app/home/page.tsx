@@ -23,6 +23,7 @@ import {
 	Loader2,
 	ArrowRight,
 	ArrowLeftRight,
+	Route,
 } from "lucide-react";
 
 // ─── INTERFACES ───────────────────────────────────────────────────────────────
@@ -257,6 +258,7 @@ export default function HomePage() {
 	const [returnDate, setReturnDate] = useState("");
 	const [travelers, setTravelers] = useState(1);
 	const [cabin, setCabin] = useState("economy");
+	const [maxStops, setMaxStops] = useState<string>("any");
 	const [tripType, setTripType] = useState("roundtrip");
 	const [dateMode, setDateMode] = useState<"exact" | "flexible">("exact");
 	const [searching, setSearching] = useState(false);
@@ -404,6 +406,7 @@ export default function HomePage() {
 				tripType,
 				cabin,
 				travelers,
+				maxStops,
 			});
 
 			const API_URL = process.env.NEXT_PUBLIC_API_URL;
@@ -614,7 +617,7 @@ export default function HomePage() {
 					{/* SEARCH ROW 2 */}
 					<div
 						className={`grid grid-cols-1 ${
-							tripType === "roundtrip" ? "sm:grid-cols-3" : "sm:grid-cols-2"
+							tripType === "roundtrip" ? "sm:grid-cols-4" : "sm:grid-cols-3"
 						} gap-3 mb-4`}
 					>
 						{tripType === "roundtrip" && (
@@ -646,6 +649,21 @@ export default function HomePage() {
 										{n} Traveler{n > 1 ? "s" : ""}
 									</option>
 								))}
+							</select>
+						</div>
+						<div>
+							<label className="block text-emerald-400 text-xs mb-1 flex items-center gap-1">
+								<Route className="w-3 h-3" /> STOPS
+							</label>
+							<select
+								value={maxStops}
+								onChange={(e) => setMaxStops(e.target.value)}
+								className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
+							>
+								<option value="any">Any stops</option>
+								<option value="nonstop">Nonstop only</option>
+								<option value="one_or_fewer">1 stop or fewer</option>
+								<option value="two_or_fewer">2 stops or fewer</option>
 							</select>
 						</div>
 						<div>
