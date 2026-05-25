@@ -6,6 +6,7 @@ from app.api.validators import SearchParams, limiter  # RW-047
 from app.cache import find_search_verdict_in_db, get_search_memory_cache
 from app.cache.types import SearchParams as CacheSearchParams
 from app.db import get_server_supabase, insert_one, insert_one_return_id
+from app.services.cash_sampler import sample_cash_prices_by_date
 from app.services.pair_ranker import rank_pairs
 from app.services.pricing_service import get_cash_price
 from app.services.seats_service import search_award_availability
@@ -215,6 +216,19 @@ async def search(
 
     cash_price = cash_data.get("cash_price")
 
+    # Per-date cash for each leg so each award's CPP is computed against its
+    # own date's cash, not the anchor-date cash (ClickUp 86b9x8qr2).
+    outbound_dates = [a.get("date") for a in outbound_awards if a.get("date")]
+    return_dates = [a.get("date") for a in return_awards if a.get("date")]
+    cash_out_by_date, cash_ret_by_date = await asyncio.gather(
+        sample_cash_prices_by_date(
+            origin, destination, outbound_dates, cabin, travelers, max_stops=max_stops
+        ),
+        sample_cash_prices_by_date(
+            destination, origin, return_dates, cabin, travelers, max_stops=max_stops
+        ),
+    )
+
     # --- Build outbound award options with CPP ---
     results = []
     for award in outbound_awards:
@@ -222,13 +236,14 @@ async def search(
         if not points:
             continue
         taxes = (award.get("taxes") or 0) / 100
+        award_cash = cash_out_by_date.get(award.get("date"))
         cpp = None
-        if cash_price is not None and points:
-            cpp = calculate_cpp(cash_price, taxes, points)
+        if award_cash is not None and points:
+            cpp = calculate_cpp(award_cash, taxes, points)
         results.append({
             "program": award.get("program"),
             "points": points,
-            "cash_price": cash_price,
+            "cash_price": award_cash,
             "taxes": taxes,
             "cpp": cpp,
             "remaining_seats": award.get("remaining_seats"),
@@ -251,13 +266,14 @@ async def search(
         if not points:
             continue
         taxes = (award.get("taxes") or 0) / 100
+        award_cash = cash_ret_by_date.get(award.get("date"))
         cpp = None
-        if cash_price is not None and points:
-            cpp = calculate_cpp(cash_price, taxes, points)
+        if award_cash is not None and points:
+            cpp = calculate_cpp(award_cash, taxes, points)
         return_results.append({
             "program": award.get("program"),
             "points": points,
-            "cash_price": cash_price,
+            "cash_price": award_cash,
             "taxes": taxes,
             "cpp": cpp,
             "remaining_seats": award.get("remaining_seats"),
@@ -606,17 +622,29 @@ async def public_search(
 
         cash_price = cash_data.get("cash_price")
 
+        outbound_dates = [a.get("date") for a in outbound_awards if a.get("date")]
+        return_dates = [a.get("date") for a in return_awards if a.get("date")]
+        cash_out_by_date, cash_ret_by_date = await asyncio.gather(
+            sample_cash_prices_by_date(
+                origin, destination, outbound_dates, cabin, travelers, max_stops=max_stops
+            ),
+            sample_cash_prices_by_date(
+                destination, origin, return_dates, cabin, travelers, max_stops=max_stops
+            ),
+        )
+
         award_options = []
         for award in outbound_awards:
             points = award.get("points")
             if not points:
                 continue
             taxes = (award.get("taxes") or 0) / 100
-            cpp = calculate_cpp(cash_price, taxes, points) if cash_price is not None else None
+            award_cash = cash_out_by_date.get(award.get("date"))
+            cpp = calculate_cpp(award_cash, taxes, points) if award_cash is not None else None
             award_options.append({
                 "program": award.get("program"),
                 "points": points,
-                "cash_price": cash_price,
+                "cash_price": award_cash,
                 "taxes": taxes,
                 "cpp": cpp,
                 "remaining_seats": award.get("remaining_seats"),
@@ -634,11 +662,12 @@ async def public_search(
             if not points:
                 continue
             taxes = (award.get("taxes") or 0) / 100
-            cpp = calculate_cpp(cash_price, taxes, points) if cash_price is not None else None
+            award_cash = cash_ret_by_date.get(award.get("date"))
+            cpp = calculate_cpp(award_cash, taxes, points) if award_cash is not None else None
             return_award_options.append({
                 "program": award.get("program"),
                 "points": points,
-                "cash_price": cash_price,
+                "cash_price": award_cash,
                 "taxes": taxes,
                 "cpp": cpp,
                 "remaining_seats": award.get("remaining_seats"),
