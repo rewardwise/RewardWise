@@ -10,6 +10,7 @@ import { createClient } from "@/utils/supabase/client";
 import { CheckCircle, CreditCard, Loader2 } from "lucide-react";
 import { Suspense } from "react";
 import { PORTAL_OPEN_FAILED } from "@/utils/user-messages";
+import { isInternalEmail } from "@/utils/auth/internal-accounts";
 
 function SubscribeInner() {
 	const router = useRouter();
@@ -21,6 +22,7 @@ function SubscribeInner() {
 	const success = searchParams.get("success") === "1";
 	const canceled = searchParams.get("canceled") === "1";
 	const pastDue = searchParams.get("past_due") === "1";
+	const isInternal = isInternalEmail(user?.email);
 	const [portalLoading, setPortalLoading] = useState(false);
 	const searchId = searchParams.get("search_id");
 
@@ -134,6 +136,34 @@ function SubscribeInner() {
 								Set up wallet
 							</button>
 						</div>
+					</div>
+				</div>
+			</div>
+		);
+	}
+
+	if (isInternal) {
+		return (
+			<div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-cyan-950 relative">
+				<TropicalBackground />
+				<div className="relative z-10 flex items-center justify-center min-h-screen px-6">
+					<div className="bg-gray-900/90 backdrop-blur rounded-xl p-8 text-center shadow-2xl max-w-md w-full">
+						<div className="w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+							<CheckCircle className="w-8 h-8 text-emerald-400" />
+						</div>
+						<h2 className="text-2xl font-bold text-white mb-2">
+							Internal account
+						</h2>
+						<p className="text-gray-400 mb-6">
+							You have full access to MyTravelWallet. No payment required.
+						</p>
+						<button
+							type="button"
+							onClick={() => router.push("/home")}
+							className="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-3 rounded-lg"
+						>
+							Go to Home
+						</button>
 					</div>
 				</div>
 			</div>
