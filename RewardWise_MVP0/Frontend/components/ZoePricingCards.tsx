@@ -95,7 +95,11 @@ export default function ZoePricingCards({
 				hasActiveSubscription?: boolean;
 				upsell?: "monthly" | null;
 			};
-			if (res.status === 409 && data.error === "already_active") {
+			if (
+				res.status === 409 &&
+				(data.error === "active_day_pass" ||
+					data.error === "active_subscription")
+			) {
 				setAlreadyActive({
 					hasActiveDayPass: Boolean(data.hasActiveDayPass),
 					dayPassRemainingHours: Number(data.dayPassRemainingHours ?? 0),

@@ -88,6 +88,13 @@ function encodeSupabaseSsrCookie(payload: unknown): string {
 export interface MintOptions {
   /** Origin the session cookies will be scoped to (e.g. http://localhost:3000). */
   baseUrl: string
+  /**
+   * Override the email looked up from secrets. When provided, takes precedence
+   * over MTW_SMOKE_EMAIL / MTW_TEST_EMAIL. Used by smoke specs that need a
+   * specific seeded account (e.g. the shared smoke-test-empty@ account that
+   * PR B and PR FIX-PAYMENT both target) without forking globalSetup.
+   */
+  email?: string
 }
 
 export interface MintResult {
@@ -116,15 +123,18 @@ export async function mintSessionViaServiceRole(
   const { baseUrl } = options
 
   const secrets = parseEnvFile(readFileSync(SECRETS_PATH, 'utf8'))
-  // Env-var preference: MTW_SMOKE_EMAIL resolves to a user provisioned in the
-  // production Supabase project (used by production smoke tests); MTW_TEST_EMAIL
-  // resolves to the local dev / staging test user. Prefer SMOKE when both are
-  // set so the same fixture targets prod without a config flag — flipping the
-  // target is just a matter of which var is populated in the secrets file.
-  const email = secrets.MTW_SMOKE_EMAIL || secrets.MTW_TEST_EMAIL
+  // Env-var preference: options.email (explicit caller override) > MTW_SMOKE_EMAIL
+  // (prod smoke user, default for globalSetup) > MTW_TEST_EMAIL (local dev /
+  // staging). Prefer SMOKE when both env vars are set so the same fixture
+  // targets prod without a config flag — flipping the target is just a matter
+  // of which var is populated in the secrets file. options.email lets a single
+  // spec point at a different prod account (e.g. smoke-test-empty@) without
+  // forking globalSetup.
+  const email =
+    options.email || secrets.MTW_SMOKE_EMAIL || secrets.MTW_TEST_EMAIL
   if (!email) {
     throw new Error(
-      'Missing MTW_SMOKE_EMAIL or MTW_TEST_EMAIL in ~/.config/secrets/mytravelwallet.env',
+      'Missing email: pass options.email or set MTW_SMOKE_EMAIL / MTW_TEST_EMAIL in ~/.config/secrets/mytravelwallet.env',
     )
   }
 
