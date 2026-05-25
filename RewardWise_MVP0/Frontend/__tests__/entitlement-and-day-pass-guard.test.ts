@@ -241,7 +241,7 @@ describe("POST /api/payments/day-pass entitlement guard", () => {
 		expect(res.status).toBe(409);
 		const body = await res.json();
 		expect(body).toMatchObject({
-			error: "already_active",
+			error: "active_day_pass",
 			hasActiveDayPass: true,
 			hasActiveSubscription: false,
 			upsell: "monthly",
@@ -266,7 +266,7 @@ describe("POST /api/payments/day-pass entitlement guard", () => {
 		expect(res.status).toBe(409);
 		const body = await res.json();
 		expect(body).toMatchObject({
-			error: "already_active",
+			error: "active_subscription",
 			hasActiveSubscription: true,
 			upsell: null,
 		});

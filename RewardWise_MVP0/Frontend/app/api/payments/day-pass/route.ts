@@ -64,17 +64,39 @@ export async function POST(request: Request) {
 		// double-click race, stale tab POST). Without this check the user
 		// gets charged $0.99 again and the fulfillment path used to silently
 		// stack 24h onto their existing expiry. See ClickUp 86b9yj5ut.
+		//
+		// Order matters: check most-specific condition first so the response
+		// contract stays stable as future conditions (e.g., INTERNAL access)
+		// are appended. Day Pass beats Subscription beats INTERNAL — a seeded
+		// Day Pass on an internal-domain account must still surface the
+		// Day Pass modal, not the future internal-bypass response.
 		const entitlement = await checkEntitlement(supabase, user.id);
-		if (entitlement.hasActiveDayPass || entitlement.hasActiveSubscription) {
+		if (entitlement.hasActiveDayPass) {
 			return NextResponse.json(
 				{
-					error: "already_active",
-					hasActiveDayPass: entitlement.hasActiveDayPass,
+					error: "active_day_pass",
+					hasActiveDayPass: true,
 					dayPassRemainingHours: entitlement.dayPassRemainingHours,
 					dayPassExpiresAt: entitlement.dayPassExpiresAt,
-					hasActiveSubscription: entitlement.hasActiveSubscription,
+					// Masked to false: the response is a UI contract, not a state
+					// dump. The modal renders the Day Pass story off this flag.
+					hasActiveSubscription: false,
 					subStatus: entitlement.subStatus,
-					upsell: entitlement.hasActiveSubscription ? null : "monthly",
+					upsell: "monthly",
+				},
+				{ status: 409 },
+			);
+		}
+		if (entitlement.hasActiveSubscription) {
+			return NextResponse.json(
+				{
+					error: "active_subscription",
+					hasActiveDayPass: false,
+					dayPassRemainingHours: 0,
+					dayPassExpiresAt: null,
+					hasActiveSubscription: true,
+					subStatus: entitlement.subStatus,
+					upsell: null,
 				},
 				{ status: 409 },
 			);
