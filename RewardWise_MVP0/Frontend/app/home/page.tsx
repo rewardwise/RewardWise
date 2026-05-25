@@ -1,7 +1,7 @@
 /** @format */
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import TropicalBackground from "@/components/TropicalBackground";
 import { useAuth } from "@/context/AuthProvider";
@@ -14,7 +14,7 @@ import AirportSearch from "@/components/AirportSearch";
 import ZoeChat from "@/components/zoe/ZoeChat";
 import { trackAnalyticsEvent } from "@/utils/analytics/client";
 import { buildSearchQueryParams } from "@/lib/searchQuery";
-import { MAX_ISO_DATE, clampISODate } from "@/utils/dateInput";
+import { clampISODate, getMaxSearchDate } from "@/utils/dateInput";
 import {
 	Calendar,
 	Plane,
@@ -256,6 +256,11 @@ export default function HomePage() {
 	};
 	const [departDate, setDepartDate] = useState("");
 	const [returnDate, setReturnDate] = useState("");
+	// Forward cap for the calendar pickers. Tracks the award-provider
+	// (seats.aero) horizon, not the year 2099. Computed once per mount —
+	// crossing the day boundary mid-session is fine; the picker still
+	// limits to a date inside the provider window.
+	const maxSearchDate = useMemo(() => getMaxSearchDate(), []);
 	const [travelers, setTravelers] = useState(1);
 	const [cabin, setCabin] = useState("economy");
 	const [maxStops, setMaxStops] = useState<string>("any");
@@ -606,7 +611,7 @@ export default function HomePage() {
 							<input
 								type="date"
 								min={new Date().toISOString().split("T")[0]}
-								max={MAX_ISO_DATE}
+								max={maxSearchDate}
 								value={departDate}
 								onChange={(e) => setDepartDate(clampISODate(e.target.value, departDate))}
 								className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm [color-scheme:dark]"
@@ -628,7 +633,7 @@ export default function HomePage() {
 								<input
 									type="date"
 									min={departDate || new Date().toISOString().split("T")[0]}
-									max={MAX_ISO_DATE}
+									max={maxSearchDate}
 									value={returnDate}
 									onChange={(e) => setReturnDate(clampISODate(e.target.value, returnDate))}
 									className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm [color-scheme:dark]"
