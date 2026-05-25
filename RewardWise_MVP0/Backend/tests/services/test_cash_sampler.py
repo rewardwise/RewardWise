@@ -166,7 +166,7 @@ def test_concurrency_bound_caps_in_flight(monkeypatch):
         async with lock:
             in_flight += 1
             peak = max(peak, in_flight)
-        await asyncio.sleep(0.01)
+        await asyncio.sleep(0.05)
         async with lock:
             in_flight -= 1
         return {"cash_price": 100.0}
