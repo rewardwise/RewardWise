@@ -539,10 +539,15 @@ test.describe.serial(
 
       // Playwright APIRequestContext from the BrowserContext carries cookies
       // so the POST is authenticated as the seeded smoke account.
+      // Body key MUST be `travelRequestId` (camelCase) — checkout/route.ts
+      // destructures `body.travelRequestId` and 400s on non-UUID. Sending
+      // snake_case silently 400s before the payment_status guard fires,
+      // which would let a regressed already_paid path slip through this
+      // smoke check (see code-reviewer note on this file).
       const res = await context.request.post(
         `${baseURL}/api/payments/checkout`,
         {
-          data: { travel_request_id: requestId },
+          data: { travelRequestId: requestId },
           headers: { 'content-type': 'application/json' },
         },
       )
