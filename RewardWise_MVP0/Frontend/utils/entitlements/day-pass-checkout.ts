@@ -13,6 +13,7 @@ export function isDayPassStripePurchaseType(t: string | undefined): boolean {
 export type FulfillDayPassResult = {
 	ok: boolean;
 	error?: string;
+	alreadyProcessed?: boolean;
 };
 
 export async function fulfillDayPassCheckout(
@@ -20,12 +21,34 @@ export async function fulfillDayPassCheckout(
 	params: {
 		userId: string;
 		amountTotalCents: number;
+		stripeSessionId: string;
 	},
 ): Promise<FulfillDayPassResult> {
 	if (params.amountTotalCents !== USD_CENTS.DAY_PASS_USD_CENTS) {
 		return { ok: false, error: "amount_mismatch" };
 	}
 
+	if (!params.stripeSessionId || !params.stripeSessionId.startsWith("cs_")) {
+		return { ok: false, error: "bad_session_id" };
+	}
+
+	const { error: insertError } = await supabase
+		.from("processed_stripe_sessions")
+		.insert({
+			session_id: params.stripeSessionId,
+			user_id: params.userId,
+			purchase_type: STRIPE_DAY_PASS_PURCHASE_TYPE,
+			amount_cents: params.amountTotalCents,
+		});
+
+	if (insertError) {
+		const code = (insertError as { code?: string }).code;
+		if (code === "23505") {
+			return { ok: true, alreadyProcessed: true };
+		}
+		return { ok: false, error: "ledger_insert_failed" };
+	}
+
 	await grantDayPassFor24Hours(supabase, params.userId);
-	return { ok: true };
+	return { ok: true, alreadyProcessed: false };
 }

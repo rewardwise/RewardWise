@@ -6,18 +6,14 @@ export async function grantDayPassFor24Hours(
 	supabase: SupabaseClient,
 	userId: string,
 ): Promise<void> {
-	const now = Date.now();
+	const nowMs = Date.now();
+	const nextExpiryIso = new Date(nowMs + 24 * 60 * 60 * 1000).toISOString();
+
 	const { data: cur } = await supabase
 		.from("profiles")
-		.select("user_id, onboarding_state, day_pass_expires_at")
+		.select("user_id")
 		.eq("user_id", userId)
 		.maybeSingle();
-
-	const currentExpiryMs = cur?.day_pass_expires_at
-		? new Date(cur.day_pass_expires_at).getTime()
-		: 0;
-	const baseMs = Math.max(now, Number.isFinite(currentExpiryMs) ? currentExpiryMs : 0);
-	const nextExpiryIso = new Date(baseMs + 24 * 60 * 60 * 1000).toISOString();
 
 	if (cur?.user_id) {
 		await supabase
