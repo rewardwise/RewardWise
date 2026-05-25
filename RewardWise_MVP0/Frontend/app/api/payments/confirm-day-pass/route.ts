@@ -104,10 +104,12 @@ export async function POST(request: Request) {
 			// 400 for inputs that don't match a fulfillable Stripe session
 			// (caller-correctable: bad sessionId format, wrong amount on the
 			// session). 500 for server-side persistence problems where the
-			// receipt is valid but our DB couldn't record the dedup row —
-			// caller has nothing to fix, the right user action is "try again
-			// in a minute" not "this payment is invalid."
-			const isServerSide = result.error === "ledger_insert_failed";
+			// receipt is valid but our DB couldn't record the grant or the
+			// dedup row — caller has nothing to fix, the right user action
+			// is "try again in a minute" not "this payment is invalid."
+			const isServerSide =
+				result.error === "ledger_insert_failed" ||
+				result.error === "grant_failed";
 			return NextResponse.json(
 				{ error: CONFIRM_PASS_ACTIVATE_FAILED },
 				{ status: isServerSide ? 500 : 400 },
