@@ -7,6 +7,7 @@ import { createRouteHandlerClient } from "@/utils/supabase/route-handler";
 import { NextResponse } from "next/server";
 import { USD_CENTS } from "@/utils/stripe/amounts";
 import { STRIPE_DAY_PASS_PURCHASE_TYPE } from "@/utils/entitlements/day-pass-checkout";
+import { checkEntitlement } from "@/utils/entitlements/check-entitlement";
 import {
 	PAY_NO_CHECKOUT_URL,
 	PAY_RATE_LIMIT_SHORT,
@@ -56,6 +57,27 @@ export async function POST(request: Request) {
 			if (error || !row || row.user_id !== user.id) {
 				return NextResponse.json({ error: PAY_SEARCH_NOT_FOUND }, { status: 404 });
 			}
+		}
+
+		// Server-side entitlement guard. The client hides the Day Pass card
+		// when active, but that gate is bypassable (two tabs, mobile retry,
+		// double-click race, stale tab POST). Without this check the user
+		// gets charged $0.99 again and the fulfillment path used to silently
+		// stack 24h onto their existing expiry. See ClickUp 86b9yj5ut.
+		const entitlement = await checkEntitlement(supabase, user.id);
+		if (entitlement.hasActiveDayPass || entitlement.hasActiveSubscription) {
+			return NextResponse.json(
+				{
+					error: "already_active",
+					hasActiveDayPass: entitlement.hasActiveDayPass,
+					dayPassRemainingHours: entitlement.dayPassRemainingHours,
+					dayPassExpiresAt: entitlement.dayPassExpiresAt,
+					hasActiveSubscription: entitlement.hasActiveSubscription,
+					subStatus: entitlement.subStatus,
+					upsell: entitlement.hasActiveSubscription ? null : "monthly",
+				},
+				{ status: 409 },
+			);
 		}
 
 		const origin =
