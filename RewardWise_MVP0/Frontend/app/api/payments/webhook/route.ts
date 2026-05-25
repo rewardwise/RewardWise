@@ -123,31 +123,71 @@ export async function POST(request: Request) {
         ?.user_id;
       const subscriptionId = session.subscription as string | undefined;
       const customerId = session.customer as string | undefined;
-      const stripeSubscription = subscriptionId
-        ? await getStripe().subscriptions.retrieve(subscriptionId)
-        : null;
+      const sessionId = session.id as string | undefined;
+      const amountTotal = session.amount_total as number | undefined;
 
-      if (userId) {
-        await supabase.from("subscriptions").upsert(
-          {
+      if (userId && sessionId) {
+        // Webhook-replay defense: processed_stripe_sessions PRIMARY KEY
+        // (session_id) blocks any duplicate processing of the same
+        // Checkout session. Stripe retries failed deliveries, and the
+        // existing subscriptions upsert is naturally idempotent — but
+        // we want the same architectural shape across all three
+        // surfaces (day-pass, subscribe, concierge) so any future
+        // side-effect added to this branch (e.g., a welcome email,
+        // a referral credit) inherits the dedup for free.
+        const ledgerInsert = await supabase
+          .from("processed_stripe_sessions")
+          .insert({
+            session_id: sessionId,
             user_id: userId,
-            stripe_customer_id: customerId ?? null,
-            stripe_subscription_id: subscriptionId ?? null,
-            status: "active",
-            plan: "pro",
-            cancel_at_period_end: getCancelAtPeriodEnd(stripeSubscription),
-            canceled_at: getSubscriptionTime(stripeSubscription, "canceled_at"),
-            current_period_start:
-              getSubscriptionTime(stripeSubscription, "current_period_start") ??
-              new Date().toISOString(),
-            current_period_end: getSubscriptionTime(
-              stripeSubscription,
-              "current_period_end",
-            ),
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "user_id" },
-        );
+            purchase_type: "subscription",
+            amount_cents: typeof amountTotal === "number" ? amountTotal : null,
+          });
+        const ledgerCode = (ledgerInsert.error as { code?: string } | null)
+          ?.code;
+        const alreadyProcessed = ledgerCode === "23505";
+
+        if (!alreadyProcessed) {
+          const stripeSubscription = subscriptionId
+            ? await getStripe().subscriptions.retrieve(subscriptionId)
+            : null;
+
+          await supabase.from("subscriptions").upsert(
+            {
+              user_id: userId,
+              stripe_customer_id: customerId ?? null,
+              stripe_subscription_id: subscriptionId ?? null,
+              status: "active",
+              plan: "pro",
+              cancel_at_period_end: getCancelAtPeriodEnd(stripeSubscription),
+              canceled_at: getSubscriptionTime(
+                stripeSubscription,
+                "canceled_at",
+              ),
+              current_period_start:
+                getSubscriptionTime(
+                  stripeSubscription,
+                  "current_period_start",
+                ) ?? new Date().toISOString(),
+              current_period_end: getSubscriptionTime(
+                stripeSubscription,
+                "current_period_end",
+              ),
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "user_id" },
+          );
+        }
+
+        // Release the parallel-checkout lock regardless of dedup
+        // outcome. If we already processed this session_id, we still
+        // want to clear any stale pending row (a replay 5+ minutes
+        // after the original would otherwise time-block a fresh
+        // resubscribe attempt).
+        await supabase
+          .from("pending_subscribe_sessions")
+          .delete()
+          .eq("user_id", userId);
       }
     } else {
       const requestId =
@@ -271,17 +311,21 @@ export async function POST(request: Request) {
   }
 
   if (parsed.type === "checkout.session.expired") {
-    // Release the day-pass parallel-checkout lock when the user's
-    // Stripe Checkout session expires (default 24h, or sooner if the
-    // user explicitly cancels). The 5-minute TTL on the lock row would
+    // Release the parallel-checkout lock when the user's Stripe
+    // Checkout session expires (default 24h, or sooner if the user
+    // explicitly cancels). The 5-minute TTL on the lock row would
     // eventually reap stale entries on its own, but releasing here
     // lets the user retry immediately instead of waiting it out.
+    //
+    // We route on mode + purchase_type rather than checking all three
+    // tables blindly: a day-pass expiry should not touch the
+    // subscribe table (and vice versa), so misrouting would mask a
+    // future bug instead of revealing it.
     const session = parsed.data?.object ?? {};
     const mode = session.mode as string | undefined;
-    const purchaseType = (session.metadata as Record<string, string> | undefined)
-      ?.purchase_type;
-    const userId = (session.metadata as Record<string, string> | undefined)
-      ?.user_id;
+    const metadata = session.metadata as Record<string, string> | undefined;
+    const purchaseType = metadata?.purchase_type;
+    const userId = metadata?.user_id;
 
     if (
       mode === "payment" &&
@@ -290,6 +334,11 @@ export async function POST(request: Request) {
     ) {
       await supabase
         .from("pending_day_pass_sessions")
+        .delete()
+        .eq("user_id", userId);
+    } else if (mode === "subscription" && userId) {
+      await supabase
+        .from("pending_subscribe_sessions")
         .delete()
         .eq("user_id", userId);
     }
