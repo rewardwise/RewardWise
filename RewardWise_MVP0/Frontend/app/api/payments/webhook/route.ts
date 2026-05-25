@@ -218,6 +218,17 @@ export async function POST(request: Request) {
             })
             .eq("id", requestId);
         }
+
+        // Release the concierge parallel-checkout lock regardless of
+        // whether the fulfillment update ran. A replay 5+ minutes after
+        // the original session would otherwise time-block a fresh
+        // submission on the same travel_request_id; the request is
+        // already paid (idempotent above), so clearing the stale lock
+        // is correct.
+        await supabase
+          .from("pending_concierge_sessions")
+          .delete()
+          .eq("travel_request_id", requestId);
       }
     }
   }
@@ -326,6 +337,9 @@ export async function POST(request: Request) {
     const metadata = session.metadata as Record<string, string> | undefined;
     const purchaseType = metadata?.purchase_type;
     const userId = metadata?.user_id;
+    const travelRequestId =
+      metadata?.travel_request_id ??
+      (session.client_reference_id as string | undefined);
 
     if (
       mode === "payment" &&
@@ -341,6 +355,16 @@ export async function POST(request: Request) {
         .from("pending_subscribe_sessions")
         .delete()
         .eq("user_id", userId);
+    } else if (mode === "payment" && travelRequestId) {
+      // Concierge expiry: the day-pass branch above is gated on
+      // purchase_type to avoid stomping concierge sessions (concierge
+      // metadata has tier, not purchase_type). Once that branch passes,
+      // any remaining mode=payment session with a travel_request_id
+      // identifier is a concierge checkout.
+      await supabase
+        .from("pending_concierge_sessions")
+        .delete()
+        .eq("travel_request_id", travelRequestId);
     }
   }
 

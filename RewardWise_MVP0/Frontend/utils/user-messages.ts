@@ -36,6 +36,20 @@ export const SUBSCRIBE_NO_CHECKOUT_URL =
 export const PAY_SEARCH_NOT_FOUND =
 	"We couldn’t tie this payment to your trip. Open your search again from the home page then tap pay.";
 
+export const CHECKOUT_ALREADY_PAID =
+	"This concierge request is already paid. Open it from your concierge history to track progress.";
+
+export const CHECKOUT_GENERIC_FAIL =
+	"Could not start checkout. Please try again.";
+
+export const CHECKOUT_RATE_LIMIT =
+	"Too many requests. Please wait before trying again.";
+
+export const CHECKOUT_SIGN_IN = "Please sign in again, then try once more.";
+
+export const CHECKOUT_NO_URL =
+	"Concierge checkout didn’t load correctly. Please try again in a few minutes.";
+
 export const ENTITLEMENT_LOAD_FAIL =
 	"We couldn’t check your access right now. Refresh the page or try again in a moment.";
 
