@@ -135,9 +135,31 @@ export default function ZoePricingCards({
 				method: "POST",
 				headers: { "Content-Type": "application/json" },
 			});
-			const data = (await res.json()) as { url?: string; error?: string };
+			const data = (await res.json()) as {
+				url?: string;
+				error?: string;
+				message?: string;
+				hasActiveSubscription?: boolean;
+				hasActiveDayPass?: boolean;
+			};
+			// 409 already_subscribed: surface the same modal as the
+			// day-pass already-active path, but in the dual-state shape
+			// (hasActiveSubscription=true → "You already have Monthly
+			// access", no upgrade button, "Got it" only). Modal already
+			// branches on hasActiveSubscription, no UI changes needed.
+			if (res.status === 409 && data.error === "already_subscribed") {
+				setAlreadyActive({
+					hasActiveDayPass: Boolean(data.hasActiveDayPass),
+					dayPassRemainingHours: 0,
+					dayPassExpiresAt: null,
+					hasActiveSubscription: true,
+					upsell: null,
+				});
+				setLoading(null);
+				return;
+			}
 			if (!res.ok) {
-				setError(data.error || PAY_START_SUBSCRIPTION);
+				setError(data.message || data.error || PAY_START_SUBSCRIPTION);
 				setLoading(null);
 				return;
 			}

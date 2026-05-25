@@ -310,9 +310,22 @@ function ConciergePremiumInner() {
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ travelRequestId: data.id }),
 		});
-		const checkout = (await checkoutRes.json()) as { url?: string; error?: string };
+		const checkout = (await checkoutRes.json()) as {
+			url?: string;
+			error?: string;
+			message?: string;
+			detail_url?: string;
+		};
+		// 409 already_paid: jump straight to the request detail. Same
+		// defense-in-depth pattern as the standard tier — structurally
+		// rare on the fresh-submission path, but covers parallel-tab
+		// races and any future deep-link "re-pay" entry point.
+		if (checkoutRes.status === 409 && checkout.error === "already_paid" && checkout.detail_url) {
+			router.push(checkout.detail_url);
+			return;
+		}
 		if (!checkoutRes.ok) {
-			setSubmitError(checkout.error || "Unable to start payment. Please try again.");
+			setSubmitError(checkout.message || checkout.error || "Unable to start payment. Please try again.");
 			setLoading(false);
 			return;
 		}
