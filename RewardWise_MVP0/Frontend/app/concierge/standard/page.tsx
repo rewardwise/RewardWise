@@ -260,9 +260,24 @@ function ConciergeStandardInner() {
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({ travelRequestId: data.id }),
 		});
-		const checkout = (await checkoutRes.json()) as { url?: string; error?: string };
+		const checkout = (await checkoutRes.json()) as {
+			url?: string;
+			error?: string;
+			message?: string;
+			detail_url?: string;
+		};
+		// 409 already_paid: the parallel-checkout guard returns a
+		// detail_url so the user can jump straight to the request they
+		// already paid for. Structurally unreachable from this fresh-
+		// submission flow (the travel_request was just inserted), but
+		// kept as defense-in-depth: a second tab racing the same submit
+		// could conceivably land on this branch.
+		if (checkoutRes.status === 409 && checkout.error === "already_paid" && checkout.detail_url) {
+			router.push(checkout.detail_url);
+			return;
+		}
 		if (!checkoutRes.ok) {
-			setSubmitError(checkout.error || "Unable to start payment. Please try again.");
+			setSubmitError(checkout.message || checkout.error || "Unable to start payment. Please try again.");
 			setLoading(false);
 			return;
 		}
