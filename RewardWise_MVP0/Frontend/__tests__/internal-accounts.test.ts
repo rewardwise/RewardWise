@@ -4,14 +4,18 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { getInternalEmails, isInternalEmail } from '@/utils/auth/internal-accounts'
 
 const ORIGINAL = process.env.INTERNAL_EMAILS
+const ORIGINAL_PUBLIC = process.env.NEXT_PUBLIC_INTERNAL_EMAILS
 
 describe('internal-accounts allowlist', () => {
   beforeEach(() => {
     delete process.env.INTERNAL_EMAILS
+    delete process.env.NEXT_PUBLIC_INTERNAL_EMAILS
   })
   afterEach(() => {
     if (ORIGINAL === undefined) delete process.env.INTERNAL_EMAILS
     else process.env.INTERNAL_EMAILS = ORIGINAL
+    if (ORIGINAL_PUBLIC === undefined) delete process.env.NEXT_PUBLIC_INTERNAL_EMAILS
+    else process.env.NEXT_PUBLIC_INTERNAL_EMAILS = ORIGINAL_PUBLIC
   })
 
   describe('getInternalEmails', () => {
@@ -32,6 +36,17 @@ describe('internal-accounts allowlist', () => {
     it('drops empty entries from leading/trailing/double commas', () => {
       process.env.INTERNAL_EMAILS = ',a@x.com,,b@x.com,'
       expect(getInternalEmails()).toEqual(['a@x.com', 'b@x.com'])
+    })
+
+    it('falls back to NEXT_PUBLIC_INTERNAL_EMAILS when server var is unset', () => {
+      process.env.NEXT_PUBLIC_INTERNAL_EMAILS = 'Public@Foo.com'
+      expect(getInternalEmails()).toEqual(['public@foo.com'])
+    })
+
+    it('prefers INTERNAL_EMAILS over NEXT_PUBLIC_INTERNAL_EMAILS when both are set', () => {
+      process.env.INTERNAL_EMAILS = 'server@foo.com'
+      process.env.NEXT_PUBLIC_INTERNAL_EMAILS = 'public@foo.com'
+      expect(getInternalEmails()).toEqual(['server@foo.com'])
     })
   })
 
