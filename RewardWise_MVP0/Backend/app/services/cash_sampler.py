@@ -13,11 +13,14 @@ backs on the existing provider-fallback wrapper, so no new caching semantics.
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Dict, Iterable, Optional
 
 from app.services.pricing_service import get_cash_price
 
 DEFAULT_CONCURRENCY = 4
+
+logger = logging.getLogger(__name__)
 
 
 async def sample_cash_prices_by_date(
@@ -53,7 +56,18 @@ async def sample_cash_prices_by_date(
                     max_stops=max_stops,
                 )
                 return date, result.get("cash_price")
-            except Exception:
+            except Exception as exc:
+                # Isolate per-date failures so one bad date can't take down
+                # the whole flex sweep — providers raise a wide range of
+                # exception types (httpx.HTTPError, RuntimeError, ValueError,
+                # KeyError, ...) and the contract here is "any failure → None
+                # for that date." CancelledError + other BaseExceptions are
+                # NOT caught (they aren't Exception subclasses), so
+                # cooperative cancellation still works.
+                logger.warning(
+                    "sample_cash_prices_by_date: %s→%s on %s failed: %s",
+                    origin, destination, date, exc,
+                )
                 return date, None
 
     pairs = await asyncio.gather(*(fetch_one(d) for d in distinct))

@@ -122,21 +122,38 @@ test.describe('PR CASH-PER-DATE: per-award cash + CPP self-consistent on flex se
     for (const row of outbound) assertCppCashInvariant(row, 'outbound')
     for (const row of returns) assertCppCashInvariant(row, 'return')
 
-    // Per-date drift assertion: if the flex search returned awards on
-    // multiple dates, at least two rows should have distinct cash_price
-    // values (because per-date cash sampling should yield different
-    // one-way cash on different dates for most real routes). Skip when
-    // only one date is present (non-flex degenerate case).
+    // Anchor-scalar regression detector. The per-row `cpp × points + taxes
+    // ≈ cash_price` invariant above is algebraically forced — pre-fix it
+    // also held, because cpp was DERIVED from the same anchor cash that
+    // cash_price stored. So that invariant alone cannot catch the original
+    // bug.
+    //
+    // The pre-fix signature: every award row's cash_price equaled the
+    // top-level cash_price scalar (the anchor-date RT cash). Post-fix, on
+    // any flex search with awards spanning ≥2 distinct dates, at least one
+    // row's per-date cash should differ from the top-level scalar (because
+    // one-way cash on a non-anchor date generally ≠ RT cash on the anchor
+    // pair). We assert that ≥1 row diverges, which falsifies pre-fix
+    // behavior without flaking on flat-price corridors.
     const distinctOutboundDates = new Set(outbound.map((r) => r.date).filter(Boolean))
-    if (distinctOutboundDates.size > 1) {
-      const distinctCash = new Set(
-        outbound.map((r) => r.cash_price).filter((c): c is number => c !== null),
+    const distinctReturnDates = new Set(returns.map((r) => r.date).filter(Boolean))
+    const totalDistinctDates = distinctOutboundDates.size + distinctReturnDates.size
+    if (totalDistinctDates >= 2) {
+      const topLevelCash = body.cash_price ?? null
+      const allRows = [...outbound, ...returns]
+      const divergentRows = allRows.filter(
+        (r) =>
+          r.cash_price !== null &&
+          topLevelCash !== null &&
+          Math.abs(r.cash_price - topLevelCash) > 0.5,
       )
-      // 2026 SEA↔BAY can occasionally see identical cash on adjacent dates;
-      // assert "at least 1" rather than "> 1" to avoid a flake on flat
-      // pricing days, while still catching the all-rows-equal-anchor bug
-      // by way of the per-row invariant above.
-      expect(distinctCash.size).toBeGreaterThanOrEqual(1)
+      expect(
+        divergentRows.length,
+        `[anchor-scalar regression] Every award row's cash_price equals the ` +
+          `top-level scalar (${topLevelCash}) despite ${totalDistinctDates} distinct ` +
+          `award dates. Pre-fix behavior — per-date cash sampling is not threading ` +
+          `through to award rows.`,
+      ).toBeGreaterThanOrEqual(1)
     }
 
     // Verdict still renders (UI sanity — guards against the response being
