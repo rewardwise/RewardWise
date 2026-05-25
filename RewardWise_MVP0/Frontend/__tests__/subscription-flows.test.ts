@@ -82,32 +82,38 @@ type ProfileRow = {
 } | null;
 
 function makeProfileSupabase(
+  // `row` is no longer load-bearing post-M5 (grant uses upsert and doesn't
+  // pre-read the row), but the parameter is kept so existing call sites
+  // that pass an existing-profile row remain readable. Mock surface still
+  // includes select/eq/maybeSingle in case other call paths (entitlement
+  // checks) hit the same fixture.
   row: ProfileRow,
-  opts: { ledgerInsertError?: { code?: string; message?: string } | null } = {},
+  opts: {
+    ledgerInsertError?: { code?: string; message?: string } | null;
+    upsertError?: { code?: string; message?: string } | null;
+  } = {},
 ) {
-  let updatePayload: Record<string, unknown> | null = null;
-  let insertPayload: Record<string, unknown> | null = null;
+  let upsertPayload: Record<string, unknown> | null = null;
+  let upsertOptions: Record<string, unknown> | null = null;
   let ledgerInsertPayload: Record<string, unknown> | null = null;
 
   const profilesTable = {
     select: vi.fn(),
     eq: vi.fn(),
     maybeSingle: vi.fn(),
-    update: vi.fn(),
-    insert: vi.fn(),
+    upsert: vi.fn(),
   };
 
   profilesTable.select.mockReturnValue(profilesTable);
   profilesTable.eq.mockReturnValue(profilesTable);
   profilesTable.maybeSingle.mockResolvedValue({ data: row });
-  profilesTable.update.mockImplementation((payload: Record<string, unknown>) => {
-    updatePayload = payload;
-    return profilesTable;
-  });
-  profilesTable.insert.mockImplementation((payload: Record<string, unknown>) => {
-    insertPayload = payload;
-    return Promise.resolve({ error: null });
-  });
+  profilesTable.upsert.mockImplementation(
+    (payload: Record<string, unknown>, options?: Record<string, unknown>) => {
+      upsertPayload = payload;
+      upsertOptions = options ?? null;
+      return Promise.resolve({ error: opts.upsertError ?? null });
+    },
+  );
 
   const ledgerTable = {
     insert: vi.fn((payload: Record<string, unknown>) => {
@@ -125,11 +131,11 @@ function makeProfileSupabase(
     } as unknown as SupabaseClient,
     table: profilesTable,
     ledgerTable,
-    get updatePayload() {
-      return updatePayload;
+    get upsertPayload() {
+      return upsertPayload;
     },
-    get insertPayload() {
-      return insertPayload;
+    get upsertOptions() {
+      return upsertOptions;
     },
     get ledgerInsertPayload() {
       return ledgerInsertPayload;
@@ -348,13 +354,19 @@ describe("day pass fulfillment", () => {
     const expectedExpiry = addHours(now, DAY_PASS_HOURS);
     const ctx = makeProfileSupabase(null);
 
-    await grantDayPassFor24Hours(ctx.supabase, TEST_USER_ID);
+    await expect(
+      grantDayPassFor24Hours(ctx.supabase, TEST_USER_ID),
+    ).resolves.toEqual({ ok: true });
 
-    expect(ctx.insertPayload).toMatchObject({
+    // Post-M5: single atomic upsert on user_id. onboarding_state is omitted
+    // from the payload because the profiles column has DEFAULT 'pending',
+    // and including it would re-pin existing users back to pending on
+    // every Day Pass grant.
+    expect(ctx.upsertPayload).toMatchObject({
       user_id: TEST_USER_ID,
-      onboarding_state: "pending",
       day_pass_expires_at: expectedExpiry.toISOString(),
     });
+    expect(ctx.upsertOptions).toMatchObject({ onConflict: "user_id" });
   });
 
   it("replaces an existing day pass with a fresh 24h window from now, does not stack", async () => {
@@ -366,11 +378,29 @@ describe("day pass fulfillment", () => {
       day_pass_expires_at: existingExpiry.toISOString(),
     });
 
-    await grantDayPassFor24Hours(ctx.supabase, TEST_USER_ID);
+    await expect(
+      grantDayPassFor24Hours(ctx.supabase, TEST_USER_ID),
+    ).resolves.toEqual({ ok: true });
 
-    expect(ctx.updatePayload).toMatchObject({
+    // With upsert, existing-user path is the same single statement as
+    // new-user; the database handles the conflict resolution. We assert on
+    // the upsert payload reflecting now + 24h, NOT existingExpiry + 24h —
+    // the contract is "fresh 24h from now," not "stack on top."
+    expect(ctx.upsertPayload).toMatchObject({
+      user_id: TEST_USER_ID,
       day_pass_expires_at: expectedExpiry.toISOString(),
     });
+  });
+
+  it("surfaces a grant failure as ok:false with grant_failed code", async () => {
+    freezeClock();
+    const ctx = makeProfileSupabase(null, {
+      upsertError: { code: "23502", message: "not-null violation (simulated)" },
+    });
+
+    await expect(
+      grantDayPassFor24Hours(ctx.supabase, TEST_USER_ID),
+    ).resolves.toEqual({ ok: false, error: "grant_failed" });
   });
 
   it("does not fulfill a day pass when Stripe amount_total does not match the configured price", async () => {
@@ -384,8 +414,7 @@ describe("day pass fulfillment", () => {
       }),
     ).resolves.toEqual({ ok: false, error: "amount_mismatch" });
 
-    expect(ctx.table.insert).not.toHaveBeenCalled();
-    expect(ctx.table.update).not.toHaveBeenCalled();
+    expect(ctx.table.upsert).not.toHaveBeenCalled();
     expect(ctx.ledgerTable.insert).not.toHaveBeenCalled();
   });
 
@@ -402,7 +431,7 @@ describe("day pass fulfillment", () => {
       }),
     ).resolves.toEqual({ ok: true, alreadyProcessed: false });
 
-    expect(ctx.insertPayload).toMatchObject({
+    expect(ctx.upsertPayload).toMatchObject({
       user_id: TEST_USER_ID,
       day_pass_expires_at: expectedExpiry.toISOString(),
     });
@@ -410,6 +439,28 @@ describe("day pass fulfillment", () => {
       session_id: "cs_test_first_fulfill",
       user_id: TEST_USER_ID,
     });
+  });
+
+  it("aborts the ledger insert and returns grant_failed when grant fails", async () => {
+    freezeClock();
+    const ctx = makeProfileSupabase(null, {
+      upsertError: { code: "23502", message: "not-null violation (simulated)" },
+    });
+
+    await expect(
+      fulfillDayPassCheckout(ctx.supabase, {
+        userId: TEST_USER_ID,
+        amountTotalCents: USD_CENTS.DAY_PASS_USD_CENTS,
+        stripeSessionId: "cs_test_grant_failure",
+      }),
+    ).resolves.toEqual({ ok: false, error: "grant_failed" });
+
+    // Critical: with grant-first ordering, a grant failure means the
+    // ledger row never gets written, so the next retry can re-attempt
+    // grant from scratch. If the ledger committed before the grant, the
+    // 23505 dedup branch would short-circuit the retry and the user
+    // would be permanently stuck with a paid receipt and no access.
+    expect(ctx.ledgerTable.insert).not.toHaveBeenCalled();
   });
 
   it("treats a duplicate session_id as already processed", async () => {
@@ -426,19 +477,22 @@ describe("day pass fulfillment", () => {
       }),
     ).resolves.toEqual({ ok: true, alreadyProcessed: true });
 
-    // Post-B2 ordering (commit 7): grant runs BEFORE the ledger insert, so
-    // a webhook retry of the same session_id will invoke the grant a second
-    // time before discovering the dedup. This is intentional and safe:
-    // grantDayPassFor24Hours writes a fresh now+24h expiry, which on a
-    // sub-second retry is effectively a no-op (the new expiry equals the
-    // previous expiry within network-jitter precision). The contract the
-    // caller depends on — `alreadyProcessed: true` so downstream confirm
-    // flows don't double-acknowledge the user — is preserved.
+    // Post-B2 (commit 7) + M5 (commit 8): grant runs BEFORE the ledger
+    // insert and uses upsert with onConflict='user_id'. A webhook retry of
+    // the same session_id will invoke grant a second time before
+    // discovering the dedup. This is intentional and safe — upsert writes
+    // the same now+24h expiry, which on a sub-second retry is a no-op
+    // (the new expiry equals the previous expiry within network-jitter
+    // precision). The contract callers depend on — `alreadyProcessed: true`
+    // so downstream confirm flows don't double-acknowledge the user — is
+    // preserved across both attempts.
     //
     // Previous-order assertion that profiles were untouched on the dedup
-    // path was implementation-coupled; the new B2 order trades that
-    // micro-property for closing a "ledger-says-paid but grant silently
-    // failed" lockout. See day-pass-checkout.ts comment for the full why.
+    // path was implementation-coupled; the B2/M5 order trades that micro-
+    // property for closing a "ledger-says-paid but grant silently failed"
+    // lockout. See day-pass-checkout.ts + profile-passes-server.ts comments
+    // for the full why.
+    expect(ctx.table.upsert).toHaveBeenCalledTimes(1);
   });
 
   it("rejects a fulfillment call with a missing or malformed session id", async () => {
