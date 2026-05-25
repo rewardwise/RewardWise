@@ -5,6 +5,9 @@ import Link from "next/link";
 import { useState } from "react";
 import { Check, ExternalLink, Loader2 } from "lucide-react";
 import { useAuth } from "@/context/AuthProvider";
+import DayPassAlreadyActiveModal, {
+	type DayPassAlreadyActiveDetails,
+} from "@/components/DayPassAlreadyActiveModal";
 import {
 	PAY_NO_CHECKOUT_URL,
 	PAY_START_CHECKOUT,
@@ -69,6 +72,8 @@ export default function ZoePricingCards({
 	const { user } = useAuth();
 	const [loading, setLoading] = useState<"dayPass" | "sub" | null>(null);
 	const [error, setError] = useState("");
+	const [alreadyActive, setAlreadyActive] =
+		useState<DayPassAlreadyActiveDetails | null>(null);
 
 	const startDayPass = async () => {
 		if (!user) return;
@@ -81,7 +86,26 @@ export default function ZoePricingCards({
 				headers: { "Content-Type": "application/json" },
 				body: JSON.stringify(searchId ? { searchId } : {}),
 			});
-			const data = (await res.json()) as { url?: string; error?: string };
+			const data = (await res.json()) as {
+				url?: string;
+				error?: string;
+				hasActiveDayPass?: boolean;
+				dayPassRemainingHours?: number;
+				dayPassExpiresAt?: string | null;
+				hasActiveSubscription?: boolean;
+				upsell?: "monthly" | null;
+			};
+			if (res.status === 409 && data.error === "already_active") {
+				setAlreadyActive({
+					hasActiveDayPass: Boolean(data.hasActiveDayPass),
+					dayPassRemainingHours: Number(data.dayPassRemainingHours ?? 0),
+					dayPassExpiresAt: data.dayPassExpiresAt ?? null,
+					hasActiveSubscription: Boolean(data.hasActiveSubscription),
+					upsell: data.upsell === "monthly" ? "monthly" : null,
+				});
+				setLoading(null);
+				return;
+			}
 			if (!res.ok) {
 				setError(data.error || PAY_START_CHECKOUT);
 				setLoading(null);
@@ -328,6 +352,17 @@ export default function ZoePricingCards({
 					</Link>
 				</p>
 			)}
+
+			<DayPassAlreadyActiveModal
+				open={alreadyActive !== null}
+				details={alreadyActive}
+				upgradeLoading={loading === "sub"}
+				onUpgradeToMonthly={() => {
+					setAlreadyActive(null);
+					void startSubscription();
+				}}
+				onDismiss={() => setAlreadyActive(null)}
+			/>
 		</div>
 	);
 }
