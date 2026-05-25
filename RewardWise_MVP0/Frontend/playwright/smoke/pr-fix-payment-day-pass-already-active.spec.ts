@@ -1,36 +1,50 @@
 /**
- * Production smoke: PR FIX-PAYMENT — Day Pass already-active 409 + Path-C
- * upsell modal.
+ * Production smoke: PR FIX-PAYMENT — already-active 409 + Path-C upsell
+ * modal across all three Stripe Checkout surfaces (Day Pass, Monthly
+ * Subscription, Concierge).
+ *
+ * File covers three scenarios, sequenced via describe.serial blocks and
+ * the playwright.config.ts worker=1 / fullyParallel=false guard. Each
+ * block runs its own beforeAll seed + afterAll teardown against the
+ * shared smoke-test-empty@ account, so state never leaks across blocks
+ * (and never out of the file).
+ *
+ *   1) Day Pass already-active → 409 active_day_pass → Path-C modal +
+ *      Upgrade-to-Monthly CTA. Original Megan regression (ClickUp
+ *      86b9yj5ut, PI pi_3TZDPLJBOkdxC5V11Vc5FEMA + pi_3TZDQVJBOkdxC5V10xNCRKD4,
+ *      $0.99 × 2 in 72 seconds). Pre-fix the click would have minted
+ *      a second Day Pass Checkout; post-fix the server returns 409
+ *      before stripe.checkout.sessions.create.
+ *
+ *   2) Subscribe already-active → 409 already_subscribed → modal in
+ *      dual-state mode ("You already have Monthly access", "Got it"
+ *      only). Pre-fix the subscribe endpoint had no entitlement guard
+ *      at all, so a paid monthly user clicking Subscribe from a second
+ *      tab would mint a duplicate $3.99/mo subscription billing them
+ *      every cycle until manual reconciliation.
+ *
+ *   3) Concierge already-paid → 409 already_paid with detail_url.
+ *      Tested API-direct (no form-fill UI flow) because the modal is
+ *      a router.push to detail_url, not a Path-C modal. Pre-fix a
+ *      paid Premium request could be re-paid, minting a duplicate
+ *      $199 Checkout for the same travel_request.
  *
  * ENTITLEMENT CHECK ORDER MATTERS — Day Pass condition must be evaluated
- * before INTERNAL condition for this test's 409 message assertion to remain
+ * before INTERNAL condition for block 1's 409 message assertion to remain
  * valid. The seeded smoke account lives on the @mytravelwallet.ai domain,
  * which a future PR (INTERNAL-ACC) will treat as a paywall-bypass cohort.
  * If that future PR appends an INTERNAL branch BEFORE the Day Pass branch
  * in /api/payments/day-pass/route.ts, this spec will start seeing the
  * INTERNAL response instead of `error: "active_day_pass"` and silently
  * stop covering the regression. The order in route.ts is:
- *   1) hasActiveDayPass     → 409 "active_day_pass"      (this spec)
+ *   1) hasActiveDayPass     → 409 "active_day_pass"      (block 1)
  *   2) hasActiveSubscription → 409 "active_subscription"
  *   3) (future) INTERNAL    → 409 "internal_access"
  *
- * Regression target: ClickUp 86b9yj5ut. Megan Bittner was double-charged
- * $0.99 for two Day Passes 72 seconds apart (PI ids pi_3TZDPLJBOkdxC5V11Vc5FEMA
- * and pi_3TZDQVJBOkdxC5V10xNCRKD4). The client-side hide-the-card gate
- * was bypassable; the server now enforces the entitlement check before
- * creating a second Stripe Checkout session. This spec proves the server
- * gate holds on the production deployment.
- *
  * Shared smoke account: smoke-test-empty@mytravelwallet.ai. Reused with
- * PR B's empty-wallet spec. The two specs are sequenced via worker=1 +
- * fullyParallel=false (playwright.config.ts) AND test.describe.serial()
- * here (defense in depth) so the seed state from one cannot leak into
- * the other.
- *
- * Setup: seeds profile.day_pass_expires_at = now() + 18h via Supabase
- * service-role. Teardown: clears day_pass_expires_at back to null. No
- * paid Stripe transactions; the Stripe call is asserted to NOT happen
- * on the Day Pass click and to happen ONCE on the upsell click.
+ * PR B's empty-wallet spec. All blocks here use the same account and
+ * each block fully restores state in afterAll so a future block's seed
+ * can't observe stale data.
  *
  * Required env (verified at runtime, spec.skip() if missing):
  *   - MTW_SMOKE_EMPTY_EMAIL (in ~/.config/secrets/mytravelwallet.env)
@@ -69,8 +83,9 @@ function parseEnvFile(content: string): Record<string, string> {
 
 // Admin client is loaded via runtime require() from the main repo's node_modules
 // (FRONTEND_DIR) and the worktree may not have @supabase/supabase-js types
-// installed. The fields we use (auth.admin.listUsers, from(...).update(...))
-// are stable and typed inline at the call sites.
+// installed. The fields we use (auth.admin.listUsers, from(...).update/upsert/
+// insert/delete/select) are stable and typed inline at the call sites.
+type AdminQueryResult<T = unknown> = Promise<{ data?: T; error?: unknown }>
 type AdminClient = {
   auth: {
     admin: {
@@ -85,6 +100,18 @@ type AdminClient = {
   }
   from: (table: string) => {
     update: (patch: Record<string, unknown>) => {
+      eq: (col: string, val: string) => Promise<{ error?: unknown }>
+    }
+    upsert: (
+      row: Record<string, unknown>,
+      opts?: { onConflict?: string },
+    ) => Promise<{ error?: unknown }>
+    insert: (row: Record<string, unknown>) => {
+      select: (cols?: string) => {
+        single: () => AdminQueryResult<{ id: string }>
+      }
+    }
+    delete: () => {
       eq: (col: string, val: string) => Promise<{ error?: unknown }>
     }
   }
@@ -153,6 +180,82 @@ async function clearActiveDayPass(seed: SeedContext): Promise<void> {
     // Teardown failures shouldn't fail the test, but log so the next run
     // sees a stale seed and the suspicious-seed assertion (below) catches it.
     console.warn('[teardown] clear day_pass_expires_at failed (sanitized)')
+  }
+}
+
+async function seedActiveSubscription(seed: SeedContext): Promise<string> {
+  // Upsert keyed on user_id (we treat one active subscription per user as the
+  // smoke-test invariant). current_period_end 30d in the future so the
+  // subscribe entitlement check (status='active' AND current_period_end > now)
+  // returns true.
+  const periodEnd = new Date(
+    Date.now() + 30 * 24 * 60 * 60 * 1000,
+  ).toISOString()
+  const { error } = await seed.adminClient
+    .from('subscriptions')
+    .upsert(
+      {
+        user_id: seed.userId,
+        status: 'active',
+        plan: 'pro',
+        current_period_end: periodEnd,
+        // stripe_customer_id + stripe_subscription_id intentionally NULL —
+        // the smoke check only inspects status + current_period_end.
+      },
+      { onConflict: 'user_id' },
+    )
+  if (error) throw new Error('seed subscription upsert failed (sanitized)')
+  return periodEnd
+}
+
+async function clearActiveSubscription(seed: SeedContext): Promise<void> {
+  const { error } = await seed.adminClient
+    .from('subscriptions')
+    .delete()
+    .eq('user_id', seed.userId)
+  if (error) {
+    console.warn('[teardown] clear subscription failed (sanitized)')
+  }
+}
+
+async function seedPaidTravelRequest(seed: SeedContext): Promise<string> {
+  // Insert a Standard-tier travel_request in `paid` status so the concierge
+  // checkout payment_status guard at /api/payments/checkout returns 409
+  // already_paid + detail_url. departure_date is 60d out to satisfy the
+  // dates_valid + departure_in_future constraints (if any).
+  const departure = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10)
+  const { data, error } = await seed.adminClient
+    .from('travel_requests')
+    .insert({
+      user_id: seed.userId,
+      tier: 'standard',
+      status: 'paid',
+      origin: 'SFO',
+      destination: 'JFK',
+      departure_date: departure,
+      trip_type: 'oneway',
+      passengers: 1,
+    })
+    .select('id')
+    .single()
+  if (error || !data?.id) {
+    throw new Error('seed travel_request insert failed (sanitized)')
+  }
+  return data.id
+}
+
+async function clearPaidTravelRequest(
+  seed: SeedContext,
+  requestId: string,
+): Promise<void> {
+  const { error } = await seed.adminClient
+    .from('travel_requests')
+    .delete()
+    .eq('id', requestId)
+  if (error) {
+    console.warn('[teardown] clear travel_request failed (sanitized)')
   }
 }
 
@@ -285,6 +388,174 @@ test.describe.serial(
         paymentCalls.filter((c) => c.url.includes('/api/payments/day-pass'))
           .length,
       ).toBe(1)
+    })
+  },
+)
+
+test.describe.serial(
+  'PR FIX-PAYMENT: Subscribe already-active 409 + dual-state modal',
+  () => {
+    let seed: SeedContext | null = null
+    let context: BrowserContext | null = null
+
+    test.beforeAll(async () => {
+      seed = await loadSeedContext()
+      if (!seed) {
+        test.skip(
+          true,
+          'Missing MTW_SMOKE_EMPTY_EMAIL or .env.local Supabase creds; spec disabled until provisioned.',
+        )
+        return
+      }
+      await seedActiveSubscription(seed)
+    })
+
+    test.afterAll(async () => {
+      if (seed) await clearActiveSubscription(seed)
+      if (context) await context.close()
+    })
+
+    test('seeded Monthly subscriber is blocked from re-subscribing and sees dual-state modal', async ({
+      browser,
+      baseURL,
+    }) => {
+      if (!seed || !baseURL) {
+        test.skip(true, 'Missing seed context or baseURL')
+        return
+      }
+
+      const secretsPath = `${homedir()}/.config/secrets/mytravelwallet.env`
+      const smokeEmail = parseEnvFile(
+        readFileSync(secretsPath, 'utf8'),
+      ).MTW_SMOKE_EMPTY_EMAIL
+      context = await browser.newContext()
+      await mintSessionViaServiceRole(context, {
+        baseUrl: baseURL,
+        email: smokeEmail,
+      })
+
+      const page = await context.newPage()
+
+      // Capture every payments API call to prove subscribe POST returned 409
+      // and no Stripe Checkout session was created.
+      const paymentCalls: Array<{ url: string; status: number }> = []
+      page.on('response', (res) => {
+        const url = res.url()
+        if (url.includes('/api/payments/')) {
+          paymentCalls.push({ url, status: res.status() })
+        }
+      })
+
+      await page.goto('/subscribe', { waitUntil: 'networkidle' })
+
+      // Click Subscribe CTA. ZoePricingCards uses
+      // data-testid="subscribe-monthly-cta" for the Monthly card.
+      const subscribeButton = page.getByTestId('subscribe-monthly-cta')
+      await subscribeButton.click()
+
+      // The unified Already-Active modal is the load-bearing assertion. In
+      // dual-state mode (hasActiveSubscription=true, upsell=null) it renders
+      // the Subscription story: "You already have Monthly access" + a single
+      // "Got it" dismiss CTA, with NO Upgrade-to-Monthly button.
+      const modal = page.locator(
+        '[data-testid="day-pass-already-active-modal"]',
+      )
+      await expect(modal).toBeVisible({ timeout: 10_000 })
+      await expect(modal).toContainText(/You already have Monthly access/i)
+
+      // Negative assertion: no upgrade button in dual-state mode.
+      await expect(
+        modal.locator('[data-testid="upgrade-to-monthly"]'),
+      ).toHaveCount(0)
+
+      // The dismiss button reads "Got it" in the subscription branch.
+      const dismiss = modal.locator('[data-testid="dismiss-modal"]')
+      await expect(dismiss).toBeVisible()
+      await expect(dismiss).toContainText(/Got it/i)
+
+      // Negative assertion: no navigation to Stripe happened. Pre-fix the
+      // subscribe endpoint had no entitlement guard, so this click would
+      // have minted a duplicate $3.99/mo subscription.
+      expect(page.url()).not.toContain('checkout.stripe.com')
+
+      // The subscribe POST must have come back 409 exactly once.
+      const subscribeResponses = paymentCalls.filter((c) =>
+        c.url.includes('/api/payments/subscribe'),
+      )
+      expect(subscribeResponses).toHaveLength(1)
+      expect(subscribeResponses[0].status).toBe(409)
+    })
+  },
+)
+
+test.describe.serial(
+  'PR FIX-PAYMENT: Concierge already-paid 409 with detail_url',
+  () => {
+    let seed: SeedContext | null = null
+    let requestId: string | null = null
+    let context: BrowserContext | null = null
+
+    test.beforeAll(async () => {
+      seed = await loadSeedContext()
+      if (!seed) {
+        test.skip(
+          true,
+          'Missing MTW_SMOKE_EMPTY_EMAIL or .env.local Supabase creds; spec disabled until provisioned.',
+        )
+        return
+      }
+      requestId = await seedPaidTravelRequest(seed)
+    })
+
+    test.afterAll(async () => {
+      if (seed && requestId) await clearPaidTravelRequest(seed, requestId)
+      if (context) await context.close()
+    })
+
+    test('paid travel_request is blocked from re-checkout via API-direct POST', async ({
+      browser,
+      baseURL,
+    }) => {
+      if (!seed || !baseURL || !requestId) {
+        test.skip(true, 'Missing seed context, baseURL, or seeded requestId')
+        return
+      }
+
+      // API-direct test (not UI): the concierge `already_paid` branch is
+      // structurally rare (concierge always creates a fresh travel_request
+      // before calling checkout), so this is defense-in-depth coverage for
+      // parallel-tab races + future deep-link re-pay entry points. The
+      // frontend response handler is exercised by the backend vitest
+      // (entitlement-and-day-pass-guard.test.ts).
+      const secretsPath = `${homedir()}/.config/secrets/mytravelwallet.env`
+      const smokeEmail = parseEnvFile(
+        readFileSync(secretsPath, 'utf8'),
+      ).MTW_SMOKE_EMPTY_EMAIL
+      context = await browser.newContext()
+      await mintSessionViaServiceRole(context, {
+        baseUrl: baseURL,
+        email: smokeEmail,
+      })
+
+      // Playwright APIRequestContext from the BrowserContext carries cookies
+      // so the POST is authenticated as the seeded smoke account.
+      const res = await context.request.post(
+        `${baseURL}/api/payments/checkout`,
+        {
+          data: { travel_request_id: requestId },
+          headers: { 'content-type': 'application/json' },
+        },
+      )
+
+      expect(res.status()).toBe(409)
+      const body = await res.json()
+      expect(body.error).toBe('already_paid')
+      expect(typeof body.detail_url).toBe('string')
+      // detail_url must point at a concierge tier page with the seeded
+      // travel_request_id (whether ?travel_request_id= is the exact param
+      // name comes from checkout/route.ts; assert it's present in the URL).
+      expect(body.detail_url).toContain('/concierge/')
+      expect(body.detail_url).toContain(requestId)
     })
   },
 )
