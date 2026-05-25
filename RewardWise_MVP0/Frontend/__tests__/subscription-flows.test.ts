@@ -81,11 +81,15 @@ type ProfileRow = {
   day_pass_expires_at?: string | null;
 } | null;
 
-function makeProfileSupabase(row: ProfileRow) {
+function makeProfileSupabase(
+  row: ProfileRow,
+  opts: { ledgerInsertError?: { code?: string; message?: string } | null } = {},
+) {
   let updatePayload: Record<string, unknown> | null = null;
   let insertPayload: Record<string, unknown> | null = null;
+  let ledgerInsertPayload: Record<string, unknown> | null = null;
 
-  const table = {
+  const profilesTable = {
     select: vi.fn(),
     eq: vi.fn(),
     maybeSingle: vi.fn(),
@@ -93,28 +97,42 @@ function makeProfileSupabase(row: ProfileRow) {
     insert: vi.fn(),
   };
 
-  table.select.mockReturnValue(table);
-  table.eq.mockReturnValue(table);
-  table.maybeSingle.mockResolvedValue({ data: row });
-  table.update.mockImplementation((payload: Record<string, unknown>) => {
+  profilesTable.select.mockReturnValue(profilesTable);
+  profilesTable.eq.mockReturnValue(profilesTable);
+  profilesTable.maybeSingle.mockResolvedValue({ data: row });
+  profilesTable.update.mockImplementation((payload: Record<string, unknown>) => {
     updatePayload = payload;
-    return table;
+    return profilesTable;
   });
-  table.insert.mockImplementation((payload: Record<string, unknown>) => {
+  profilesTable.insert.mockImplementation((payload: Record<string, unknown>) => {
     insertPayload = payload;
     return Promise.resolve({ error: null });
   });
 
+  const ledgerTable = {
+    insert: vi.fn((payload: Record<string, unknown>) => {
+      ledgerInsertPayload = payload;
+      return Promise.resolve({ error: opts.ledgerInsertError ?? null });
+    }),
+  };
+
   return {
     supabase: {
-      from: vi.fn(() => table),
+      from: vi.fn((name: string) => {
+        if (name === "processed_stripe_sessions") return ledgerTable;
+        return profilesTable;
+      }),
     } as unknown as SupabaseClient,
-    table,
+    table: profilesTable,
+    ledgerTable,
     get updatePayload() {
       return updatePayload;
     },
     get insertPayload() {
       return insertPayload;
+    },
+    get ledgerInsertPayload() {
+      return ledgerInsertPayload;
     },
   };
 }
@@ -339,10 +357,10 @@ describe("day pass fulfillment", () => {
     });
   });
 
-  it("extends an existing active day pass from the current expiry, not from now", async () => {
+  it("replaces an existing day pass with a fresh 24h window from now, does not stack", async () => {
     const now = freezeClock();
     const existingExpiry = addHours(now, DAY_PASS_HOURS + 6);
-    const expectedExpiry = addHours(existingExpiry, DAY_PASS_HOURS);
+    const expectedExpiry = addHours(now, DAY_PASS_HOURS);
     const ctx = makeProfileSupabase({
       user_id: TEST_USER_ID,
       day_pass_expires_at: existingExpiry.toISOString(),
@@ -362,11 +380,13 @@ describe("day pass fulfillment", () => {
       fulfillDayPassCheckout(ctx.supabase, {
         userId: TEST_USER_ID,
         amountTotalCents: USD_CENTS.DAY_PASS_USD_CENTS + 1,
+        stripeSessionId: "cs_test_amount_mismatch",
       }),
     ).resolves.toEqual({ ok: false, error: "amount_mismatch" });
 
     expect(ctx.table.insert).not.toHaveBeenCalled();
     expect(ctx.table.update).not.toHaveBeenCalled();
+    expect(ctx.ledgerTable.insert).not.toHaveBeenCalled();
   });
 
   it("fulfills a day pass when Stripe amount_total matches the configured price", async () => {
@@ -378,13 +398,50 @@ describe("day pass fulfillment", () => {
       fulfillDayPassCheckout(ctx.supabase, {
         userId: TEST_USER_ID,
         amountTotalCents: USD_CENTS.DAY_PASS_USD_CENTS,
+        stripeSessionId: "cs_test_first_fulfill",
       }),
-    ).resolves.toEqual({ ok: true });
+    ).resolves.toEqual({ ok: true, alreadyProcessed: false });
 
     expect(ctx.insertPayload).toMatchObject({
       user_id: TEST_USER_ID,
       day_pass_expires_at: expectedExpiry.toISOString(),
     });
+    expect(ctx.ledgerInsertPayload).toMatchObject({
+      session_id: "cs_test_first_fulfill",
+      user_id: TEST_USER_ID,
+    });
+  });
+
+  it("treats a duplicate session_id as already processed and does not re-grant the pass", async () => {
+    freezeClock();
+    const ctx = makeProfileSupabase(null, {
+      ledgerInsertError: { code: "23505", message: "duplicate key" },
+    });
+
+    await expect(
+      fulfillDayPassCheckout(ctx.supabase, {
+        userId: TEST_USER_ID,
+        amountTotalCents: USD_CENTS.DAY_PASS_USD_CENTS,
+        stripeSessionId: "cs_test_duplicate",
+      }),
+    ).resolves.toEqual({ ok: true, alreadyProcessed: true });
+
+    expect(ctx.table.insert).not.toHaveBeenCalled();
+    expect(ctx.table.update).not.toHaveBeenCalled();
+  });
+
+  it("rejects a fulfillment call with a missing or malformed session id", async () => {
+    const ctx = makeProfileSupabase(null);
+
+    await expect(
+      fulfillDayPassCheckout(ctx.supabase, {
+        userId: TEST_USER_ID,
+        amountTotalCents: USD_CENTS.DAY_PASS_USD_CENTS,
+        stripeSessionId: "not_a_real_id",
+      }),
+    ).resolves.toEqual({ ok: false, error: "bad_session_id" });
+
+    expect(ctx.ledgerTable.insert).not.toHaveBeenCalled();
   });
 });
 

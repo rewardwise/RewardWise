@@ -97,6 +97,7 @@ export async function POST(request: Request) {
 		const result = await fulfillDayPassCheckout(admin, {
 			userId: user.id,
 			amountTotalCents: amountTotal,
+			stripeSessionId: sessionId,
 		});
 
 		if (!result.ok) {
