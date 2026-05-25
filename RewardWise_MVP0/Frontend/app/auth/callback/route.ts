@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import { isSubscriptionActive } from "@/utils/subscription/check";
+import { isInternalEmail } from "@/utils/auth/internal-accounts";
 
 export async function GET(request: Request) {
 	const { searchParams, origin } = new URL(request.url);
@@ -37,10 +38,12 @@ export async function GET(request: Request) {
 				return NextResponse.redirect(`${origin}${next}`);
 			}
 
-			const hasActiveSubscription = await isSubscriptionActive(supabase, user.id);
+			if (!isInternalEmail(user.email)) {
+				const hasActiveSubscription = await isSubscriptionActive(supabase, user.id);
 
-			if (!hasActiveSubscription) {
-				return NextResponse.redirect(`${origin}/subscribe`);
+				if (!hasActiveSubscription) {
+					return NextResponse.redirect(`${origin}/subscribe`);
+				}
 			}
 
 			const { count } = await supabase
