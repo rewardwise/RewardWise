@@ -54,14 +54,6 @@ export const CASH_HORIZON_DAYS = readHorizon(
   DEFAULT_CASH_HORIZON_DAYS,
 );
 
-/**
- * @deprecated Use {@link getMaxSearchDate} for picker `max` attributes.
- *   Held only for backward compat during the horizon-aware migration —
- *   PR 2/6 of the partial-data series rewires the two `home/page.tsx`
- *   call sites and removes this export.
- */
-export const MAX_ISO_DATE = "2099-12-31";
-
 const ISO_DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 const MAX_YEAR = 2099;
 

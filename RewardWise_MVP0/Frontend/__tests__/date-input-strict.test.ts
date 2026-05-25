@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isValidISODate, clampISODate, MAX_ISO_DATE } from "../utils/dateInput";
+import { isValidISODate, clampISODate } from "../utils/dateInput";
 
 describe("isValidISODate", () => {
   it("accepts empty string (clearing is allowed)", () => {
@@ -42,11 +42,5 @@ describe("clampISODate", () => {
 
   it("accepts valid input and replaces current", () => {
     expect(clampISODate("2026-07-20", "2026-06-15")).toBe("2026-07-20");
-  });
-});
-
-describe("MAX_ISO_DATE", () => {
-  it("exports 2099-12-31 for the picker max attribute", () => {
-    expect(MAX_ISO_DATE).toBe("2099-12-31");
   });
 });
