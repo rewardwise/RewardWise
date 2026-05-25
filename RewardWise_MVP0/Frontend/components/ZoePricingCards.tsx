@@ -217,6 +217,7 @@ export default function ZoePricingCards({
 						type="button"
 						onClick={startDayPass}
 						disabled={loading !== null}
+						data-testid="get-day-pass-cta"
 						className="w-full py-2.5 px-4 rounded-xl border border-stone-900/15 bg-white text-stone-900 text-sm font-semibold hover:bg-stone-50 disabled:opacity-45 disabled:cursor-not-allowed flex items-center justify-center gap-2"
 					>
 						{loading === "dayPass" ? (
@@ -283,6 +284,7 @@ export default function ZoePricingCards({
 							type="button"
 							onClick={startSubscription}
 							disabled={loading !== null}
+							data-testid="subscribe-monthly-cta"
 							className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-2"
 						>
 							{loading === "sub" ? (

@@ -18,6 +18,9 @@ export const PAY_NO_CHECKOUT_URL =
 export const PAY_SEARCH_NOT_FOUND =
 	"We couldn’t tie this payment to your trip. Open your search again from the home page then tap pay.";
 
+export const ENTITLEMENT_LOAD_FAIL =
+	"We couldn’t check your access right now. Refresh the page or try again in a moment.";
+
 export const CONFIRM_PASS_BAD_SESSION_ID =
 	"Something went wrong after payment. Refresh the page or open Home from the menu.";
 

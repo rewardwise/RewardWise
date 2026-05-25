@@ -217,11 +217,12 @@ test.describe.serial(
       await page.goto('/subscribe', { waitUntil: 'networkidle' })
 
       // Click the Day Pass purchase CTA. ZoePricingCards renders both Day
-      // Pass and Monthly cards; the Day Pass CTA is the "Buy a Day Pass"
-      // button on its card. The test-id is not yet wired on the prod page,
-      // so target by accessible name.
-      const dayPassButton = page.getByRole('button', { name: /day pass/i })
-      await dayPassButton.first().click()
+      // Pass and Monthly cards; the Day Pass card's button is tagged with
+      // data-testid="get-day-pass-cta" specifically so this regression spec
+      // cannot drift onto a sibling button (e.g. "Subscribe - $3.99/mo"
+      // also matches /day pass/i via its surrounding card heading text).
+      const dayPassButton = page.getByTestId('get-day-pass-cta')
+      await dayPassButton.click()
 
       // The modal is the load-bearing assertion: pre-fix this would have
       // navigated to Stripe Checkout for a second Day Pass purchase.
@@ -235,6 +236,16 @@ test.describe.serial(
       // active_subscription, which is the order-of-evaluation contract
       // the comment at the top of this file is guarding).
       await expect(modal).toContainText(/Day Pass is still active/i)
+
+      // Bind the assertion to the seeded clock: seedActiveDayPass writes
+      // now() + 18h, and the modal renders Math.floor(remainingHours). Allow
+      // 17 or 18 to absorb any sub-second drift between the seed write and
+      // the entitlement read on the server. If a future regression breaks
+      // remaining-hours math (e.g. seeds 18h but renders 0), this catches
+      // it; without this assertion the modal could render with garbage
+      // hours and the test would still pass.
+      await expect(modal).toContainText(/(17|18)\s*hour/i)
+
       const upgradeCta = modal.locator('[data-testid="upgrade-to-monthly"]')
       await expect(upgradeCta).toBeVisible()
 
