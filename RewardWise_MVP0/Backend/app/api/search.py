@@ -87,6 +87,49 @@ def _get_user_programs(supabase, user_id: str) -> UserWallet:
         return {"programs": [], "cards": []}
 
 
+def _build_award_options_with_per_date_cash(
+    awards: list[dict],
+    cash_by_date: dict,
+    *,
+    include_endpoint_airports: bool,
+) -> list[dict]:
+    """Build sorted award options where each award's cash_price + cpp is keyed
+    off its own date via cash_by_date, not a single anchor-date scalar.
+
+    include_endpoint_airports controls whether origin_airport / destination_airport
+    are emitted (outbound leg includes them; return leg does not — matches the
+    pre-refactor response shape).
+    """
+    results: list[dict] = []
+    for award in awards:
+        points = award.get("points")
+        if not points:
+            continue
+        taxes = (award.get("taxes") or 0) / 100
+        award_cash = cash_by_date.get(award.get("date"))
+        cpp = calculate_cpp(award_cash, taxes, points) if award_cash is not None else None
+        row = {
+            "program": award.get("program"),
+            "points": points,
+            "cash_price": award_cash,
+            "taxes": taxes,
+            "cpp": cpp,
+            "remaining_seats": award.get("remaining_seats"),
+            "direct": award.get("direct", False),
+            "airlines": award.get("airlines", ""),
+        }
+        if include_endpoint_airports:
+            row["origin_airport"] = award.get("origin_airport")
+            row["destination_airport"] = award.get("destination_airport")
+        row["date"] = award.get("date")
+        row["trip_ids"] = award.get("trip_ids", [])
+        row["trips"] = award.get("trips", [])
+        row["source"] = award.get("source")
+        results.append(row)
+    results.sort(key=lambda x: x["cpp"] or 0, reverse=True)
+    return results
+
+
 @router.post("/search")
 @limiter.limit("10/minute")  # RW-047: rate limit
 async def search(
@@ -229,63 +272,12 @@ async def search(
         ),
     )
 
-    # --- Build outbound award options with CPP ---
-    results = []
-    for award in outbound_awards:
-        points = award.get("points")
-        if not points:
-            continue
-        taxes = (award.get("taxes") or 0) / 100
-        award_cash = cash_out_by_date.get(award.get("date"))
-        cpp = None
-        if award_cash is not None and points:
-            cpp = calculate_cpp(award_cash, taxes, points)
-        results.append({
-            "program": award.get("program"),
-            "points": points,
-            "cash_price": award_cash,
-            "taxes": taxes,
-            "cpp": cpp,
-            "remaining_seats": award.get("remaining_seats"),
-            "direct": award.get("direct", False),
-            "airlines": award.get("airlines", ""),
-            "origin_airport": award.get("origin_airport"),
-            "destination_airport": award.get("destination_airport"),
-            "date": award.get("date"),
-            "trip_ids": award.get("trip_ids", []),
-            "trips": award.get("trips", []),
-            "source": award.get("source"),
-        })
-    results.sort(key=lambda x: x["cpp"] or 0, reverse=True)
-    award_options = results
-
-    # --- Build return award options with CPP ---
-    return_results = []
-    for award in return_awards:
-        points = award.get("points")
-        if not points:
-            continue
-        taxes = (award.get("taxes") or 0) / 100
-        award_cash = cash_ret_by_date.get(award.get("date"))
-        cpp = None
-        if award_cash is not None and points:
-            cpp = calculate_cpp(award_cash, taxes, points)
-        return_results.append({
-            "program": award.get("program"),
-            "points": points,
-            "cash_price": award_cash,
-            "taxes": taxes,
-            "cpp": cpp,
-            "remaining_seats": award.get("remaining_seats"),
-            "direct": award.get("direct", False),
-            "airlines": award.get("airlines", ""),
-            "date": award.get("date"),
-            "trip_ids": award.get("trip_ids", []),
-            "trips": award.get("trips", []),
-            "source": award.get("source"),
-        })
-    return_results.sort(key=lambda x: x["cpp"] or 0, reverse=True)
-    return_award_options = return_results
+    award_options = _build_award_options_with_per_date_cash(
+        outbound_awards, cash_out_by_date, include_endpoint_airports=True
+    )
+    return_award_options = _build_award_options_with_per_date_cash(
+        return_awards, cash_ret_by_date, include_endpoint_airports=False
+    )
 
     # --- Pair-rank when both legs are flexible ---
     winning_date = award_options[0].get("date") if award_options else None
@@ -633,51 +625,12 @@ async def public_search(
             ),
         )
 
-        award_options = []
-        for award in outbound_awards:
-            points = award.get("points")
-            if not points:
-                continue
-            taxes = (award.get("taxes") or 0) / 100
-            award_cash = cash_out_by_date.get(award.get("date"))
-            cpp = calculate_cpp(award_cash, taxes, points) if award_cash is not None else None
-            award_options.append({
-                "program": award.get("program"),
-                "points": points,
-                "cash_price": award_cash,
-                "taxes": taxes,
-                "cpp": cpp,
-                "remaining_seats": award.get("remaining_seats"),
-                "direct": award.get("direct", False),
-                "airlines": award.get("airlines", ""),
-                "trip_ids": award.get("trip_ids", []),
-                "trips": award.get("trips", []),
-                "source": award.get("source"),
-            })
-        award_options.sort(key=lambda x: x["cpp"] or 0, reverse=True)
-
-        return_award_options = []
-        for award in return_awards:
-            points = award.get("points")
-            if not points:
-                continue
-            taxes = (award.get("taxes") or 0) / 100
-            award_cash = cash_ret_by_date.get(award.get("date"))
-            cpp = calculate_cpp(award_cash, taxes, points) if award_cash is not None else None
-            return_award_options.append({
-                "program": award.get("program"),
-                "points": points,
-                "cash_price": award_cash,
-                "taxes": taxes,
-                "cpp": cpp,
-                "remaining_seats": award.get("remaining_seats"),
-                "direct": award.get("direct", False),
-                "airlines": award.get("airlines", ""),
-                "trip_ids": award.get("trip_ids", []),
-                "trips": award.get("trips", []),
-                "source": award.get("source"),
-            })
-        return_award_options.sort(key=lambda x: x["cpp"] or 0, reverse=True)
+        award_options = _build_award_options_with_per_date_cash(
+            outbound_awards, cash_out_by_date, include_endpoint_airports=False
+        )
+        return_award_options = _build_award_options_with_per_date_cash(
+            return_awards, cash_ret_by_date, include_endpoint_airports=False
+        )
 
         if cached_verdict_details is not None:
             verdict_details = cached_verdict_details
