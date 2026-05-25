@@ -69,12 +69,23 @@ function makeLockSupabase(opts: {
 	selectChain.select.mockReturnValue(selectChain);
 	selectChain.eq.mockReturnValue(selectChain);
 
+	// The delete chain mirrors supabase-js's terminal-on-await behavior.
+	// Stale-row delete in pending-checkout-lock now adds .lt("expires_at",
+	// now) as a TOCTOU guard, so the chain ends at .lt() rather than .eq().
+	// Both .eq() and .lt() are kept thenable so other call shapes (e.g.
+	// release helper that calls delete().eq() with no .lt()) still resolve.
+	const deleteThen = (resolve: (value: { error: unknown }) => unknown) => {
+		deleteCalls++;
+		return Promise.resolve(opts.deleteResult ?? { error: null }).then(
+			resolve,
+		);
+	};
 	const deleteChain = {
 		delete: vi.fn(),
-		eq: vi.fn(async () => {
-			deleteCalls++;
-			return opts.deleteResult ?? { error: null };
-		}),
+		eq: vi.fn(() => ({
+			lt: vi.fn(() => ({ then: deleteThen })),
+			then: deleteThen,
+		})),
 	};
 	deleteChain.delete.mockReturnValue(deleteChain);
 

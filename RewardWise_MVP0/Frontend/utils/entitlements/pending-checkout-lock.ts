@@ -103,10 +103,19 @@ export async function acquirePendingCheckoutLock(
 		return { ok: false, reason: "in_flight", retryAfterSeconds };
 	}
 
+	// TOCTOU guard: gate the delete on expires_at < now so we can't
+	// accidentally clobber a fresh lock row that another concurrent
+	// request inserted between our select (saw stale) and this delete.
+	// If a new request raced ahead and inserted with expires_at > now,
+	// the .lt() filter matches 0 rows, the retry insert below 23505s
+	// again, and we return lock_failed (correct — the lock IS contended
+	// at delete time, even though it wasn't 50ms ago when we read).
+	const deleteGateIso = new Date().toISOString();
 	const { error: deleteError } = await supabase
 		.from(target.table)
 		.delete()
-		.eq(target.keyColumn, target.keyValue);
+		.eq(target.keyColumn, target.keyValue)
+		.lt("expires_at", deleteGateIso);
 
 	if (deleteError) {
 		return { ok: false, reason: "lock_failed" };

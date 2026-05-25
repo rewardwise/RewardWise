@@ -189,17 +189,47 @@ export async function POST(request: Request) {
           .delete()
           .eq("user_id", userId);
       }
-    } else {
-      const requestId =
-        ((session.metadata as Record<string, string> | undefined)
-          ?.travel_request_id as string | undefined) ??
-        (session.client_reference_id as string | undefined);
+    } else if (mode === "payment") {
+      // Route explicitly on metadata, not client_reference_id. Day-pass
+      // sessions set client_reference_id = searchId (a `searches.id`,
+      // not a `travel_requests.id`), so the prior version of this branch
+      // accidentally ran a travel_requests UPDATE keyed on a searches
+      // UUID. Today that's a harmless no-op (UUID spaces don't collide
+      // in practice), but it's a latent footgun — a future UUID
+      // collision or accidental id reuse would silently mutate the
+      // wrong table. Explicit branches per purchase_type / metadata
+      // shape close that path.
+      const metadata = session.metadata as Record<string, string> | undefined;
+      const purchaseType = metadata?.purchase_type;
+      const userId = metadata?.user_id;
+      const travelRequestId = metadata?.travel_request_id;
+      const sessionId = session.id as string | undefined;
 
-      if (requestId) {
+      if (
+        (purchaseType === "day_pass" || purchaseType === "zoe_single") &&
+        userId
+      ) {
+        // Day-pass completion: client-side confirm-day-pass POST is the
+        // primary fulfillment path (grants Day Pass + writes
+        // processed_stripe_sessions ledger). The webhook's only job here
+        // is to release the parallel-checkout lock, symmetrically with
+        // the subscribe + concierge branches. DELETE is idempotent —
+        // confirm-day-pass also runs it, and replays 5+ minutes later
+        // (after TTL) are no-ops.
+        await supabase
+          .from("pending_day_pass_sessions")
+          .delete()
+          .eq("user_id", userId);
+        console.log(
+          `[webhook] released pending_day_pass_sessions for user (session ${sessionId ?? "unknown"})`,
+        );
+      } else if (travelRequestId) {
+        // Concierge completion: marks the travel_request as paid + releases
+        // the per-travel_request lock. Idempotent via the row.status check.
         const { data: row } = await supabase
           .from("travel_requests")
           .select("constraints, status")
-          .eq("id", requestId)
+          .eq("id", travelRequestId)
           .single();
 
         if (row?.status !== "paid") {
@@ -212,11 +242,11 @@ export async function POST(request: Request) {
               constraints: {
                 ...constraints,
                 stripe_payment: "paid",
-                stripe_checkout_session_id: session.id as string | undefined,
+                stripe_checkout_session_id: sessionId,
                 stripe_payment_confirmed_at: new Date().toISOString(),
               },
             })
-            .eq("id", requestId);
+            .eq("id", travelRequestId);
         }
 
         // Release the concierge parallel-checkout lock regardless of
@@ -228,8 +258,24 @@ export async function POST(request: Request) {
         await supabase
           .from("pending_concierge_sessions")
           .delete()
-          .eq("travel_request_id", requestId);
+          .eq("travel_request_id", travelRequestId);
+      } else {
+        // Unmatched mode=payment event: missing purchase_type AND
+        // travel_request_id. Surface as a warning rather than 500ing
+        // back to Stripe (which would trigger retries on a permanently
+        // unroutable event). The 200 ack at the bottom of POST tells
+        // Stripe we received it; the warn lets us notice drift in our
+        // metadata shape.
+        console.warn(
+          `[webhook] unmatched payment session (session ${sessionId ?? "unknown"}): no purchase_type or travel_request_id in metadata`,
+        );
       }
+    } else {
+      // Unmatched mode (not subscription, not payment). Same rationale
+      // as above — warn + 200 ack so Stripe doesn't retry indefinitely.
+      console.warn(
+        `[webhook] unmatched checkout.session.completed mode: ${mode ?? "undefined"}`,
+      );
     }
   }
 
