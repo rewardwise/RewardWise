@@ -3,6 +3,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { isInternalEmail } from "@/utils/auth/internal-accounts";
+
 const publicRoutes = [
   "/",
   "/login",
@@ -81,6 +83,10 @@ export async function middleware(request: NextRequest) {
   }
 
   if (user && !isPublic && !isSubscriptionFree) {
+    if (isInternalEmail(user.email)) {
+      return supabaseResponse;
+    }
+
     const { data: sub } = await supabase
       .from("subscriptions")
       .select("status, current_period_end")
