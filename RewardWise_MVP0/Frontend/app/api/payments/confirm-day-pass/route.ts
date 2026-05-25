@@ -8,6 +8,7 @@ import {
 	fulfillDayPassCheckout,
 	isDayPassStripePurchaseType,
 } from "@/utils/entitlements/day-pass-checkout";
+import { releasePendingDayPassLock } from "@/utils/entitlements/pending-day-pass-lock";
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import {
@@ -115,6 +116,12 @@ export async function POST(request: Request) {
 				{ status: isServerSide ? 500 : 400 },
 			);
 		}
+
+		// Release the parallel-checkout lock now that this session is
+		// fulfilled. Failure to release is non-fatal — the 5-minute TTL
+		// will reap the row, and a stale row gets DELETEd + retried on
+		// the user's next checkout attempt.
+		await releasePendingDayPassLock(admin, user.id);
 
 		return NextResponse.json({ ok: true });
 	} catch (e) {

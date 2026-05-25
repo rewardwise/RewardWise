@@ -15,6 +15,9 @@ export const PAY_START_SUBSCRIPTION =
 export const PAY_NO_CHECKOUT_URL =
 	"Payment didn’t load correctly on our side. Please try again in a few minutes.";
 
+export const PAY_CHECKOUT_IN_FLIGHT =
+	"You already have a payment in progress in another tab. Finish that one, or wait a few minutes and try again.";
+
 export const PAY_SEARCH_NOT_FOUND =
 	"We couldn’t tie this payment to your trip. Open your search again from the home page then tap pay.";
 

@@ -270,6 +270,31 @@ export async function POST(request: Request) {
     }
   }
 
+  if (parsed.type === "checkout.session.expired") {
+    // Release the day-pass parallel-checkout lock when the user's
+    // Stripe Checkout session expires (default 24h, or sooner if the
+    // user explicitly cancels). The 5-minute TTL on the lock row would
+    // eventually reap stale entries on its own, but releasing here
+    // lets the user retry immediately instead of waiting it out.
+    const session = parsed.data?.object ?? {};
+    const mode = session.mode as string | undefined;
+    const purchaseType = (session.metadata as Record<string, string> | undefined)
+      ?.purchase_type;
+    const userId = (session.metadata as Record<string, string> | undefined)
+      ?.user_id;
+
+    if (
+      mode === "payment" &&
+      (purchaseType === "day_pass" || purchaseType === "zoe_single") &&
+      userId
+    ) {
+      await supabase
+        .from("pending_day_pass_sessions")
+        .delete()
+        .eq("user_id", userId);
+    }
+  }
+
   if (parsed.type === "invoice.payment_failed") {
     const invoice = parsed.data?.object ?? {};
     const subscriptionId = invoice.subscription as string | undefined;

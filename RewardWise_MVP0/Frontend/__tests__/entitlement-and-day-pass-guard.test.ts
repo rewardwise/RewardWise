@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 const mocks = vi.hoisted(() => ({
 	createRouteHandlerClient: vi.fn(),
+	createAdminClient: vi.fn(),
 	getStripe: vi.fn(),
 	getStripeEnv: vi.fn(),
 	checkRateLimit: vi.fn(),
@@ -11,6 +12,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/utils/supabase/route-handler", () => ({
 	createRouteHandlerClient: mocks.createRouteHandlerClient,
+}));
+
+vi.mock("@supabase/supabase-js", () => ({
+	createClient: mocks.createAdminClient,
 }));
 
 vi.mock("@/utils/stripe/client", () => ({
@@ -73,6 +78,23 @@ function makeEntitlementSupabase(params: {
 	} as unknown as SupabaseClient;
 }
 
+function makeLockAdminClient(opts?: { insertError?: { code?: string } | null }) {
+	const insert = vi.fn(async () => ({ error: opts?.insertError ?? null }));
+	const eqDelete = vi.fn(async () => ({ error: null }));
+	const deleteFn = vi.fn(() => ({ eq: eqDelete }));
+	const maybeSingle = vi.fn(async () => ({ data: null, error: null }));
+	const eqSelect = vi.fn(() => ({ maybeSingle }));
+	const select = vi.fn(() => ({ eq: eqSelect }));
+	return {
+		from: vi.fn(() => ({
+			insert,
+			select,
+			delete: deleteFn,
+		})),
+		_internals: { insert, deleteFn, eqDelete, maybeSingle },
+	};
+}
+
 beforeEach(() => {
 	vi.useFakeTimers();
 	vi.setSystemTime(NOW);
@@ -80,6 +102,9 @@ beforeEach(() => {
 	mocks.getClientIp.mockReturnValue("127.0.0.1");
 	mocks.checkRateLimit.mockReturnValue({ allowed: true, retryAfterMs: 0 });
 	mocks.getStripeEnv.mockReturnValue({ webhookSecret: "whsec_test" });
+	process.env.NEXT_PUBLIC_SUPABASE_URL = "https://test.supabase.co";
+	process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role";
+	mocks.createAdminClient.mockReturnValue(makeLockAdminClient());
 });
 
 describe("checkEntitlement helper", () => {
@@ -291,6 +316,42 @@ describe("POST /api/payments/day-pass entitlement guard", () => {
 		expect(stripeCreate).toHaveBeenCalledTimes(1);
 		const body = await res.json();
 		expect(body).toEqual({ url: "https://checkout.stripe.com/c/test" });
+	});
+
+	it("returns 409 with Retry-After header when a parallel checkout is already in flight", async () => {
+		const supabase = makeEntitlementSupabase({
+			user: { id: TEST_USER_ID, email: TEST_USER_EMAIL },
+		});
+		mocks.createRouteHandlerClient.mockResolvedValue(supabase);
+		const stripeCreate = vi.fn();
+		mocks.getStripe.mockReturnValue({
+			checkout: { sessions: { create: stripeCreate } },
+		});
+
+		// Mock the lock as already held with 90s remaining.
+		const expiresAt = new Date(NOW.getTime() + 90 * 1000).toISOString();
+		const adminInsert = vi.fn(async () => ({ error: { code: "23505" } }));
+		const maybeSingle = vi.fn(async () => ({
+			data: { expires_at: expiresAt },
+			error: null,
+		}));
+		const eqSelect = vi.fn(() => ({ maybeSingle }));
+		const select = vi.fn(() => ({ eq: eqSelect }));
+		mocks.createAdminClient.mockReturnValue({
+			from: vi.fn(() => ({
+				insert: adminInsert,
+				select,
+				delete: vi.fn(() => ({ eq: vi.fn(async () => ({ error: null })) })),
+			})),
+		});
+
+		const res = await dayPassPost(makeDayPassRequest());
+
+		expect(res.status).toBe(409);
+		expect(res.headers.get("Retry-After")).toBe("90");
+		const body = await res.json();
+		expect(body).toMatchObject({ retryAfterSeconds: 90 });
+		expect(stripeCreate).not.toHaveBeenCalled();
 	});
 
 	it("rejects unauthenticated calls with 401 before touching entitlement state", async () => {
