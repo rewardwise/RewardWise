@@ -18,6 +18,21 @@ export const PAY_NO_CHECKOUT_URL =
 export const PAY_CHECKOUT_IN_FLIGHT =
 	"You already have a payment in progress in another tab. Finish that one, or wait a few minutes and try again.";
 
+export const SUBSCRIBE_ALREADY_ACTIVE =
+	"You already have an active Monthly plan. Manage your subscription from the Profile page.";
+
+export const SUBSCRIBE_GENERIC_FAIL =
+	"We couldn’t start your subscription checkout. Please try again in a moment.";
+
+export const SUBSCRIBE_RATE_LIMIT =
+	"You’ve tried too many times in a short window. Wait about a minute then try again.";
+
+export const SUBSCRIBE_SIGN_IN =
+	"Please sign in again, then try once more.";
+
+export const SUBSCRIBE_NO_CHECKOUT_URL =
+	"Subscription checkout didn’t load correctly. Please try again in a few minutes.";
+
 export const PAY_SEARCH_NOT_FOUND =
 	"We couldn’t tie this payment to your trip. Open your search again from the home page then tap pay.";
 

@@ -10,9 +10,9 @@ import { USD_CENTS } from "@/utils/stripe/amounts";
 import { STRIPE_DAY_PASS_PURCHASE_TYPE } from "@/utils/entitlements/day-pass-checkout";
 import { checkEntitlement } from "@/utils/entitlements/check-entitlement";
 import {
-	acquirePendingDayPassLock,
-	releasePendingDayPassLock,
-} from "@/utils/entitlements/pending-day-pass-lock";
+	acquirePendingCheckoutLock,
+	releasePendingCheckoutLock,
+} from "@/utils/entitlements/pending-checkout-lock";
 import {
 	CONFIRM_SERVER_TEMPORARY,
 	PAY_CHECKOUT_IN_FLIGHT,
@@ -135,7 +135,12 @@ export async function POST(request: Request) {
 		// the lock AFTER entitlement guard so an already-active user
 		// gets the clean 409 + upsell modal rather than a confusing
 		// "in flight" message they have no context for.
-		const lock = await acquirePendingDayPassLock(admin, user.id);
+		const lockTarget = {
+			table: "pending_day_pass_sessions" as const,
+			keyColumn: "user_id" as const,
+			keyValue: user.id,
+		};
+		const lock = await acquirePendingCheckoutLock(admin, lockTarget);
 		if (!lock.ok) {
 			if (lock.reason === "in_flight") {
 				return NextResponse.json(
@@ -207,12 +212,12 @@ export async function POST(request: Request) {
 			// Stripe failure means no checkout session was minted, so we
 			// must release the lock — otherwise a transient Stripe outage
 			// would lock the user out for the full 5-minute TTL.
-			await releasePendingDayPassLock(admin, user.id);
+			await releasePendingCheckoutLock(admin, lockTarget);
 			throw stripeErr;
 		}
 
 		if (!session.url) {
-			await releasePendingDayPassLock(admin, user.id);
+			await releasePendingCheckoutLock(admin, lockTarget);
 			return NextResponse.json({ error: PAY_NO_CHECKOUT_URL }, { status: 500 });
 		}
 

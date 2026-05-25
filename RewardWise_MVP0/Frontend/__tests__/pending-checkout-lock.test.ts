@@ -2,12 +2,32 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import {
-	acquirePendingDayPassLock,
-	releasePendingDayPassLock,
-} from "../utils/entitlements/pending-day-pass-lock";
+	acquirePendingCheckoutLock,
+	releasePendingCheckoutLock,
+	type PendingLockTarget,
+} from "../utils/entitlements/pending-checkout-lock";
 
 const USER_ID = "user-abc";
+const REQUEST_ID = "req-xyz";
 const NOW = new Date("2026-05-24T20:00:00.000Z");
+
+const DAY_PASS_TARGET: PendingLockTarget = {
+	table: "pending_day_pass_sessions",
+	keyColumn: "user_id",
+	keyValue: USER_ID,
+};
+
+const SUBSCRIBE_TARGET: PendingLockTarget = {
+	table: "pending_subscribe_sessions",
+	keyColumn: "user_id",
+	keyValue: USER_ID,
+};
+
+const CONCIERGE_TARGET: PendingLockTarget = {
+	table: "pending_concierge_sessions",
+	keyColumn: "travel_request_id",
+	keyValue: REQUEST_ID,
+};
 
 type InsertResult = { error: { code?: string } | null };
 type SelectResult = { data: { expires_at: string } | null; error: unknown };
@@ -22,12 +42,17 @@ function makeLockSupabase(opts: {
 	insertCalls: number;
 	deleteCalls: number;
 	selectCalls: number;
+	insertPayloads: Record<string, unknown>[];
+	fromCalls: string[];
 } {
 	let insertCalls = 0;
 	let deleteCalls = 0;
 	let selectCalls = 0;
+	const insertPayloads: Record<string, unknown>[] = [];
+	const fromCalls: string[] = [];
 
-	const insert = vi.fn(async () => {
+	const insert = vi.fn(async (payload: Record<string, unknown>) => {
+		insertPayloads.push(payload);
 		const r = opts.insertResults[insertCalls] ?? { error: null };
 		insertCalls++;
 		return r;
@@ -54,13 +79,16 @@ function makeLockSupabase(opts: {
 	deleteChain.delete.mockReturnValue(deleteChain);
 
 	const supabase = {
-		from: vi.fn(() => ({
-			insert,
-			select: selectChain.select,
-			eq: selectChain.eq,
-			maybeSingle: selectChain.maybeSingle,
-			delete: deleteChain.delete,
-		})),
+		from: vi.fn((table: string) => {
+			fromCalls.push(table);
+			return {
+				insert,
+				select: selectChain.select,
+				eq: selectChain.eq,
+				maybeSingle: selectChain.maybeSingle,
+				delete: deleteChain.delete,
+			};
+		}),
 	} as unknown as SupabaseClient;
 
 	return {
@@ -74,6 +102,8 @@ function makeLockSupabase(opts: {
 		get selectCalls() {
 			return selectCalls;
 		},
+		insertPayloads,
+		fromCalls,
 	};
 }
 
@@ -86,17 +116,22 @@ afterEach(() => {
 	vi.useRealTimers();
 });
 
-describe("acquirePendingDayPassLock", () => {
+describe("acquirePendingCheckoutLock", () => {
 	it("returns ok when the insert succeeds (no existing lock)", async () => {
 		const ctx = makeLockSupabase({
 			insertResults: [{ error: null }],
 		});
 
-		const result = await acquirePendingDayPassLock(ctx.supabase, USER_ID);
+		const result = await acquirePendingCheckoutLock(
+			ctx.supabase,
+			DAY_PASS_TARGET,
+		);
 
 		expect(result).toEqual({ ok: true });
 		expect(ctx.insertCalls).toBe(1);
 		expect(ctx.deleteCalls).toBe(0);
+		expect(ctx.insertPayloads[0]).toEqual({ user_id: USER_ID });
+		expect(ctx.fromCalls).toEqual(["pending_day_pass_sessions"]);
 	});
 
 	it("returns in_flight with retry-after seconds when an active lock exists", async () => {
@@ -106,7 +141,10 @@ describe("acquirePendingDayPassLock", () => {
 			selectResult: { data: { expires_at: expiresAt }, error: null },
 		});
 
-		const result = await acquirePendingDayPassLock(ctx.supabase, USER_ID);
+		const result = await acquirePendingCheckoutLock(
+			ctx.supabase,
+			DAY_PASS_TARGET,
+		);
 
 		expect(result.ok).toBe(false);
 		if (result.ok === false && result.reason === "in_flight") {
@@ -124,7 +162,10 @@ describe("acquirePendingDayPassLock", () => {
 			selectResult: { data: { expires_at: expiresAt }, error: null },
 		});
 
-		const result = await acquirePendingDayPassLock(ctx.supabase, USER_ID);
+		const result = await acquirePendingCheckoutLock(
+			ctx.supabase,
+			DAY_PASS_TARGET,
+		);
 
 		expect(result).toEqual({ ok: true, reusedAfterStale: true });
 		expect(ctx.insertCalls).toBe(2);
@@ -141,7 +182,10 @@ describe("acquirePendingDayPassLock", () => {
 			selectResult: { data: { expires_at: expiresAt }, error: null },
 		});
 
-		const result = await acquirePendingDayPassLock(ctx.supabase, USER_ID);
+		const result = await acquirePendingCheckoutLock(
+			ctx.supabase,
+			DAY_PASS_TARGET,
+		);
 
 		expect(result).toEqual({ ok: false, reason: "lock_failed" });
 		expect(ctx.insertCalls).toBe(2);
@@ -152,7 +196,10 @@ describe("acquirePendingDayPassLock", () => {
 			insertResults: [{ error: { code: "42P01" } }],
 		});
 
-		const result = await acquirePendingDayPassLock(ctx.supabase, USER_ID);
+		const result = await acquirePendingCheckoutLock(
+			ctx.supabase,
+			DAY_PASS_TARGET,
+		);
 
 		expect(result).toEqual({ ok: false, reason: "lock_failed" });
 		expect(ctx.insertCalls).toBe(1);
@@ -164,7 +211,10 @@ describe("acquirePendingDayPassLock", () => {
 			selectResult: { data: null, error: null },
 		});
 
-		const result = await acquirePendingDayPassLock(ctx.supabase, USER_ID);
+		const result = await acquirePendingCheckoutLock(
+			ctx.supabase,
+			DAY_PASS_TARGET,
+		);
 
 		expect(result.ok).toBe(true);
 		expect(ctx.deleteCalls).toBe(1);
@@ -176,21 +226,47 @@ describe("acquirePendingDayPassLock", () => {
 			selectResult: { data: null, error: { code: "boom" } },
 		});
 
-		const result = await acquirePendingDayPassLock(ctx.supabase, USER_ID);
+		const result = await acquirePendingCheckoutLock(
+			ctx.supabase,
+			DAY_PASS_TARGET,
+		);
 
 		expect(result).toEqual({ ok: false, reason: "lock_failed" });
 	});
+
+	it("targets pending_subscribe_sessions when given the subscribe target", async () => {
+		const ctx = makeLockSupabase({
+			insertResults: [{ error: null }],
+		});
+
+		await acquirePendingCheckoutLock(ctx.supabase, SUBSCRIBE_TARGET);
+
+		expect(ctx.fromCalls).toEqual(["pending_subscribe_sessions"]);
+		expect(ctx.insertPayloads[0]).toEqual({ user_id: USER_ID });
+	});
+
+	it("targets pending_concierge_sessions with travel_request_id when given the concierge target", async () => {
+		const ctx = makeLockSupabase({
+			insertResults: [{ error: null }],
+		});
+
+		await acquirePendingCheckoutLock(ctx.supabase, CONCIERGE_TARGET);
+
+		expect(ctx.fromCalls).toEqual(["pending_concierge_sessions"]);
+		expect(ctx.insertPayloads[0]).toEqual({ travel_request_id: REQUEST_ID });
+	});
 });
 
-describe("releasePendingDayPassLock", () => {
-	it("issues a DELETE scoped to the user_id", async () => {
+describe("releasePendingCheckoutLock", () => {
+	it("issues a DELETE scoped to the key value", async () => {
 		const ctx = makeLockSupabase({
 			insertResults: [],
 		});
 
-		await releasePendingDayPassLock(ctx.supabase, USER_ID);
+		await releasePendingCheckoutLock(ctx.supabase, DAY_PASS_TARGET);
 
 		expect(ctx.deleteCalls).toBe(1);
+		expect(ctx.fromCalls).toEqual(["pending_day_pass_sessions"]);
 	});
 
 	it("does not throw when DELETE returns an error (idempotent best-effort)", async () => {
@@ -200,7 +276,18 @@ describe("releasePendingDayPassLock", () => {
 		});
 
 		await expect(
-			releasePendingDayPassLock(ctx.supabase, USER_ID),
+			releasePendingCheckoutLock(ctx.supabase, DAY_PASS_TARGET),
 		).resolves.toBeUndefined();
+	});
+
+	it("works against the concierge table + travel_request_id key", async () => {
+		const ctx = makeLockSupabase({
+			insertResults: [],
+		});
+
+		await releasePendingCheckoutLock(ctx.supabase, CONCIERGE_TARGET);
+
+		expect(ctx.fromCalls).toEqual(["pending_concierge_sessions"]);
+		expect(ctx.deleteCalls).toBe(1);
 	});
 });
