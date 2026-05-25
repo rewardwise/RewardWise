@@ -12,6 +12,11 @@
  * auth/callback) and NEXT_PUBLIC_INTERNAL_EMAILS (mirrored for client
  * components that need to render internal-account UI). Both must be kept
  * in sync via Vercel project settings; no schema or migration.
+ *
+ * SECURITY NOTE: NEXT_PUBLIC_* is shipped in the client bundle and is
+ * publicly enumerable. Only add emails you're OK with being public. The
+ * allowlist alone grants nothing — a real Supabase session is still
+ * required for the bypass to fire.
  */
 export function getInternalEmails() {
 	const raw =
