@@ -11,6 +11,7 @@ import { useABTest } from "@/context/ABTestContext";
 import VerdictCard from "@/components/VerdictCard";
 import SearchLoadingExperience from "@/components/SearchLoadingExperience";
 import AirportSearch from "@/components/AirportSearch";
+import CashHorizonWarning from "@/components/CashHorizonWarning";
 import ZoeChat from "@/components/zoe/ZoeChat";
 import { trackAnalyticsEvent } from "@/utils/analytics/client";
 import { buildSearchQueryParams } from "@/lib/searchQuery";
@@ -616,6 +617,7 @@ export default function HomePage() {
 								onChange={(e) => setDepartDate(clampISODate(e.target.value, departDate))}
 								className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm [color-scheme:dark]"
 							/>
+							<CashHorizonWarning date={departDate} />
 						</div>
 					</div>
 
@@ -638,6 +640,7 @@ export default function HomePage() {
 									onChange={(e) => setReturnDate(clampISODate(e.target.value, returnDate))}
 									className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm [color-scheme:dark]"
 								/>
+								<CashHorizonWarning date={returnDate} />
 							</div>
 						)}
 						<div>
