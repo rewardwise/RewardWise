@@ -47,6 +47,17 @@ function SubscribeInner() {
 		setSubscription("pro");
 	}, [success, setSubscription]);
 
+	useEffect(() => {
+		if (!canceled) return;
+		const surface = searchParams.get("surface");
+		if (surface !== "subscribe" && surface !== "day-pass") return;
+		void fetch("/api/payments/release-checkout-lock", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ surface }),
+		});
+	}, [canceled, searchParams]);
+
 	const handleOpenPortal = async () => {
 		setPortalLoading(true);
 		const res = await fetch("/api/payments/portal", {

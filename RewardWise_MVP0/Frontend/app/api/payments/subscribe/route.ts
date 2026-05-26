@@ -149,7 +149,7 @@ export async function POST(request: Request) {
 					},
 				],
 				success_url: `${origin}/subscribe?success=1`,
-				cancel_url: `${origin}/subscribe?canceled=1`,
+				cancel_url: `${origin}/subscribe?canceled=1&surface=subscribe`,
 				client_reference_id: user.id,
 				customer_email: user.email,
 				metadata: {

@@ -199,8 +199,8 @@ export async function POST(request: Request) {
 					? `${origin}/home?checkout=success&for_search=${encodeURIComponent(searchId)}&session_id={CHECKOUT_SESSION_ID}`
 					: `${origin}/home?checkout=pass_success&session_id={CHECKOUT_SESSION_ID}`,
 				cancel_url: searchId
-					? `${origin}/subscribe?canceled=1&search_id=${encodeURIComponent(searchId)}`
-					: `${origin}/subscribe?canceled=1`,
+					? `${origin}/subscribe?canceled=1&surface=day-pass&search_id=${encodeURIComponent(searchId)}`
+					: `${origin}/subscribe?canceled=1&surface=day-pass`,
 				client_reference_id: searchId ?? user.id,
 				customer_email: user.email ?? undefined,
 				metadata,
