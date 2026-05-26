@@ -107,6 +107,7 @@ function renderCard(verdict: Verdict, onTryDifferentDate?: () => void) {
         destination="NRT"
         departDate="2027-04-20"
         travelers={1}
+        userPrograms={["aeroplan"]}
         onTryDifferentDate={onTryDifferentDate}
       />,
     );

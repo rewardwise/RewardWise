@@ -242,20 +242,13 @@ describe("VerdictCard top-1 per leg (86ba2ze4e)", () => {
         expect(returnText).toContain("aeroplan");
       });
 
-      // Case 4: Empty wallet falls back to pure highest cpp.
-      it("case 4: empty wallet picks the highest-cpp program (pure cpp tiebreak)", () => {
-        // Highest cpp here is united 1.8 — no wallet, no penalty applied.
-        renderCard({
-          awardOptions: [aeroplanAward, unitedAward, deltaAward],
-          returnAwardOptions: [],
-          isRoundtrip: false,
-          userPrograms: [],
-          userCards: [],
-        });
-        const grids = handoffSections();
-        expect(grids.length).toBe(1);
-        expect(grids[0].textContent?.toLowerCase()).toContain("united");
-      });
+      // (Former case 4: empty-wallet cpp-tiebreak inside the handoff grid.)
+      // PR-B (ticket 86b9tt6ez) reroutes the empty-wallet branch to
+      // EmptyWalletCTA before the handoff grid renders, so the cpp-tiebreak
+      // path is no longer reachable from VerdictCard with an empty wallet.
+      // The cpp-tiebreak logic itself stays covered by
+      // top-program-selection.test.ts; the new empty-wallet branch is
+      // covered by VerdictCard.empty-wallet.test.tsx.
 
       // Case 5: Reachable via transfer only (no direct hold). selectTopProgram
       // honors card-based reachability through TRANSFER_PARTNERS.
