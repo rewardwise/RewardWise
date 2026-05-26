@@ -10,11 +10,14 @@ import {
 
 type Surface = "subscribe" | "day-pass" | "concierge";
 
+const UUID_RE =
+	/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function buildLockTarget(
 	surface: Surface,
 	userId: string,
 	travelRequestId?: string,
-): PendingLockTarget | { error: string } {
+): PendingLockTarget | { error: string; status: number } {
 	if (surface === "subscribe") {
 		return {
 			table: "pending_subscribe_sessions",
@@ -29,8 +32,11 @@ function buildLockTarget(
 			keyValue: userId,
 		};
 	}
-	if (!travelRequestId) {
-		return { error: "travel_request_id required for concierge surface" };
+	if (!travelRequestId || !UUID_RE.test(travelRequestId)) {
+		return {
+			error: "travel_request_id required for concierge surface",
+			status: 400,
+		};
 	}
 	return {
 		table: "pending_concierge_sessions",
@@ -62,7 +68,25 @@ export async function POST(request: Request) {
 
 	const target = buildLockTarget(surface, user.id, body.travel_request_id);
 	if ("error" in target) {
-		return NextResponse.json({ error: target.error }, { status: 400 });
+		return NextResponse.json({ error: target.error }, { status: target.status });
+	}
+
+	// IDOR guard for concierge: the lock row is keyed on travel_request_id,
+	// which arrives in the request body. Without an ownership check, any
+	// authenticated user could send another user's travel_request_id and
+	// release a lock that's mid-checkout. Mirrors the pattern in
+	// app/api/payments/checkout/route.ts:72-83. (Subscribe / day-pass are
+	// safe because the keyValue is user.id, derived server-side.)
+	if (surface === "concierge") {
+		const travelRequestId = body.travel_request_id as string;
+		const { data: row, error } = await supabase
+			.from("travel_requests")
+			.select("id, user_id")
+			.eq("id", travelRequestId)
+			.single();
+		if (error || !row || row.user_id !== user.id) {
+			return NextResponse.json({ error: "not_found" }, { status: 404 });
+		}
 	}
 
 	// Lock tables have RLS with zero policies — only the service role can

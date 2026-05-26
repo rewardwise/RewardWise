@@ -41,7 +41,26 @@ function makeRecordingAdmin(): {
 	return { admin, deletes };
 }
 
-function makeAuthedSupabase(userId: string | null): SupabaseClient {
+function makeAuthedSupabase(
+	userId: string | null,
+	opts: {
+		travelRequest?: { user_id: string } | null;
+		travelRequestError?: unknown;
+	} = {},
+): SupabaseClient {
+	const travelRequestsQuery = {
+		select: vi.fn(),
+		eq: vi.fn(),
+		single: vi.fn(),
+	};
+	travelRequestsQuery.select.mockReturnValue(travelRequestsQuery);
+	travelRequestsQuery.eq.mockReturnValue(travelRequestsQuery);
+	travelRequestsQuery.single.mockResolvedValue({
+		data: opts.travelRequest
+			? { id: "x", user_id: opts.travelRequest.user_id }
+			: null,
+		error: opts.travelRequestError ?? null,
+	});
 	return {
 		auth: {
 			getUser: vi.fn(() =>
@@ -50,6 +69,10 @@ function makeAuthedSupabase(userId: string | null): SupabaseClient {
 				}),
 			),
 		},
+		from: vi.fn((table: string) => {
+			if (table === "travel_requests") return travelRequestsQuery;
+			return { select: vi.fn(), eq: vi.fn(), single: vi.fn() };
+		}),
 	} as unknown as SupabaseClient;
 }
 
@@ -117,9 +140,11 @@ describe("POST /api/payments/release-checkout-lock", () => {
 		]);
 	});
 
-	it("concierge surface releases pending_concierge_sessions keyed by travel_request_id", async () => {
+	it("concierge surface releases pending_concierge_sessions keyed by travel_request_id when caller owns the request", async () => {
 		mocks.createRouteHandlerClient.mockResolvedValue(
-			makeAuthedSupabase(TEST_USER_ID),
+			makeAuthedSupabase(TEST_USER_ID, {
+				travelRequest: { user_id: TEST_USER_ID },
+			}),
 		);
 		const { admin, deletes } = makeRecordingAdmin();
 		mocks.createAdminClient.mockReturnValue(admin);
@@ -139,6 +164,60 @@ describe("POST /api/payments/release-checkout-lock", () => {
 				value: TEST_TRAVEL_REQUEST_ID,
 			},
 		]);
+	});
+
+	it("concierge surface returns 404 + does not release when travel_request belongs to a different user (IDOR guard)", async () => {
+		mocks.createRouteHandlerClient.mockResolvedValue(
+			makeAuthedSupabase(TEST_USER_ID, {
+				travelRequest: { user_id: "some-other-user" },
+			}),
+		);
+		const { admin, deletes } = makeRecordingAdmin();
+		mocks.createAdminClient.mockReturnValue(admin);
+
+		const res = await releasePost(
+			makeRequest({
+				surface: "concierge",
+				travel_request_id: TEST_TRAVEL_REQUEST_ID,
+			}),
+		);
+		expect(res.status).toBe(404);
+		expect(mocks.createAdminClient).not.toHaveBeenCalled();
+		expect(deletes).toEqual([]);
+	});
+
+	it("concierge surface returns 404 when travel_request row does not exist", async () => {
+		mocks.createRouteHandlerClient.mockResolvedValue(
+			makeAuthedSupabase(TEST_USER_ID, { travelRequest: null }),
+		);
+		const { admin, deletes } = makeRecordingAdmin();
+		mocks.createAdminClient.mockReturnValue(admin);
+
+		const res = await releasePost(
+			makeRequest({
+				surface: "concierge",
+				travel_request_id: TEST_TRAVEL_REQUEST_ID,
+			}),
+		);
+		expect(res.status).toBe(404);
+		expect(deletes).toEqual([]);
+	});
+
+	it("concierge surface with malformed travel_request_id returns 400", async () => {
+		mocks.createRouteHandlerClient.mockResolvedValue(
+			makeAuthedSupabase(TEST_USER_ID),
+		);
+		const { admin, deletes } = makeRecordingAdmin();
+		mocks.createAdminClient.mockReturnValue(admin);
+
+		const res = await releasePost(
+			makeRequest({
+				surface: "concierge",
+				travel_request_id: "not-a-uuid",
+			}),
+		);
+		expect(res.status).toBe(400);
+		expect(deletes).toEqual([]);
 	});
 
 	it("concierge surface without travel_request_id returns 400 and does not call admin", async () => {
