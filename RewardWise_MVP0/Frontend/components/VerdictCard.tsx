@@ -23,53 +23,9 @@ import FlightSection, { FlightLeg } from "@/components/verdict/FlightSection";
 import AwardDetailsSection, { AwardProgramOption } from "@/components/verdict/AwardDetailsSection";
 import MultiHandoffGrid, { MultiHandoffProgram, MultiHandoffCashAirline } from "@/components/verdict/MultiHandoffGrid";
 import WalletFramingPreview from "@/components/verdict/WalletFramingPreview";
+import PartialDataCard from "@/components/verdict/PartialDataCard";
 import { selectTopProgram } from "@/utils/topProgramSelection";
-
-type Confidence = "high" | "medium" | "low";
-
-interface VerdictWinner {
-  program: string | null;
-  points: number | null;
-  taxes: number | null;
-  cpp: number | null;
-  direct: boolean | null;
-}
-
-interface BookingLink {
-  seats_aero_link: string | null;
-  airline_link: string | null;
-  preferred: "seats_aero" | "airline" | "none";
-}
-
-interface NextStep {
-  type: string;
-  label: string;
-  prompt: string;
-}
-
-interface Verdict {
-  verdict: string;
-  verdict_label?: string;
-  recommendation?: "use_points" | "pay_cash" | "wait";
-  headline?: string;
-  explanation?: string;
-  winner: VerdictWinner | null;
-  pay_cash: boolean;
-  confidence: Confidence;
-  confidence_reason?: string;
-  booking_note: string;
-  booking_link: BookingLink;
-  data_quality?: string;
-  missing_sources?: string[];
-  safe_fallback_used?: boolean;
-  metrics?: {
-    cash_price?: number | null;
-    points_cost?: number | null;
-    taxes?: number | null;
-    estimated_savings?: number | null;
-  };
-  next_step?: NextStep | null;
-}
+import type { Verdict } from "@/types/verdict";
 
 interface CashLeg {
   flight_number?: string;
@@ -181,6 +137,7 @@ interface VerdictCardProps {
   publicPreview?: boolean;
   onPublicPreviewSignup?: () => void;
   onPublicPreviewSignin?: () => void;
+  onTryDifferentDate?: () => void;
 }
 
 function formatDate(d: string) {
@@ -327,6 +284,7 @@ export default function VerdictCard({
   publicPreview = false,
   onPublicPreviewSignup,
   onPublicPreviewSignin,
+  onTryDifferentDate,
 }: VerdictCardProps) {
   // Metro + flex searches return multiple award_options per program (different
   // airport pairs / dates). Collapse to best-per-program before any consumer
@@ -698,8 +656,45 @@ export default function VerdictCard({
     );
   };
 
+  // Partial-data branch. The backend marks degraded verdicts with
+  // recommendation === "wait" rather than synthesizing a confident
+  // answer. data_quality tells us which input was missing so we can
+  // route to the most useful surface instead of showing a generic
+  // error. Closes the SEA-TYO 2027-04-20 repro where past-horizon
+  // cash searches collapsed onto ErrorStateCard.
   if (recommendation === "wait") {
-    return <ErrorStateCard />;
+    switch (verdict.data_quality) {
+      case "missing_both":
+        return (
+          <ErrorStateCard
+            headline="We could not pull data for this date"
+            message="Cash and award pricing are both unavailable for this trip. Try a closer date — most providers don't publish data more than 10–11 months out."
+            ctaText="Try a different date"
+            onCta={onTryDifferentDate}
+          />
+        );
+      case "missing_cash":
+        return (
+          <PartialDataCard
+            verdict={verdict}
+            variant="missing_cash"
+            onTryDifferentDate={onTryDifferentDate}
+          />
+        );
+      case "missing_awards":
+        // Backend should send recommendation="pay_cash" in this case;
+        // fall through to the normal render so the user still sees
+        // the cash details we have.
+        break;
+      default:
+        return (
+          <PartialDataCard
+            verdict={verdict}
+            variant="defensive"
+            onTryDifferentDate={onTryDifferentDate}
+          />
+        );
+    }
   }
 
   return (

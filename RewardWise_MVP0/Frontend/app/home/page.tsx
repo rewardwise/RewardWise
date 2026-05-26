@@ -279,6 +279,21 @@ export default function HomePage() {
 	// so we skip frontend validation to avoid the stale-closure false-positive.
 	const zoeTriggerRef = useRef(false);
 
+	// PartialDataCard / ErrorStateCard "Try a different date" CTA bounces the
+	// user back to the DEPART picker. Smooth-scroll first so the picker is
+	// visible before focus moves; native focus alone can scroll abruptly.
+	// iOS Safari + some Android Chrome builds open the native date picker
+	// on focus and re-scroll, which fights smoothScroll — defer focus past
+	// the scroll animation and pass preventScroll to defend against the
+	// browser's own focus-scroll.
+	const departInputRef = useRef<HTMLInputElement | null>(null);
+	const handleTryDifferentDate = useCallback(() => {
+		const el = departInputRef.current;
+		if (!el) return;
+		el.scrollIntoView({ behavior: "smooth", block: "center" });
+		window.setTimeout(() => el.focus({ preventScroll: true }), 250);
+	}, []);
+
 	const currentSearchAnalyticsPayload = (triggerSource: string) => ({
 		search_origin: origin || null,
 		search_destination: destination || null,
@@ -610,6 +625,7 @@ export default function HomePage() {
 								{dateMode === "flexible" ? "DEPART (anchor)" : "DEPART"}
 							</label>
 							<input
+								ref={departInputRef}
 								type="date"
 								min={new Date().toISOString().split("T")[0]}
 								max={maxSearchDate}
@@ -747,6 +763,7 @@ export default function HomePage() {
 									userPrograms={userPrograms}
 									userCards={results.user_cards ?? []}
 									verdictId={results.verdict_id}
+									onTryDifferentDate={handleTryDifferentDate}
 								/>
 							) : !hasWallet ? (
 								<div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">

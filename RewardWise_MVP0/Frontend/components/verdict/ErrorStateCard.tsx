@@ -1,14 +1,33 @@
 /** @format */
 "use client";
 
-import { DatabaseZap, RefreshCw } from "lucide-react";
+import { Calendar, DatabaseZap, RefreshCw } from "lucide-react";
 
 type Props = {
   onRetry?: () => void;
+  headline?: string;
+  message?: string;
+  ctaText?: string;
+  onCta?: () => void;
 };
 
-export default function ErrorStateCard({ onRetry }: Props) {
-  const handleRetry = () => {
+const DEFAULT_HEADLINE = "We could not pull the latest data for this flight";
+const DEFAULT_MESSAGE =
+  "Please try again momentarily. The award and cash pricing data is temporarily unavailable for this route.";
+const DEFAULT_CTA_TEXT = "Retry search";
+
+export default function ErrorStateCard({
+  onRetry,
+  headline,
+  message,
+  ctaText,
+  onCta,
+}: Props) {
+  const handleCta = () => {
+    if (onCta) {
+      onCta();
+      return;
+    }
     if (onRetry) {
       onRetry();
       return;
@@ -18,6 +37,11 @@ export default function ErrorStateCard({ onRetry }: Props) {
     }
   };
 
+  const finalHeadline = headline ?? DEFAULT_HEADLINE;
+  const finalMessage = message ?? DEFAULT_MESSAGE;
+  const finalCtaText = ctaText ?? DEFAULT_CTA_TEXT;
+  const Icon = onCta ? Calendar : RefreshCw;
+
   return (
     <div className="rounded-3xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl md:p-8">
       <div className="flex flex-col items-center gap-5 py-8 text-center">
@@ -26,18 +50,16 @@ export default function ErrorStateCard({ onRetry }: Props) {
         </div>
         <div className="max-w-md space-y-2">
           <h2 className="text-2xl font-extrabold tracking-tight text-white md:text-3xl">
-            We could not pull the latest data for this flight
+            {finalHeadline}
           </h2>
-          <p className="text-base leading-7 text-slate-300">
-            Please try again momentarily. The award and cash pricing data is temporarily unavailable for this route.
-          </p>
+          <p className="text-base leading-7 text-slate-300">{finalMessage}</p>
         </div>
         <button
           type="button"
-          onClick={handleRetry}
+          onClick={handleCta}
           className="inline-flex items-center gap-2 rounded-xl bg-emerald-400 px-5 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-300"
         >
-          <RefreshCw className="h-4 w-4" /> Retry search
+          <Icon className="h-4 w-4" /> {finalCtaText}
         </button>
       </div>
     </div>
