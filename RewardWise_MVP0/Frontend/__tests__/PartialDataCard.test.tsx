@@ -4,9 +4,8 @@
 import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import PartialDataCard, {
-	type PartialDataVerdict,
-} from "../components/verdict/PartialDataCard";
+import PartialDataCard from "../components/verdict/PartialDataCard";
+import type { Verdict } from "../types/verdict";
 
 // Pin "today" matching the CashHorizonWarning test harness so any
 // future copy that depends on `new Date()` (e.g., "as of <month>")
@@ -39,9 +38,7 @@ function render(node: React.ReactElement) {
 	});
 }
 
-function buildVerdict(
-	overrides: Partial<PartialDataVerdict> = {},
-): PartialDataVerdict {
+function buildVerdict(overrides: Partial<Verdict> = {}): Verdict {
 	return {
 		verdict: "partial",
 		recommendation: "wait",
@@ -56,6 +53,7 @@ function buildVerdict(
 		},
 		pay_cash: false,
 		confidence: "medium",
+		booking_note: "",
 		booking_link: {
 			seats_aero_link: "https://seats.aero/search?route=SEA-NRT",
 			airline_link: "https://aircanada.com/aeroplan/redeem",

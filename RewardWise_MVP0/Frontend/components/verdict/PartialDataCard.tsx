@@ -2,43 +2,12 @@
 "use client";
 
 import { AlertTriangle, Calendar, ExternalLink } from "lucide-react";
-
-type Confidence = "high" | "medium" | "low";
-
-// TODO(pr-5): consolidate with VerdictCard.tsx by extracting
-// `Verdict`, `VerdictWinner`, `BookingLink` to `types/verdict.ts` and
-// importing from both surfaces. Kept inline here to keep PR 4
-// additive-only (zero touch on VerdictCard).
-interface VerdictWinner {
-	program: string | null;
-	points: number | null;
-	taxes: number | null;
-	cpp: number | null;
-	direct: boolean | null;
-}
-
-interface BookingLink {
-	seats_aero_link: string | null;
-	airline_link: string | null;
-	preferred: "seats_aero" | "airline" | "none";
-}
-
-export interface PartialDataVerdict {
-	verdict: string;
-	verdict_label?: string;
-	recommendation?: "use_points" | "pay_cash" | "wait";
-	headline?: string;
-	explanation?: string;
-	winner: VerdictWinner | null;
-	pay_cash: boolean;
-	confidence: Confidence;
-	booking_link?: BookingLink;
-}
+import type { Verdict } from "@/types/verdict";
 
 export type PartialDataVariant = "missing_cash" | "defensive";
 
 type Props = {
-	verdict: PartialDataVerdict;
+	verdict: Verdict;
 	onTryDifferentDate?: () => void;
 	variant?: PartialDataVariant;
 };
