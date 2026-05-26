@@ -26,6 +26,7 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   projects: [
+    // ── Chromium ────────────────────────────────────────────────────────────
     {
       // Authenticated desktop project. Consumes the storageState file produced
       // by globalSetup for the 1440x900 viewport.
@@ -45,6 +46,48 @@ export default defineConfig({
         viewport: { width: 375, height: 812 },
         isMobile: true,
         hasTouch: true,
+        storageState: join(__dirname, 'playwright/.auth/storage-375x812.json'),
+      },
+    },
+    // ── WebKit (Safari) ─────────────────────────────────────────────────────
+    // Mobile WebKit catches iOS-Safari-specific bugs (e.g. focus + smooth
+    // scroll interactions on input[type="date"] — see PR #146 M1 fix).
+    {
+      name: 'webkit-1440-auth',
+      use: {
+        ...devices['Desktop Safari'],
+        viewport: { width: 1440, height: 900 },
+        storageState: join(__dirname, 'playwright/.auth/storage-1440x900.json'),
+      },
+    },
+    {
+      name: 'webkit-375-auth',
+      use: {
+        ...devices['Desktop Safari'],
+        viewport: { width: 375, height: 812 },
+        isMobile: true,
+        hasTouch: true,
+        storageState: join(__dirname, 'playwright/.auth/storage-375x812.json'),
+      },
+    },
+    // ── Firefox ────────────────────────────────────────────────────────────
+    // Firefox has historically diverged on date-input + aria-live region
+    // handling vs Chromium — keep both viewports in the matrix.
+    {
+      name: 'firefox-1440-auth',
+      use: {
+        ...devices['Desktop Firefox'],
+        viewport: { width: 1440, height: 900 },
+        storageState: join(__dirname, 'playwright/.auth/storage-1440x900.json'),
+      },
+    },
+    {
+      name: 'firefox-375-auth',
+      use: {
+        ...devices['Desktop Firefox'],
+        viewport: { width: 375, height: 812 },
+        // Firefox does not emulate isMobile; the viewport size alone exercises
+        // the responsive breakpoints we care about for this matrix.
         storageState: join(__dirname, 'playwright/.auth/storage-375x812.json'),
       },
     },
