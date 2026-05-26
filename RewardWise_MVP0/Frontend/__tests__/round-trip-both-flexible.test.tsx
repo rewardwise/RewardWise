@@ -173,6 +173,7 @@ describe("VerdictCard — searchedRangeCopy for both-flexible round-trip", () =>
 					winningReturnDate="2099-06-23"
 					travelers={1}
 					isRoundtrip
+					userPrograms={["united"]}
 				/>,
 			);
 		});
@@ -198,6 +199,7 @@ describe("VerdictCard — searchedRangeCopy for both-flexible round-trip", () =>
 					winningReturnDate={null}
 					travelers={1}
 					isRoundtrip
+					userPrograms={["united"]}
 				/>,
 			);
 		});
@@ -223,6 +225,7 @@ describe("VerdictCard — searchedRangeCopy for both-flexible round-trip", () =>
 					winningReturnDate={null}
 					travelers={1}
 					isRoundtrip
+					userPrograms={["united"]}
 				/>,
 			);
 		});

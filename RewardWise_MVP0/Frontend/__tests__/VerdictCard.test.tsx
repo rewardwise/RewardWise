@@ -116,6 +116,7 @@ function renderCard(verdictOverrides: Partial<typeof baseVerdict> = {}) {
         destination="NRT"
         departDate="2026-06-15"
         travelers={1}
+        userPrograms={["united"]}
       />
     );
   });
@@ -212,6 +213,7 @@ describe("VerdictCard — Use Points headline shows cash fare baseline (Bug B)",
           destination="NRT"
           departDate="2026-06-15"
           travelers={1}
+          userPrograms={["united"]}
         />
       );
     });
@@ -245,6 +247,7 @@ describe("VerdictCard — guest wallet-framing preview gating", () => {
           destination="NRT"
           departDate="2026-06-15"
           travelers={1}
+          userPrograms={["united"]}
           publicPreview={props.publicPreview}
           onPublicPreviewSignup={props.onPublicPreviewSignup}
         />

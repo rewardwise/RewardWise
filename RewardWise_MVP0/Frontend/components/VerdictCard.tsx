@@ -18,6 +18,7 @@ import { fmtMoney } from "@/utils/format";
 import { dedupeByProgram } from "@/utils/awardOptions";
 import { buildOutboundLeg, buildInboundLeg } from "@/utils/flightLegs";
 import VerdictTopRow from "@/components/verdict/VerdictTopRow";
+import EmptyWalletCTA from "@/components/verdict/EmptyWalletCTA";
 import ErrorStateCard from "@/components/verdict/ErrorStateCard";
 import FlightSection, { FlightLeg } from "@/components/verdict/FlightSection";
 import AwardDetailsSection, { AwardProgramOption } from "@/components/verdict/AwardDetailsSection";
@@ -656,12 +657,52 @@ export default function VerdictCard({
     );
   };
 
+  // Empty wallet onboarding state: logged-in user with zero programs AND
+  // zero cards gets a graceful "set up your wallet" prompt above the cash
+  // flights. Force cash-only legs here since the verdict may be use_points
+  // (award legs would mislabel the FlightSection). Public preview keeps the
+  // existing marketing flow.
+  if (!publicPreview && userPrograms.length === 0 && userCards.length === 0) {
+    const cashOutbound = buildOutboundLeg({
+      recommendation: "pay_cash",
+      bestOutbound,
+      bestCashFlight,
+      origin,
+      destination,
+      departDate,
+      winningDate,
+    });
+    const cashInbound = buildInboundLeg({
+      recommendation: "pay_cash",
+      isRoundtrip: Boolean(isRoundtrip),
+      bestOutbound,
+      bestReturn,
+      bestCashFlight,
+      origin,
+      destination,
+      returnDate,
+      winningReturnDate,
+    });
+    return (
+      <div className="flex flex-col gap-5">
+        <EmptyWalletCTA />
+        <FlightSection
+          recommendation="pay_cash"
+          isRoundtrip={Boolean(isRoundtrip)}
+          outbound={cashOutbound}
+          inbound={cashInbound}
+        />
+      </div>
+    );
+  }
+
   // Partial-data branch. The backend marks degraded verdicts with
   // recommendation === "wait" rather than synthesizing a confident
   // answer. data_quality tells us which input was missing so we can
   // route to the most useful surface instead of showing a generic
   // error. Closes the SEA-TYO 2027-04-20 repro where past-horizon
   // cash searches collapsed onto ErrorStateCard.
+
   if (recommendation === "wait") {
     switch (verdict.data_quality) {
       case "missing_both":
