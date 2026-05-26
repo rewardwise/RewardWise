@@ -165,6 +165,14 @@ function ConciergePremiumInner() {
 					.update({ status: "cancelled" })
 					.eq("id", rid)
 					.eq("user_id", user.id);
+				void fetch("/api/payments/release-checkout-lock", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						surface: "concierge",
+						travel_request_id: rid,
+					}),
+				});
 			}
 			if (cancelled) return;
 			setSubmitError("Payment was cancelled. You can try again anytime.");
