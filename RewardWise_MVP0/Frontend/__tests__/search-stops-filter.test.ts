@@ -73,7 +73,8 @@ describe("buildSearchQueryParams — stops filter URL contract", () => {
 		});
 		expect(params.get("max_stops")).toBe("one_or_fewer");
 		expect(params.get("date_end")).toBe("2099-06-22");
-		expect(params.get("return_date")).toBe("2099-06-29");
+		// Flex roundtrip shifts return_date back by 7 (symmetric ±7 contract, 86ba4t25r).
+		expect(params.get("return_date")).toBe("2099-06-22");
 		expect(params.get("return_date_end")).toBe("2099-07-06");
 	});
 });
