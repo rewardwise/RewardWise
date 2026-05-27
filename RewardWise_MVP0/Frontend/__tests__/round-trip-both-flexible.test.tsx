@@ -116,9 +116,23 @@ vi.mock("@/components/verdict/VerdictTopRow", () => ({
 	),
 }));
 
+// Capture FlightSection props so the 86ba4t6f1 test can assert the segments
+// passed in carry the winning_date (not whichever multi-date raw option was
+// cheapest). Other tests in this file ignore the capture.
+const flightSectionCapture: {
+	outbound?: { segments?: Array<{ departs_at?: string }> } | null;
+	inbound?: { segments?: Array<{ departs_at?: string }> } | null;
+} = {};
 vi.mock("@/components/verdict/FlightSection", () => ({
 	__esModule: true,
-	default: () => <div data-testid="flight-section-stub" />,
+	default: (props: {
+		outbound?: { segments?: Array<{ departs_at?: string }> } | null;
+		inbound?: { segments?: Array<{ departs_at?: string }> } | null;
+	}) => {
+		flightSectionCapture.outbound = props.outbound;
+		flightSectionCapture.inbound = props.inbound;
+		return <div data-testid="flight-section-stub" />;
+	},
 }));
 
 vi.mock("@/components/verdict/AwardDetailsSection", () => ({
@@ -280,6 +294,82 @@ describe("VerdictCard — searchedRangeCopy for both-flexible round-trip", () =>
 		expect(text).toContain("Searched");
 		expect(text).not.toContain("Outbound: searched");
 		expect(text).not.toContain("Return: searched");
+	});
+
+	// -------------------------------------------------------------------
+	// 86ba4t6f1 — Flight Details (the segments rendered by FlightSection
+	// directly below the verdict banner) must thread the winning_date,
+	// not whichever date happens to be cheapest in the raw award_options
+	// list. Pre-fix: bestOutbound came from dedupeByProgram which collapses
+	// multi-date entries to lowest-points. Flex round-trip with United
+	// 28000 pts on 09-14 and United 32000 pts on 09-16 (winning_date)
+	// would render trips on 09-14 while the banner above said
+	// "Better dates found 2026-09-16".
+	// -------------------------------------------------------------------
+	it("threads winning_date into FlightSection segments, not the cheapest-other-date trip", () => {
+		const cheapOtherDate = {
+			program: "United",
+			points: 28000,
+			date: "2026-09-14",
+			airlines: "United",
+			trips: [
+				{
+					segments: [
+						{
+							flight_number: "UA1",
+							origin: "JFK",
+							destination: "LAX",
+							departs_at: "2026-09-14T08:00:00Z",
+						},
+					],
+				},
+			],
+		};
+		const winningDateOption = {
+			program: "United",
+			points: 32000,
+			date: "2026-09-16",
+			airlines: "United",
+			trips: [
+				{
+					segments: [
+						{
+							flight_number: "UA2",
+							origin: "JFK",
+							destination: "LAX",
+							departs_at: "2026-09-16T08:00:00Z",
+						},
+					],
+				},
+			],
+		};
+		act(() => {
+			root.render(
+				<VerdictCard
+					verdict={baseVerdict}
+					cashPrice={800}
+					origin="JFK"
+					destination="LAX"
+					departDate="2026-09-15"
+					departDateEnd="2026-09-22"
+					winningDate="2026-09-16"
+					returnDate="2026-09-29"
+					returnDateEnd="2026-10-06"
+					winningReturnDate="2026-09-29"
+					travelers={1}
+					isRoundtrip
+					userPrograms={["united"]}
+					awardOptions={[cheapOtherDate, winningDateOption]}
+				/>,
+			);
+		});
+		expect(flightSectionCapture.outbound).toBeDefined();
+		expect(flightSectionCapture.outbound?.segments?.[0]?.departs_at).toBe(
+			"2026-09-16T08:00:00Z",
+		);
+		expect(flightSectionCapture.outbound?.segments?.[0]?.departs_at).not.toBe(
+			"2026-09-14T08:00:00Z",
+		);
 	});
 
 	it("omits the sentence entirely when neither leg flexes", () => {
