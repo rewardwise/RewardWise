@@ -52,9 +52,11 @@ export function buildSearchQueryParams(input: SearchQueryInputs): URLSearchParam
 		params.append("date_end", flexibleEnd);
 	}
 	if (tripType === "roundtrip" && returnDate) {
-		params.append("return_date", returnDate);
 		if (isFlexible) {
+			params.append("return_date", clampToToday(shiftIsoDate(returnDate, -7)));
 			params.append("return_date_end", shiftIsoDate(returnDate, 7));
+		} else {
+			params.append("return_date", returnDate);
 		}
 	}
 	// Backend default is "any"; omit the key when the user didn't narrow the
