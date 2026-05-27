@@ -4,6 +4,7 @@
 import { useMemo, useState } from "react";
 import {
   Bell,
+  Calendar,
   Check,
   ChevronDown,
   ChevronUp,
@@ -352,6 +353,16 @@ export default function VerdictCard({
     : null;
   const searchedRangeCopy =
     [outboundCopy, returnCopy].filter(Boolean).join(" ") || null;
+  // Whether Zoe picked a date that differs from what the user entered. When
+  // true the searched-range copy gets a prominent emerald banner so the user
+  // notices the swap (was a tiny inline pill — Anshu feedback 86ba4tc81).
+  const hasBetterOutboundDate = Boolean(
+    winningDate && departDate && winningDate !== departDate,
+  );
+  const hasBetterReturnDate = Boolean(
+    winningReturnDate && returnDate && winningReturnDate !== returnDate,
+  );
+  const hasBetterDate = hasBetterOutboundDate || hasBetterReturnDate;
 
   const outboundLeg: FlightLeg | null = buildOutboundLeg({
     recommendation,
@@ -760,8 +771,25 @@ export default function VerdictCard({
               <p className="mt-5 max-w-4xl text-lg font-medium leading-8 text-slate-300 md:text-xl">
                 {mainExplanation}
               </p>
-              {searchedRangeCopy && (
-                <p className="mt-3 inline-flex items-center rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200">
+              {searchedRangeCopy && hasBetterDate && (
+                <div
+                  data-testid="best-date-callout-prominent"
+                  role="status"
+                  aria-live="polite"
+                  className="mt-4 flex items-start gap-3 rounded-xl border border-emerald-400/40 bg-emerald-500/15 px-4 py-3 text-sm text-emerald-100 md:max-w-3xl"
+                >
+                  <Calendar className="mt-0.5 h-5 w-5 flex-shrink-0 text-emerald-300" aria-hidden="true" />
+                  <div className="flex flex-col gap-1">
+                    <p className="font-semibold text-emerald-100">Better dates found</p>
+                    <p className="text-xs leading-relaxed text-emerald-200/90">{searchedRangeCopy}</p>
+                  </div>
+                </div>
+              )}
+              {searchedRangeCopy && !hasBetterDate && (
+                <p
+                  data-testid="best-date-callout-subtle"
+                  className="mt-3 inline-flex items-center rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-200"
+                >
                   {searchedRangeCopy}
                 </p>
               )}
