@@ -12,7 +12,7 @@ import { buildSearchQueryParams } from "../lib/searchQuery";
 // ---------------------------------------------------------------------------
 
 describe("buildSearchQueryParams — both-flexible round-trip", () => {
-	it("flex roundtrip sends both date_end and return_date_end (±7)", () => {
+	it("flex roundtrip sends symmetric ±7 window on BOTH legs", () => {
 		const params = buildSearchQueryParams({
 			origin: "JFK",
 			destination: "LAX",
@@ -23,9 +23,35 @@ describe("buildSearchQueryParams — both-flexible round-trip", () => {
 			cabin: "economy",
 			travelers: 1,
 		});
+		// Outbound: 2099-06-15 ±7 = [2099-06-08, 2099-06-22]
+		expect(params.get("date")).toBe("2099-06-08");
 		expect(params.get("date_end")).toBe("2099-06-22");
-		expect(params.get("return_date")).toBe("2099-06-29");
+		// Return: 2099-06-29 ±7 = [2099-06-22, 2099-07-06] (regression fix for 86ba4t25r)
+		expect(params.get("return_date")).toBe("2099-06-22");
 		expect(params.get("return_date_end")).toBe("2099-07-06");
+	});
+
+	it("flex roundtrip window span is identical on both legs (Anshu's repro)", () => {
+		const params = buildSearchQueryParams({
+			origin: "DEL",
+			destination: "JFK",
+			departDate: "2099-06-03",
+			dateMode: "flexible",
+			returnDate: "2099-07-11",
+			tripType: "roundtrip",
+			cabin: "economy",
+			travelers: 1,
+		});
+		const dayMs = 86_400_000;
+		const outboundSpan =
+			(Date.parse(params.get("date_end")!) - Date.parse(params.get("date")!)) / dayMs;
+		const returnSpan =
+			(Date.parse(params.get("return_date_end")!) -
+				Date.parse(params.get("return_date")!)) /
+			dayMs;
+		expect(outboundSpan).toBe(14);
+		expect(returnSpan).toBe(14);
+		expect(outboundSpan).toBe(returnSpan);
 	});
 
 	it("flex one-way sends only date_end (no return params at all)", () => {
