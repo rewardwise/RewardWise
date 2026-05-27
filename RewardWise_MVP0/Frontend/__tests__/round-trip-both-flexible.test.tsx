@@ -207,6 +207,53 @@ describe("VerdictCard — searchedRangeCopy for both-flexible round-trip", () =>
 		expect(text).toContain("Outbound: searched");
 		expect(text).toContain("Return: searched");
 		expect(text).toMatch(/best is/);
+		// 86ba4tc81: when winning dates differ from entered dates, the banner
+		// renders in the PROMINENT variant (not the tiny inline pill) so the
+		// user notices Zoe picked a different date.
+		const prominent = container.querySelector(
+			'[data-testid="best-date-callout-prominent"]',
+		);
+		const subtle = container.querySelector(
+			'[data-testid="best-date-callout-subtle"]',
+		);
+		expect(prominent).not.toBeNull();
+		expect(subtle).toBeNull();
+		expect(prominent?.getAttribute("aria-live")).toBe("polite");
+		expect(prominent?.getAttribute("role")).toBe("status");
+		expect(prominent?.textContent ?? "").toContain("Better dates found");
+	});
+
+	it("renders SUBTLE variant when flex on but winning dates match entered dates", () => {
+		act(() => {
+			root.render(
+				<VerdictCard
+					verdict={baseVerdict}
+					cashPrice={800}
+					origin="JFK"
+					destination="LAX"
+					departDate="2099-06-15"
+					departDateEnd="2099-06-18"
+					winningDate="2099-06-15"
+					returnDate="2099-06-22"
+					returnDateEnd="2099-06-25"
+					winningReturnDate="2099-06-22"
+					travelers={1}
+					isRoundtrip
+					userPrograms={["united"]}
+				/>,
+			);
+		});
+		const prominent = container.querySelector(
+			'[data-testid="best-date-callout-prominent"]',
+		);
+		const subtle = container.querySelector(
+			'[data-testid="best-date-callout-subtle"]',
+		);
+		expect(prominent).toBeNull();
+		expect(subtle).not.toBeNull();
+		// Subtle variant must NOT carry the "Better dates found" heading —
+		// nothing better was found.
+		expect(subtle?.textContent ?? "").not.toContain("Better dates found");
 	});
 
 	it("renders ONLY the one-leg sentence when outbound flexes but return does not", () => {
