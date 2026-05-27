@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { dedupeByProgram } from "../utils/awardOptions";
+import { dedupeByProgram, filterByDate } from "../utils/awardOptions";
 
 type Opt = {
   program: string;
@@ -80,5 +80,68 @@ describe("dedupeByProgram", () => {
     const result = dedupeByProgram(opts);
     expect(result).toHaveLength(1);
     expect(result[0].points).toBe(28000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// filterByDate — pin the option list to winning_date BEFORE dedupe so
+// flex-search multi-date options don't pollute the verdict surface with
+// trips on a date the user didn't book (ticket 86ba4t6f1).
+// ---------------------------------------------------------------------------
+
+type DatedOpt = { program: string; points: number; date?: string };
+
+const dated = (program: string, points: number, date?: string): DatedOpt => ({
+  program,
+  points,
+  ...(date !== undefined && { date }),
+});
+
+describe("filterByDate", () => {
+  it("passes the list through when date is null/undefined (rigid search)", () => {
+    const opts = [dated("United", 35000, "2026-09-15"), dated("Delta", 60000, "2026-09-18")];
+    expect(filterByDate(opts, null)).toEqual(opts);
+    expect(filterByDate(opts, undefined)).toEqual(opts);
+  });
+
+  it("filters multi-date options down to the winning date", () => {
+    const opts = [
+      dated("United", 35000, "2026-09-14"),
+      dated("United", 28000, "2026-09-16"),
+      dated("Delta", 60000, "2026-09-14"),
+      dated("Delta", 45000, "2026-09-16"),
+      dated("Aeroplan", 55000, "2026-09-18"),
+    ];
+    const result = filterByDate(opts, "2026-09-16");
+    expect(result).toHaveLength(2);
+    expect(result.map((o) => o.program)).toEqual(["United", "Delta"]);
+    expect(result.every((o) => o.date === "2026-09-16")).toBe(true);
+  });
+
+  it("defensive fallback: when no option matches the date, return the original list", () => {
+    // Malformed response (winning_date doesn't appear in any option) — render
+    // SOMETHING rather than empty so the user still sees a flight.
+    const opts = [dated("United", 35000, "2026-09-14"), dated("Delta", 60000, "2026-09-18")];
+    const result = filterByDate(opts, "2026-12-25");
+    expect(result).toEqual(opts);
+  });
+
+  it("integrates with dedupeByProgram: filter first, then collapse to one per program", () => {
+    // Anshu repro: flex ±7 returns United on three dates. Backend says
+    // winning_date=2026-09-16. Pre-fix: dedupe picks cheapest (28000, but
+    // that's on 09-14, NOT the winning date) → Flight Details renders
+    // trips on 09-14 while the verdict banner says "Better dates found
+    // 2026-09-16". Post-fix: filterByDate pins to 09-16 first, dedupe
+    // then sees only the 09-16 entry.
+    const opts = [
+      dated("United", 28000, "2026-09-14"),
+      dated("United", 32000, "2026-09-16"),
+      dated("United", 35000, "2026-09-18"),
+    ];
+    const filtered = filterByDate(opts, "2026-09-16");
+    const result = dedupeByProgram(filtered);
+    expect(result).toHaveLength(1);
+    expect(result[0].points).toBe(32000);
+    expect(result[0].date).toBe("2026-09-16");
   });
 });
