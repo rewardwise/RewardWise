@@ -16,7 +16,7 @@ import {
 import { useAlerts } from "@/context/AlertContext";
 import { cabinLabel } from "@/utils/cabin";
 import { fmtMoney } from "@/utils/format";
-import { dedupeByProgram } from "@/utils/awardOptions";
+import { dedupeByProgram, filterByDate } from "@/utils/awardOptions";
 import { buildOutboundLeg, buildInboundLeg } from "@/utils/flightLegs";
 import VerdictTopRow from "@/components/verdict/VerdictTopRow";
 import EmptyWalletCTA from "@/components/verdict/EmptyWalletCTA";
@@ -289,10 +289,18 @@ export default function VerdictCard({
   onTryDifferentDate,
 }: VerdictCardProps) {
   // Metro + flex searches return multiple award_options per program (different
-  // airport pairs / dates). Collapse to best-per-program before any consumer
-  // (AwardDetailsSection header, MultiHandoffGrid cards) reads the list.
-  const awardOptions = useMemo(() => dedupeByProgram(rawAwardOptions), [rawAwardOptions]);
-  const returnAwardOptions = useMemo(() => dedupeByProgram(rawReturnAwardOptions), [rawReturnAwardOptions]);
+  // airport pairs / dates). Pin to winning_date first so flex multi-date noise
+  // doesn't surface trips on a date the user didn't book (86ba4t6f1), then
+  // collapse to best-per-program before any consumer (AwardDetailsSection
+  // header, MultiHandoffGrid cards, FlightSection segments) reads the list.
+  const awardOptions = useMemo(
+    () => dedupeByProgram(filterByDate(rawAwardOptions, winningDate)),
+    [rawAwardOptions, winningDate],
+  );
+  const returnAwardOptions = useMemo(
+    () => dedupeByProgram(filterByDate(rawReturnAwardOptions, winningReturnDate)),
+    [rawReturnAwardOptions, winningReturnDate],
+  );
 
   const { addToWatchlist, isWatching } = useAlerts();
   const [justAdded, setJustAdded] = useState(false);
