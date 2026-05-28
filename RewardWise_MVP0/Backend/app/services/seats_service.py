@@ -1,10 +1,14 @@
 import asyncio
+import json
 import httpx
+import logging
 import os
 from typing import Optional
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 SEATS_AERO_BASE_URL = "https://seats.aero/partnerapi"
 
@@ -13,6 +17,21 @@ CABIN_MAP = {
     "premium_economy": "W",
     "business": "J",
     "first": "F"
+}
+
+# Outbound translation: CabinClass enum value -> seats.aero `cabins=` query
+# string. Verified 2026-05-27 via /tmp/probe_seats_aero_all_cabins.py
+# (3 routes × 14 candidates against live Partner API). seats.aero accepts
+# only the exact lowercase strings below; every other casing and IATA-code
+# variant returns 400 invalid_cabin. The only enum/API-value divergence is
+# premium_economy -> "premium" — PR #22 renamed the validator enum to
+# premium_economy without updating this translation, which 500'd every PE
+# search in production until this mapping was introduced.
+CABIN_API_PARAM = {
+    "economy": "economy",
+    "premium_economy": "premium",
+    "business": "business",
+    "first": "first",
 }
 
 # Numeric cap per MaxStops enum value. seats.aero's Partner API has no
@@ -72,29 +91,56 @@ async def search_award_availability(
     # ±7 range mode = up to 15 dates × multiple programs per date — bumped from
     # 100 to 200 to avoid silent truncation on busy routes (JFK→LHR business).
     resolved_take = take if take is not None else (200 if is_range else 50)
+    cabin_key = cabin.lower()
+    if cabin_key not in CABIN_API_PARAM:
+        raise ValueError(f"Unsupported cabin: {cabin!r}")
     params = {
         "origin_airport": origin.upper(),
         "destination_airport": destination.upper(),
         "start_date": date,
         "end_date": resolved_end_date,
-        "cabins": cabin.lower(),
+        "cabins": CABIN_API_PARAM[cabin_key],
         "take": resolved_take,
         "include_trips": "true",   # ← pulls AvailabilityTrips inline, no extra call
     }
 
-    async with httpx.AsyncClient() as client:
-        response = await client.get(
-            f"{SEATS_AERO_BASE_URL}/search",
-            headers=headers,
-            params=params,
-            timeout=15.0
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{SEATS_AERO_BASE_URL}/search",
+                headers=headers,
+                params=params,
+                timeout=15.0
+            )
+            response.raise_for_status()
+            data = response.json()
+    except (httpx.HTTPStatusError, httpx.RequestError, json.JSONDecodeError) as e:
+        # Defensive catch (PR #22 follow-up): any upstream failure — 4xx
+        # (bad params, rate limit), 5xx (seats.aero outage), timeout,
+        # transport error, or 200-with-malformed-body — degrades to "no
+        # awards" so the verdict layer falls back to
+        # data_quality="missing_awards" + cash price rather than 500'ing
+        # the search. Logged at WARN so ops can spot pattern changes
+        # (sustained 401 = key rotation needed; sustained 5xx = provider
+        # incident).
+        logger.warning(
+            "seats.aero search failed; returning empty awards: %s %s",
+            type(e).__name__, e,
         )
-        response.raise_for_status()
-        data = response.json()
+        return []
 
-    cabin_prefix = CABIN_MAP.get(cabin.lower(), "Y")
+    # CABIN_MAP and CABIN_API_PARAM must stay in lockstep on keys — the
+    # CabinClass enum parity test enforces this for CABIN_API_PARAM, and
+    # the prior ValueError on cabin_key already guarantees cabin_key is a
+    # known cabin here, so direct lookup is safe.
+    cabin_prefix = CABIN_MAP[cabin_key]
     results = []
 
+    # Belt-and-suspenders: seats.aero's server-side filter on `cabins=` is
+    # strict (verified 2026-05-27: returned-row count exactly matches the
+    # {cabin_prefix}Available count across all 4 cabins). This client-side
+    # filter is now defensive against any future server behavior change,
+    # not load-bearing — kept intentionally.
     for avail in data.get("data", []):
         if not avail.get(f"{cabin_prefix}Available", False):
             continue
