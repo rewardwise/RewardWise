@@ -8,8 +8,16 @@ not become a hidden dep. The logic is pure given inputs, so no mocking.
 """
 
 import asyncio
+from datetime import date, timedelta
 
-from app.services.verdict_service import _build_next_step, generate_verdict
+import pytest
+
+from app.services.verdict_service import (
+    CASH_HORIZON_DAYS,
+    _build_next_step,
+    _is_past_cash_horizon,
+    generate_verdict,
+)
 
 
 def _run(**overrides):
@@ -259,3 +267,116 @@ def test_economy_baseline_unchanged_uses_save_for_bigger_trip():
     )
     assert step is not None
     assert step["label"] == "Save your points for a bigger trip"
+
+
+# ---- Cause-aware missing_cash split (PR-α) ----------------------------------
+#
+# Splits the legacy "missing_cash" data_quality into two causes so the UI can
+# stop blaming the user's date when the failure is on our side. Bug repro:
+# Trip B in the audit (NYC→LON PE, +60d) rendered the "~10 months out" copy
+# even though it was nowhere near the horizon.
+
+def _date_offset(days: int) -> str:
+    return (date.today() + timedelta(days=days)).isoformat()
+
+
+def test_is_past_cash_horizon_within_returns_false():
+    """+60d depart (Trip B from the audit) must NOT trip the horizon path."""
+    assert _is_past_cash_horizon(_date_offset(60)) is False
+
+
+def test_is_past_cash_horizon_beyond_returns_true():
+    """One day past the horizon flips to True. Boundary documented in PR #140."""
+    assert _is_past_cash_horizon(_date_offset(CASH_HORIZON_DAYS + 1)) is True
+
+
+def test_is_past_cash_horizon_at_boundary_inclusive():
+    """Equal to today+horizon is NOT past — only strictly greater flips."""
+    assert _is_past_cash_horizon(_date_offset(CASH_HORIZON_DAYS)) is False
+
+
+def test_is_past_cash_horizon_invalid_returns_false():
+    """Unparseable input defaults to 'upstream' interpretation, not 'horizon'.
+
+    Reason: we'd rather render the upstream copy on a malformed date than
+    falsely claim horizon when we don't actually know.
+    """
+    assert _is_past_cash_horizon("not-a-date") is False
+    assert _is_past_cash_horizon("") is False
+
+
+@pytest.mark.parametrize(
+    "cash_price,has_awards,depart_offset,expected_quality",
+    [
+        # both present -> full
+        (800.0, True, 60, "full"),
+        # cash only -> missing_awards (no horizon split for award absence)
+        (800.0, False, 60, "missing_awards"),
+        (800.0, False, CASH_HORIZON_DAYS + 5, "missing_awards"),
+        # awards only, within horizon -> upstream (cash provider failure)
+        (None, True, 60, "missing_cash_upstream"),
+        # awards only, past horizon -> horizon (provider has no data this far out)
+        (None, True, CASH_HORIZON_DAYS + 5, "missing_cash_horizon"),
+        # neither -> missing_both (not split this PR; queued)
+        (None, False, 60, "missing_both"),
+        (None, False, CASH_HORIZON_DAYS + 5, "missing_both"),
+    ],
+)
+def test_data_quality_cause_aware_assignment(
+    cash_price, has_awards, depart_offset, expected_quality
+):
+    """The full data_quality assignment table after the missing_cash split.
+
+    The Trip B audit bug surfaces here as row 4 (None, True, 60): pre-fix this
+    bucketed into legacy "missing_cash" and rendered the horizon copy. Post-fix
+    it must produce "missing_cash_upstream" so the UI can render honest copy.
+    """
+    awards = [_award(cpp=1.6)] if has_awards else []
+    result = _run(
+        cash_price=cash_price,
+        award_options=awards,
+        date=_date_offset(depart_offset),
+    )
+    assert result["data_quality"] == expected_quality
+
+
+def test_missing_cash_horizon_passes_into_response_payload():
+    """End-to-end: the new value lands in the response data_quality field."""
+    result = _run(
+        cash_price=None,
+        award_options=[_award(cpp=1.6)],
+        date=_date_offset(CASH_HORIZON_DAYS + 30),
+    )
+    assert result["data_quality"] == "missing_cash_horizon"
+    assert result["missing_sources"] == ["cash_price"]
+
+
+def test_missing_cash_upstream_passes_into_response_payload():
+    """End-to-end: the upstream cause lands in the response data_quality field.
+
+    This is the path that fixes the Trip B (+60d NYC→LON) bug — backend now
+    distinguishes upstream failure from horizon exceedance, frontend renders
+    honest copy.
+    """
+    result = _run(
+        cash_price=None,
+        award_options=[_award(cpp=1.6)],
+        date=_date_offset(60),
+    )
+    assert result["data_quality"] == "missing_cash_upstream"
+    assert result["missing_sources"] == ["cash_price"]
+
+
+def test_legacy_missing_cash_literal_no_longer_emitted():
+    """Regression guard: the bare 'missing_cash' string was renamed outright.
+
+    Anything still emitting it would route to the defensive variant on the
+    frontend (silent UX degradation), so make the rename load-bearing.
+    """
+    for offset in (60, CASH_HORIZON_DAYS + 5):
+        result = _run(
+            cash_price=None,
+            award_options=[_award(cpp=1.6)],
+            date=_date_offset(offset),
+        )
+        assert result["data_quality"] != "missing_cash"

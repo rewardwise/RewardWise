@@ -4,7 +4,10 @@
 import { AlertTriangle, Calendar, ExternalLink } from "lucide-react";
 import type { Verdict } from "@/types/verdict";
 
-export type PartialDataVariant = "missing_cash" | "defensive";
+export type PartialDataVariant =
+	| "missing_cash_horizon"
+	| "missing_cash_upstream"
+	| "defensive";
 
 type Props = {
 	verdict: Verdict;
@@ -13,7 +16,8 @@ type Props = {
 };
 
 const HEADLINES: Record<PartialDataVariant, string> = {
-	missing_cash: "Award seats available · Cash data unavailable",
+	missing_cash_horizon: "Award seats available · Cash data unavailable",
+	missing_cash_upstream: "Award seats available · Cash data unavailable",
 	defensive: "Limited data for this comparison",
 };
 
@@ -41,25 +45,20 @@ function fmtProgram(s?: string | null) {
 }
 
 // Card shown when we have an award verdict but cash data is missing
-// (variant="missing_cash") or when overall data quality is low
-// (variant="defensive"). Does NOT gate booking — users can verify the
-// winning program directly. PR 5 wires this into VerdictCard's
-// recommendation === "wait" branch so users hitting dates past the
-// cash horizon stop landing on the generic ErrorStateCard.
+// (variant="missing_cash_horizon" or "missing_cash_upstream") or when
+// overall data quality is low (variant="defensive"). Does NOT gate
+// booking — users can verify the winning program directly.
 //
-// Layout: CTA row stacks vertically on mobile (default) and goes
-// side-by-side from the Tailwind sm: breakpoint (640px) upward. The
-// spec calls out 375px (iPhone SE) and 1440px (laptop) reference
-// widths — both are satisfied by `flex-col sm:flex-row`.
-//
-// When variant="defensive" + no winner + no booking link, the only
-// remaining action is "Try a different date". Callers MUST pass
-// `onTryDifferentDate` to avoid a dead-end card; VerdictCard will
-// always wire it when this lands in PR 5.
+// Cause-aware subtext: horizon variant says cash data isn't typically
+// available that far out (true at >329 days); upstream variant says
+// pricing is temporarily unavailable (true when the cash provider chain
+// failed within the horizon — quota, timeout, route gap). The legacy
+// single "missing_cash" variant rendered the horizon copy for both
+// causes, which lied to users searching trips inside the horizon.
 export default function PartialDataCard({
 	verdict,
 	onTryDifferentDate,
-	variant = "missing_cash",
+	variant = "missing_cash_horizon",
 }: Props) {
 	const headline = HEADLINES[variant];
 	const explanation = verdict.explanation ?? "";
@@ -98,14 +97,23 @@ export default function PartialDataCard({
 							{explanation}
 						</p>
 					) : null}
-					{variant === "missing_cash" ? (
+					{variant === "missing_cash_horizon" ? (
 						<p
-							data-testid="partial-data-cash-subtext"
+							data-testid="partial-data-cash-subtext-horizon"
 							className="mt-2 text-sm leading-6 text-slate-400"
 						>
 							Live cash pricing isn&apos;t typically available more than
 							~10 months out, so we can&apos;t compare cash vs points
 							for this trip.
+						</p>
+					) : null}
+					{variant === "missing_cash_upstream" ? (
+						<p
+							data-testid="partial-data-cash-subtext-upstream"
+							className="mt-2 text-sm leading-6 text-slate-400"
+						>
+							Cash pricing for this trip is temporarily unavailable. Try
+							again in a few minutes, or pick a different date or route.
 						</p>
 					) : null}
 				</div>

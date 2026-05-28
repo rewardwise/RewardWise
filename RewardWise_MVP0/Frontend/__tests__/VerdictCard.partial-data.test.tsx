@@ -119,18 +119,49 @@ function renderCard(verdict: Verdict, onTryDifferentDate?: () => void) {
 // VerdictCard now routes each case to a partial-data surface instead of
 // the generic "We could not pull the latest data" ErrorStateCard.
 describe("VerdictCard — wait-branch routing by data_quality", () => {
-  it("missing_cash → PartialDataCard with missing_cash variant", () => {
-    renderCard(buildVerdict({ data_quality: "missing_cash" }));
+  it("missing_cash_horizon → PartialDataCard with horizon copy", () => {
+    renderCard(buildVerdict({ data_quality: "missing_cash_horizon" }));
     const card = container.querySelector('[data-testid="partial-data-card"]');
-    expect(card, "PartialDataCard should render for missing_cash").not.toBeNull();
-    // missing_cash variant carries the cash-horizon subtext.
     expect(
-      container.querySelector('[data-testid="partial-data-cash-subtext"]'),
+      card,
+      "PartialDataCard should render for missing_cash_horizon",
     ).not.toBeNull();
+    expect(
+      container.querySelector(
+        '[data-testid="partial-data-cash-subtext-horizon"]',
+      ),
+    ).not.toBeNull();
+    // The upstream copy MUST NOT render on this branch.
+    expect(
+      container.querySelector(
+        '[data-testid="partial-data-cash-subtext-upstream"]',
+      ),
+    ).toBeNull();
   });
 
-  it("missing_cash card renders winner program and verify CTA", () => {
-    renderCard(buildVerdict({ data_quality: "missing_cash" }));
+  it("missing_cash_upstream → PartialDataCard with upstream copy (NOT horizon lie)", () => {
+    // Bug repro: pre-fix this routed to the legacy "missing_cash" variant
+    // and rendered the "~10 months out" copy even when the depart date was
+    // inside the horizon. The whole point of PR-α.
+    renderCard(buildVerdict({ data_quality: "missing_cash_upstream" }));
+    const card = container.querySelector('[data-testid="partial-data-card"]');
+    expect(card).not.toBeNull();
+    expect(
+      container.querySelector(
+        '[data-testid="partial-data-cash-subtext-upstream"]',
+      ),
+    ).not.toBeNull();
+    expect(
+      container.querySelector(
+        '[data-testid="partial-data-cash-subtext-horizon"]',
+      ),
+    ).toBeNull();
+    expect(card?.textContent).not.toContain("~10 months out");
+    expect(card?.textContent).toContain("temporarily unavailable");
+  });
+
+  it("missing_cash_horizon card renders winner program and verify CTA", () => {
+    renderCard(buildVerdict({ data_quality: "missing_cash_horizon" }));
     const winner = container.querySelector(
       '[data-testid="partial-data-winner"]',
     );
@@ -164,12 +195,39 @@ describe("VerdictCard — wait-branch routing by data_quality", () => {
     expect(onTry).toHaveBeenCalledTimes(1);
   });
 
+  it("legacy 'missing_cash' literal → defensive variant (rename guard)", () => {
+    // After PR-α the bare 'missing_cash' string is no longer emitted by the
+    // backend. If any stale client receives it, route to defensive — never
+    // the horizon copy, which would be the original lie.
+    renderCard(buildVerdict({ data_quality: "missing_cash" }));
+    const card = container.querySelector('[data-testid="partial-data-card"]');
+    expect(card).not.toBeNull();
+    expect(
+      container.querySelector(
+        '[data-testid="partial-data-cash-subtext-horizon"]',
+      ),
+    ).toBeNull();
+    expect(
+      container.querySelector(
+        '[data-testid="partial-data-cash-subtext-upstream"]',
+      ),
+    ).toBeNull();
+    expect(container.textContent).toContain("Limited data for this comparison");
+  });
+
   it("unknown data_quality → defensive PartialDataCard (no cash subtext)", () => {
     renderCard(buildVerdict({ data_quality: "something_else" }));
     const card = container.querySelector('[data-testid="partial-data-card"]');
     expect(card, "defensive variant still renders the card").not.toBeNull();
     expect(
-      container.querySelector('[data-testid="partial-data-cash-subtext"]'),
+      container.querySelector(
+        '[data-testid="partial-data-cash-subtext-horizon"]',
+      ),
+    ).toBeNull();
+    expect(
+      container.querySelector(
+        '[data-testid="partial-data-cash-subtext-upstream"]',
+      ),
     ).toBeNull();
     expect(container.textContent).toContain("Limited data for this comparison");
   });
@@ -196,9 +254,9 @@ describe("VerdictCard — wait-branch routing by data_quality", () => {
     ).not.toBeNull();
   });
 
-  it("missing_cash CTA fires the onTryDifferentDate handler from VerdictCard", () => {
+  it("missing_cash_upstream CTA fires the onTryDifferentDate handler from VerdictCard", () => {
     const onTry = vi.fn();
-    renderCard(buildVerdict({ data_quality: "missing_cash" }), onTry);
+    renderCard(buildVerdict({ data_quality: "missing_cash_upstream" }), onTry);
     const retryButton = container.querySelector(
       '[data-testid="partial-data-retry-date-cta"]',
     ) as HTMLButtonElement | null;
