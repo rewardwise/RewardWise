@@ -167,25 +167,80 @@ describe("PartialDataCard", () => {
 		).toBeNull();
 	});
 
-	it("variant='defensive' omits the '~10 months out' subtext", () => {
+	it("variant='defensive' omits both horizon and upstream subtexts", () => {
 		render(<PartialDataCard verdict={buildVerdict()} variant="defensive" />);
 		expect(
-			container.querySelector('[data-testid="partial-data-cash-subtext"]'),
+			container.querySelector(
+				'[data-testid="partial-data-cash-subtext-horizon"]',
+			),
+		).toBeNull();
+		expect(
+			container.querySelector(
+				'[data-testid="partial-data-cash-subtext-upstream"]',
+			),
 		).toBeNull();
 		const card = container.querySelector(
 			'[data-testid="partial-data-card"]',
 		);
 		expect(card?.textContent).not.toContain("~10 months out");
+		expect(card?.textContent).not.toContain("temporarily unavailable");
 		expect(card?.textContent).toContain("Limited data for this comparison");
 	});
 
-	it("variant='missing_cash' (default) includes the cash subtext", () => {
+	it("variant='missing_cash_horizon' (default) renders horizon copy", () => {
 		render(<PartialDataCard verdict={buildVerdict()} />);
 		const sub = container.querySelector(
-			'[data-testid="partial-data-cash-subtext"]',
+			'[data-testid="partial-data-cash-subtext-horizon"]',
 		);
 		expect(sub).not.toBeNull();
 		expect(sub?.textContent).toContain("~10 months out");
+	});
+
+	// Bug repro: pre-fix, a +60d PE search (NYC→LON, well inside the 329d
+	// cash horizon) rendered the "~10 months out" copy. That was the lie.
+	// These two tests lock in cause-aware copy as a contract.
+
+	it("variant='missing_cash_upstream' renders the upstream copy, NOT the horizon lie", () => {
+		render(
+			<PartialDataCard
+				verdict={buildVerdict()}
+				variant="missing_cash_upstream"
+			/>,
+		);
+		const upstreamSub = container.querySelector(
+			'[data-testid="partial-data-cash-subtext-upstream"]',
+		);
+		expect(upstreamSub).not.toBeNull();
+		expect(upstreamSub?.textContent).toContain("temporarily unavailable");
+		// The lie: this string MUST NOT appear when the cause is upstream.
+		expect(
+			container.querySelector(
+				'[data-testid="partial-data-cash-subtext-horizon"]',
+			),
+		).toBeNull();
+		const card = container.querySelector(
+			'[data-testid="partial-data-card"]',
+		);
+		expect(card?.textContent).not.toContain("~10 months out");
+	});
+
+	it("variant='missing_cash_horizon' does NOT render the upstream copy", () => {
+		render(
+			<PartialDataCard
+				verdict={buildVerdict()}
+				variant="missing_cash_horizon"
+			/>,
+		);
+		expect(
+			container.querySelector(
+				'[data-testid="partial-data-cash-subtext-upstream"]',
+			),
+		).toBeNull();
+		const card = container.querySelector(
+			'[data-testid="partial-data-card"]',
+		);
+		expect(card?.textContent).not.toContain("temporarily unavailable");
+		expect(card?.textContent).toContain("~10 months out");
 	});
 
 	it("missing winner doesn't crash (defensive case)", () => {

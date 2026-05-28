@@ -733,11 +733,19 @@ export default function VerdictCard({
             onCta={onTryDifferentDate}
           />
         );
-      case "missing_cash":
+      case "missing_cash_horizon":
         return (
           <PartialDataCard
             verdict={verdict}
-            variant="missing_cash"
+            variant="missing_cash_horizon"
+            onTryDifferentDate={onTryDifferentDate}
+          />
+        );
+      case "missing_cash_upstream":
+        return (
+          <PartialDataCard
+            verdict={verdict}
+            variant="missing_cash_upstream"
             onTryDifferentDate={onTryDifferentDate}
           />
         );

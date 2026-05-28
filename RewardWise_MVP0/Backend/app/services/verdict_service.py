@@ -1,4 +1,6 @@
 import logging
+import os
+from datetime import date as date_cls, timedelta
 from typing import Optional
 from urllib.parse import urlencode
 
@@ -8,6 +10,14 @@ CPP_PAY_CASH_THRESHOLD = 1.25
 CPP_GRAY_ZONE_MIDPOINT = 1.5
 CPP_USE_POINTS_STRONG_THRESHOLD = 1.8
 CHEAP_CASH_THRESHOLD_USD = 250
+
+# Mirrors Frontend/utils/dateInput.ts DEFAULT_CASH_HORIZON_DAYS = 329
+# (SerpAPI / Google Flights GDS bound, established in PR #140). Past this
+# horizon, cash providers legitimately return no data; within it, an empty
+# cash_price indicates an upstream failure (quota, timeout, route gap).
+# Overridable via env so backend + frontend can be tuned together if the
+# provider bound shifts.
+CASH_HORIZON_DAYS = int(os.environ.get("CASH_HORIZON_DAYS", "329"))
 
 PROGRAM_URL_OVERRIDES = {
     "american": "https://www.aa.com/",
@@ -130,6 +140,23 @@ def _get_booking_link_for_verdict(
             "preferred": "airline",
         }
     return _get_booking_link(program, trip_ids)
+
+
+def _is_past_cash_horizon(depart_date: str, today: Optional[date_cls] = None) -> bool:
+    """True if depart_date is beyond the cash-provider GDS horizon.
+
+    Used to distinguish legitimate-horizon cash absences from upstream provider
+    failures (quota, timeout, route gap), so the UI can render cause-aware copy
+    instead of always blaming the user's date. Unparseable dates return False —
+    the safer default is to treat them as upstream so we don't lie about a
+    horizon cause we couldn't actually confirm.
+    """
+    try:
+        depart = date_cls.fromisoformat(depart_date)
+    except (TypeError, ValueError):
+        return False
+    today = today or date_cls.today()
+    return depart > today + timedelta(days=CASH_HORIZON_DAYS)
 
 
 def _fmt(name: str) -> str:
@@ -394,7 +421,11 @@ async def generate_verdict(
     if len(missing_sources) == 2:
         data_quality = "missing_both"
     elif missing_sources == ["cash_price"]:
-        data_quality = "missing_cash"
+        data_quality = (
+            "missing_cash_horizon"
+            if _is_past_cash_horizon(date)
+            else "missing_cash_upstream"
+        )
     elif missing_sources == ["award_space"]:
         data_quality = "missing_awards"
     elif missing_sources:
