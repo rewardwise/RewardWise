@@ -10,11 +10,16 @@ from app.services.flight_pricing.normalizer import normalize_flightapi_response
 
 DEFAULT_FLIGHTAPI_BASE_URL = "https://api.flightapi.io"
 
+# FlightAPI accepts lowercase snake_case cabin values only. Title-case +
+# space (the previous values) returns HTTP 400 for premium_economy /
+# business / first, and is silently tolerated for economy. The map is
+# kept as an identity for canonical inputs so unknown cabin strings fall
+# through to "economy" instead of hitting FlightAPI as garbage.
 CABIN_CLASS_MAP = {
-    "economy": "Economy",
-    "premium_economy": "Premium Economy",
-    "business": "Business",
-    "first": "First",
+    "economy": "economy",
+    "premium_economy": "premium_economy",
+    "business": "business",
+    "first": "first",
 }
 
 # FlightAPI uses a positional URL schema with no stops slot — filter runs
@@ -53,7 +58,7 @@ def _build_flightapi_path(
     return_date: Optional[str],
     currency: str,
 ) -> str:
-    cabin_class = CABIN_CLASS_MAP.get((cabin or "economy").lower(), "Economy")
+    cabin_class = CABIN_CLASS_MAP.get((cabin or "economy").lower(), "economy")
     adults = max(int(travelers or 1), 1)
     children = 0
     infants = 0
