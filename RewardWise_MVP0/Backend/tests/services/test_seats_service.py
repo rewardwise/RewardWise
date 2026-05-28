@@ -14,8 +14,10 @@ seats_service.httpx.AsyncClient.
 
 import asyncio
 import json
+import logging
 from typing import Optional
 
+import httpx
 import pytest
 
 from app.services import seats_service
@@ -372,4 +374,169 @@ def test_cabin_map_covers_all_four_cabins():
         "business": "J",
         "first": "F",
     }
+
+
+# ---------- Outbound cabin param translation (PR #22 fix) --------------------
+#
+# Contract: asserts that for every CabinClass enum value, the outbound
+# `cabins=` query string seats.aero receives matches the verified-accepted
+# literal string per CABIN_API_PARAM. This is a translation contract — NOT
+# a server-behavior assertion. Server-side filtering of result rows is
+# seats.aero's responsibility and is independently verified strict (probe
+# run 2026-05-27: returned-row count == {prefix}Available count, all 4
+# cabins). If a future enum rename ships without updating CABIN_API_PARAM,
+# this test fails before it hits prod — same regression as PR #22.
+
+@pytest.mark.parametrize("cabin_enum_value,expected_api_param", [
+    ("economy", "economy"),
+    ("premium_economy", "premium"),
+    ("business", "business"),
+    ("first", "first"),
+])
+def test_outbound_cabins_param_matches_verified_seats_aero_value(
+    monkeypatch, cabin_enum_value, expected_api_param,
+):
+    captured: dict = {}
+
+    class CapturingClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, url, **kwargs):
+            captured["params"] = kwargs.get("params")
+            return FakeResponse(200, {"data": []})
+
+    monkeypatch.setattr(seats_service.httpx, "AsyncClient", CapturingClient)
+    asyncio.run(seats_service.search_award_availability(
+        "SFO", "NRT", "2026-09-15", cabin_enum_value,
+    ))
+    assert captured["params"]["cabins"] == expected_api_param
+
+
+def test_unsupported_cabin_raises_value_error():
+    """Defense in depth: validators reject bad cabins upstream, but the
+    service still guards in case anyone calls it directly with a bogus
+    string."""
+    with pytest.raises(ValueError, match="Unsupported cabin"):
+        asyncio.run(seats_service.search_award_availability(
+            "SFO", "NRT", "2026-09-15", "luxury",
+        ))
+
+
+def test_cabin_api_param_covers_all_cabin_class_values():
+    """CABIN_API_PARAM keys must exactly match CabinClass enum values.
+    Adding a cabin to the enum without adding the translation here would
+    cause an unsupported-cabin ValueError at request time — louder than
+    the silent PR #22 regression but still a runtime fail. Lock parity
+    at import time instead."""
+    from app.api.validators import CabinClass
+
+    assert set(seats_service.CABIN_API_PARAM.keys()) == {c.value for c in CabinClass}
+
+
+# ---------- Defensive catch on upstream failures (PR #22 follow-up) ----------
+#
+# When seats.aero returns 4xx / 5xx, times out, or has any transport error,
+# the service degrades to "no awards" so the verdict layer falls back to
+# data_quality="missing_awards" + cash price. Without this catch, a single
+# upstream failure 500'd the entire search endpoint (the exact PR #22
+# symptom on every PE search).
+
+def _failing_client_factory(response_or_exc):
+    """Build an httpx.AsyncClient mock that returns the given response, or
+    raises the given exception on .get()."""
+    class _Client:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, url, **kwargs):
+            if isinstance(response_or_exc, Exception):
+                raise response_or_exc
+            return response_or_exc
+
+    return _Client
+
+
+def test_defensive_catch_on_400_returns_empty_list(monkeypatch):
+    """seats.aero 400 → []. This is the exact PR #22 PE-search scenario."""
+    request = httpx.Request("GET", "https://seats.aero/partnerapi/search")
+    response = httpx.Response(
+        400, request=request,
+        content=b'{"error":true,"message":"one or more cabins are invalid","code":"invalid_cabin"}',
+    )
+    monkeypatch.setattr(
+        seats_service.httpx, "AsyncClient", _failing_client_factory(response),
+    )
+    results = asyncio.run(seats_service.search_award_availability(
+        "SFO", "NRT", "2026-09-15", "economy",
+    ))
+    assert results == []
+
+
+def test_defensive_catch_on_500_returns_empty_list(monkeypatch):
+    """seats.aero 5xx outage → []."""
+    request = httpx.Request("GET", "https://seats.aero/partnerapi/search")
+    response = httpx.Response(503, request=request, content=b"")
+    monkeypatch.setattr(
+        seats_service.httpx, "AsyncClient", _failing_client_factory(response),
+    )
+    results = asyncio.run(seats_service.search_award_availability(
+        "SFO", "NRT", "2026-09-15", "economy",
+    ))
+    assert results == []
+
+
+def test_defensive_catch_on_timeout_returns_empty_list(monkeypatch):
+    """httpx.ConnectTimeout (RequestError subclass) → []."""
+    request = httpx.Request("GET", "https://seats.aero/partnerapi/search")
+    monkeypatch.setattr(
+        seats_service.httpx, "AsyncClient",
+        _failing_client_factory(httpx.ConnectTimeout("timed out", request=request)),
+    )
+    results = asyncio.run(seats_service.search_award_availability(
+        "SFO", "NRT", "2026-09-15", "economy",
+    ))
+    assert results == []
+
+
+def test_defensive_catch_on_malformed_json_returns_empty_list(monkeypatch):
+    """200 with non-JSON body → json.JSONDecodeError → []. Covers the case
+    where seats.aero responds with HTML/empty body but a 200 status."""
+    request = httpx.Request("GET", "https://seats.aero/partnerapi/search")
+    response = httpx.Response(200, request=request, content=b"<html>oops</html>")
+    monkeypatch.setattr(
+        seats_service.httpx, "AsyncClient", _failing_client_factory(response),
+    )
+    results = asyncio.run(seats_service.search_award_availability(
+        "SFO", "NRT", "2026-09-15", "economy",
+    ))
+    assert results == []
+
+
+def test_defensive_catch_logs_warning(monkeypatch, caplog):
+    """Failures get logged at WARN so ops can pattern-spot upstream issues."""
+    request = httpx.Request("GET", "https://seats.aero/partnerapi/search")
+    response = httpx.Response(400, request=request, content=b'{"err":1}')
+    monkeypatch.setattr(
+        seats_service.httpx, "AsyncClient", _failing_client_factory(response),
+    )
+    with caplog.at_level(logging.WARNING, logger="app.services.seats_service"):
+        asyncio.run(seats_service.search_award_availability(
+            "SFO", "NRT", "2026-09-15", "economy",
+        ))
+    assert any(
+        "seats.aero search failed" in record.message for record in caplog.records
+    )
 
