@@ -73,4 +73,30 @@ describe('internal-accounts allowlist', () => {
       expect(isInternalEmail('outsider@example.com')).toBe(false)
     })
   })
+
+  // Locks the exact Vercel allowlist as of 2026-05-28. If anyone changes the
+  // env-var string in Vercel, this test should be updated in lockstep. Two
+  // mytravelwallet.ai smoke addresses (Playwright) + two gmail.com personal
+  // addresses (Sudeepta + Sabby) — proves the bypass has no domain-suffix
+  // gate and gmail.com works as long as the address is on the list.
+  describe('production allowlist (Vercel INTERNAL_EMAILS as of 2026-05-28)', () => {
+    const PROD_ALLOWLIST =
+      'smoke-test@mytravelwallet.ai,smoke-test-empty@mytravelwallet.ai,sudeeptaaiproducts@gmail.com,sarabjit.nagi@gmail.com'
+
+    it.each([
+      'smoke-test@mytravelwallet.ai',
+      'smoke-test-empty@mytravelwallet.ai',
+      'sudeeptaaiproducts@gmail.com',
+      'sarabjit.nagi@gmail.com',
+    ])('whitelists %s', (email) => {
+      process.env.INTERNAL_EMAILS = PROD_ALLOWLIST
+      expect(isInternalEmail(email)).toBe(true)
+    })
+
+    it('rejects a near-miss not on the list', () => {
+      process.env.INTERNAL_EMAILS = PROD_ALLOWLIST
+      expect(isInternalEmail('sarabjit.nagi+test@gmail.com')).toBe(false)
+      expect(isInternalEmail('attacker@mytravelwallet.ai')).toBe(false)
+    })
+  })
 })
