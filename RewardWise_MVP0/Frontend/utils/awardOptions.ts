@@ -14,6 +14,10 @@ export interface DedupeAwardOption {
 	points: number;
 	direct?: boolean;
 	trips?: Array<{ stops?: number }>;
+	taxes?: number | null;
+	cpp?: number;
+	airlines?: string;
+	remaining_seats?: number;
 }
 
 function stopsFor<T extends DedupeAwardOption>(opt: T): number {
@@ -30,7 +34,7 @@ function stopsFor<T extends DedupeAwardOption>(opt: T): number {
 // dedupe / selection. Defensive fallback: if no option matches the date,
 // pass the original list through so the leg still renders something rather
 // than collapsing to empty (ticket 86ba4t6f1).
-export function filterByDate<T extends { date?: string }>(
+export function filterByDate<T extends DedupeAwardOption & { date?: string }>(
 	opts: T[],
 	date: string | null | undefined,
 ): T[] {
