@@ -27,6 +27,10 @@ import MultiHandoffGrid, { MultiHandoffProgram, MultiHandoffCashAirline } from "
 import WalletFramingPreview from "@/components/verdict/WalletFramingPreview";
 import PartialDataCard from "@/components/verdict/PartialDataCard";
 import { selectTopProgram } from "@/utils/topProgramSelection";
+import {
+  PUBLIC_SEARCH_FREE_LIMIT,
+  pluralizeUse,
+} from "@/utils/public-search";
 import type { Verdict } from "@/types/verdict";
 
 interface CashLeg {
@@ -1059,7 +1063,7 @@ export default function VerdictCard({
         <div className="rounded-3xl border border-white/10 bg-slate-950/95 p-5 shadow-2xl">
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Keep comparing trips</p>
           <p className="mt-2 text-sm leading-6 text-slate-300">
-            This free search shows the verdict and key details only — and it&apos;s limited to one use per network. Create an account to save searches, add your wallet, and unlock the full experience with booking tools, alerts, and deeper comparisons.
+            This free search shows the verdict and key details only — and it&apos;s limited to {PUBLIC_SEARCH_FREE_LIMIT} {pluralizeUse()} per network. Create an account to save searches, add your wallet, and unlock the full experience with booking tools, alerts, and deeper comparisons.
           </p>
           <div className="mt-5 grid gap-3 sm:grid-cols-2">
             <button
