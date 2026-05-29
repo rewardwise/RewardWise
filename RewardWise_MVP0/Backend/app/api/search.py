@@ -439,23 +439,42 @@ def _public_trial_payload_for_log(params: SearchParams) -> dict:
     }
 
 
+def _public_search_free_limit() -> int:
+    # Canonical enforcement value. Frontend mirrors this via
+    # NEXT_PUBLIC_PUBLIC_SEARCH_FREE_LIMIT for display-only copy — the two
+    # env vars MUST be set in lockstep. Default 3 on both.
+    try:
+        return max(1, int(os.getenv("PUBLIC_SEARCH_FREE_LIMIT", "3")))
+    except ValueError:
+        return 3
+
+
+def _public_trial_exhausted_detail(limit: int) -> str:
+    noun = "search" if limit == 1 else "searches"
+    return (
+        f"You’ve used your {limit} free {noun}. "
+        "Create an account to keep comparing trips."
+    )
+
+
 def _claim_public_search_trial(supabase, request: Request, params: SearchParams) -> str:
     ip = _client_ip_from_request(request)
     ip_hash = _hash_public_trial_value(ip)
     user_agent_hash = _hash_public_trial_value(request.headers.get("user-agent", "unknown"))
+    limit = _public_search_free_limit()
 
     existing = (
         supabase
         .from_("public_search_trials")
         .select("id, used_at, status")
         .eq("ip_hash", ip_hash)
-        .limit(1)
+        .limit(limit)
         .execute()
     )
-    if existing.data:
+    if len(existing.data or []) >= limit:
         raise HTTPException(
             status_code=429,
-            detail="You’ve already used your free search. Create an account to keep comparing trips.",
+            detail=_public_trial_exhausted_detail(limit),
         )
 
     payload = {
@@ -478,7 +497,7 @@ def _claim_public_search_trial(supabase, request: Request, params: SearchParams)
         # Handles the race case where two tabs/devices on the same IP submit at once.
         raise HTTPException(
             status_code=429,
-            detail="You’ve already used your free search. Create an account to keep comparing trips.",
+            detail=_public_trial_exhausted_detail(limit),
         )
 
 

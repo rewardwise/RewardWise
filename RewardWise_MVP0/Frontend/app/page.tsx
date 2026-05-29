@@ -16,6 +16,7 @@ import {
 	Route,
 	Search,
 	Sparkles,
+	Star,
 	User,
 	Wallet,
 	type LucideIcon,
@@ -28,6 +29,11 @@ import VerdictCard from "@/components/VerdictCard";
 import { useAuth } from "@/context/AuthProvider";
 import { useSearchFill } from "@/context/SearchFillContext";
 import type { Cabin } from "@/utils/cabin";
+import {
+	PUBLIC_SEARCH_FREE_LIMIT,
+	pluralizeSearch,
+	pluralizeTime,
+} from "@/utils/public-search";
 
 interface VerdictWinner {
 	program: string | null;
@@ -204,6 +210,74 @@ const STORY_STEPS: StoryStep[] = [
 // Total scroll height per step (px). Tune this to feel right.
 const SCROLL_PER_STEP = 600;
 const TOTAL_SCROLL = SCROLL_PER_STEP * STORY_STEPS.length;
+
+// ---------------------------------------------------------------------------
+// Marketing surface data. All four values gate to null/[] until real data is
+// supplied. Empty arrays / null primitives suppress their entire section so
+// the page never advertises social proof or savings that haven't been earned.
+// ---------------------------------------------------------------------------
+type HeroExample = {
+	origin: string;            // e.g., "EWR"
+	destination: string;       // e.g., "YHZ"
+	cabin: string;             // e.g., "Business"
+	cashPrice: number;         // USD
+	pointsCost: number;        // e.g., 65000
+	pointsProgram: string;     // e.g., "Aeroplan"
+	taxes: number;             // USD — the cash you still pay on the award
+	savings: number;           // USD — cash_price - taxes
+	verdictDate: string;       // e.g., "Apr 2026"
+};
+
+// TODO(merge-gate): populate with one real, dated verdict before merging this
+// PR. While HERO_EXAMPLE is null the hero hides its savings anchor and the
+// right-column card renders a number-less illustration — informative but not
+// load-bearing for the value claim. Sabby supplies this before merge.
+const HERO_EXAMPLE: HeroExample | null = null;
+
+type SavingsExample = {
+	route: string;             // e.g., "EWR → YHZ"
+	cabin: string;
+	monthLabel: string;        // e.g., "Jun 2026"
+	cashPrice: number;
+	pointsCost: number;
+	pointsProgram: string;
+	taxes: number;
+	savings: number;           // cash_price - taxes
+};
+
+// Empty array → section returns null (no eyebrow, no header, no skeleton).
+const SAVINGS_EXAMPLES: SavingsExample[] = [];
+
+type Testimonial = {
+	quote: string;
+	name: string;
+	role?: string;
+	verdictRoute?: string;     // e.g., "EWR → YHZ"
+};
+
+// Empty array → testimonial sub-block hidden. Same rule for the next two:
+// null → sub-block hidden. We never invent numbers.
+const TESTIMONIALS: Testimonial[] = [];
+const AVG_RATING: number | null = null;
+const RATING_COUNT: number | null = null;
+const TRAVELER_COUNT: number | null = null;
+
+function formatUSD(amount: number): string {
+	return new Intl.NumberFormat("en-US", {
+		style: "currency",
+		currency: "USD",
+		maximumFractionDigits: 0,
+	}).format(amount);
+}
+
+function formatPoints(points: number): string {
+	if (points >= 1000) {
+		const k = points / 1000;
+		const rounded = k % 1 === 0 ? k.toFixed(0) : k.toFixed(1);
+		return `${rounded}k pts`;
+	}
+	return `${points} pts`;
+}
 
 function LandingPageContent() {
 	const router = useRouter();
@@ -530,45 +604,55 @@ function LandingPageContent() {
 							<div>
 								<div className="inline-flex items-center gap-2 rounded-full border border-white/12 bg-white/8 px-4 py-2 text-sm text-white/80 backdrop-blur-xl">
 									<Sparkles className="h-4 w-4 text-[#86EFAC]" />
-									Know when to pay cash, use points, or wait.
+									Compare points vs cash. Get one clean verdict.
 								</div>
 
-								<h1 className="mt-6 text-5xl font-semibold leading-[1.05] tracking-tight text-white sm:text-6xl lg:text-7xl">
-									Travel smarter with the rewards you already have.
+								<h1
+									data-testid="hero-h1"
+									className="mt-6 text-5xl font-semibold leading-[1.05] tracking-tight text-white sm:text-6xl lg:text-7xl"
+								>
+									The fastest way to know if your points are worth using.
 								</h1>
 
+								{HERO_EXAMPLE ? (
+									<p
+										data-testid="hero-savings-anchor"
+										className="mt-6 max-w-xl text-xl leading-8 text-white/85 sm:text-2xl"
+									>
+										Save{" "}
+										<span className="font-semibold text-[#86EFAC]">
+											{formatUSD(HERO_EXAMPLE.savings)}
+										</span>{" "}
+										on a trip like {HERO_EXAMPLE.origin} →{" "}
+										{HERO_EXAMPLE.destination}, {HERO_EXAMPLE.cabin}.
+									</p>
+								) : null}
+
 								<p className="mt-6 max-w-xl text-lg leading-8 text-white/70 sm:text-xl">
-									MyTravelWallet compares points versus cash, helps you understand
-									your rewards balances, and gives you one clean booking verdict
-									before you commit.
+									One search, one verdict — pay cash, use points, or wait.
+									Nothing to set up.
 								</p>
 
 								<div className="mt-8 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
 									<button
-										onClick={() => handleAuthRoute("/signup")}
+										data-testid="hero-primary-cta"
+										onClick={() => setShowTrySearch(true)}
 										className="inline-flex items-center justify-center gap-2 rounded-full bg-[#22C55E] px-6 py-3.5 text-sm font-semibold text-[#07101E] transition hover:bg-[#16A34A]"
 									>
-										Create your account
+										Try a free search
 										<ArrowRight className="h-4 w-4" />
-									</button>
-									<button
-										onClick={() => handleAuthRoute("/login")}
-										className="inline-flex items-center justify-center rounded-full border border-white/12 bg-white/7 px-6 py-3.5 text-sm font-medium text-white/80 transition hover:bg-white/12 hover:text-white"
-									>
-										Sign in
 									</button>
 								</div>
 
-								<button
-									onClick={() => setShowTrySearch((prev) => !prev)}
-									className="mt-5 inline-flex items-center gap-2 text-sm font-medium text-[#86EFAC] transition hover:text-[#bbf7d0]"
-								>
-									<Search className="h-4 w-4" />
-									Or try a search first — no signup needed
-									<ChevronDown
-										className={`h-4 w-4 transition-transform duration-300 ${showTrySearch ? "rotate-180" : ""}`}
-									/>
-								</button>
+								<p className="mt-5 text-sm text-white/55">
+									Already have an account?{" "}
+									<button
+										onClick={() => handleAuthRoute("/login")}
+										className="font-medium text-[#86EFAC] underline-offset-2 hover:underline"
+									>
+										Sign in
+									</button>
+								</p>
 							</div>
 
 							{/* Right: compact sample verdict card — desktop only */}
@@ -577,56 +661,106 @@ function LandingPageContent() {
 									<div className="pointer-events-none absolute inset-x-0 top-0 h-32 bg-[radial-gradient(ellipse_at_top,rgba(134,239,172,0.14),transparent_68%)]" />
 									<div className="pointer-events-none absolute -right-10 bottom-4 h-32 w-32 rounded-full bg-sky-400/10 blur-3xl" />
 
-									<div className="relative flex items-center justify-between gap-3">
-										<div>
-											<p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#86EFAC]/75">
-												Sample verdict
-											</p>
-											<h3 className="mt-1 text-lg font-semibold tracking-tight text-white">EWR → YHZ</h3>
-											<p className="mt-0.5 text-xs text-white/42">Business · 1 traveler</p>
-										</div>
-										<span className="shrink-0 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1.5 text-xs font-semibold text-emerald-200">
-											Use Points
-										</span>
-									</div>
-
-									<div className="relative mt-5 rounded-3xl border border-emerald-400/15 bg-[linear-gradient(180deg,rgba(34,197,94,0.12),rgba(255,255,255,0.04))] p-4">
-										<div className="flex items-end justify-between gap-4">
-											<div>
-												<p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-200/70">Best move</p>
-												<p className="mt-1 text-2xl font-bold tracking-tight text-white">Use points</p>
+									{HERO_EXAMPLE ? (
+										<>
+											<div className="relative flex items-center justify-between gap-3">
+												<div>
+													<p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#86EFAC]/75">
+														Real verdict
+													</p>
+													<h3 className="mt-1 text-lg font-semibold tracking-tight text-white">
+														{HERO_EXAMPLE.origin} → {HERO_EXAMPLE.destination}
+													</h3>
+													<p className="mt-0.5 text-xs text-white/42">
+														{HERO_EXAMPLE.cabin} · 1 traveler
+													</p>
+												</div>
+												<span className="shrink-0 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1.5 text-xs font-semibold text-emerald-200">
+													Use Points
+												</span>
 											</div>
-											<div className="text-right">
-												<p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/35">Value</p>
-												<p className="mt-1 text-2xl font-bold text-emerald-200">4.9¢</p>
+
+											<div className="relative mt-5 rounded-3xl border border-emerald-400/15 bg-[linear-gradient(180deg,rgba(34,197,94,0.12),rgba(255,255,255,0.04))] p-4">
+												<p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-200/70">
+													You save
+												</p>
+												<p className="mt-1 text-4xl font-bold tracking-tight text-white">
+													{formatUSD(HERO_EXAMPLE.savings)}
+												</p>
+												<p className="mt-2 text-xs leading-5 text-white/55">
+													Real verdict from {HERO_EXAMPLE.verdictDate}.
+												</p>
 											</div>
-										</div>
-										<p className="mt-3 text-sm leading-6 text-white/62">
-											The cash fare is high enough that this redemption is worth saving your money for.
-										</p>
-									</div>
 
-									<div className="relative mt-4 grid grid-cols-2 gap-3">
-										<div className="rounded-2xl border border-white/8 bg-white/[0.045] p-3">
-											<p className="text-[10px] uppercase tracking-[0.12em] text-white/36">Cash fare</p>
-											<p className="mt-1 text-lg font-semibold text-white">$3,240</p>
-										</div>
-										<div className="rounded-2xl border border-white/8 bg-white/[0.045] p-3">
-											<p className="text-[10px] uppercase tracking-[0.12em] text-white/36">Award</p>
-											<p className="mt-1 text-lg font-semibold text-white">65k pts</p>
-										</div>
-									</div>
+											<div className="relative mt-4 grid grid-cols-2 gap-3">
+												<div className="rounded-2xl border border-white/8 bg-white/[0.045] p-3">
+													<p className="text-[10px] uppercase tracking-[0.12em] text-white/36">
+														Cash fare
+													</p>
+													<p className="mt-1 text-lg font-semibold text-white">
+														{formatUSD(HERO_EXAMPLE.cashPrice)}
+													</p>
+												</div>
+												<div className="rounded-2xl border border-white/8 bg-white/[0.045] p-3">
+													<p className="text-[10px] uppercase tracking-[0.12em] text-white/36">
+														Points
+													</p>
+													<p className="mt-1 text-lg font-semibold text-white">
+														{formatPoints(HERO_EXAMPLE.pointsCost)}
+													</p>
+													<p className="mt-0.5 text-[10px] text-white/40">
+														{HERO_EXAMPLE.pointsProgram} + {formatUSD(HERO_EXAMPLE.taxes)} tax
+													</p>
+												</div>
+											</div>
+										</>
+									) : (
+										<>
+											<div className="relative flex items-center justify-between gap-3">
+												<div>
+													<p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#86EFAC]/75">
+														Sample verdict shape
+													</p>
+													<h3 className="mt-1 text-lg font-semibold tracking-tight text-white">
+														Your trip → Your verdict
+													</h3>
+													<p className="mt-0.5 text-xs text-white/42">
+														Cash · Points · Saved
+													</p>
+												</div>
+												<span className="shrink-0 rounded-full border border-white/15 bg-white/8 px-3 py-1.5 text-xs font-semibold text-white/70">
+													Verdict
+												</span>
+											</div>
 
-									<div className="relative mt-4 flex flex-wrap gap-2">
-										{/* {["Chase UR", "United", "Amex MR"].map((program) => (
-											<span
-												key={program}
-												className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1 text-[11px] font-medium text-white/55"
-											>
-												{program}
-											</span>
-										))} */}
-									</div>
+											<div className="relative mt-5 rounded-3xl border border-white/10 bg-white/[0.05] p-4">
+												<p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/50">
+													You save
+												</p>
+												<p className="mt-1 text-4xl font-bold tracking-tight text-white/40">
+													$—
+												</p>
+												<p className="mt-2 text-xs leading-5 text-white/40">
+													Real example loads here.
+												</p>
+											</div>
+
+											<div className="relative mt-4 grid grid-cols-2 gap-3">
+												<div className="rounded-2xl border border-white/8 bg-white/[0.045] p-3">
+													<p className="text-[10px] uppercase tracking-[0.12em] text-white/36">
+														Cash fare
+													</p>
+													<p className="mt-1 text-lg font-semibold text-white/40">$—</p>
+												</div>
+												<div className="rounded-2xl border border-white/8 bg-white/[0.045] p-3">
+													<p className="text-[10px] uppercase tracking-[0.12em] text-white/36">
+														Points
+													</p>
+													<p className="mt-1 text-lg font-semibold text-white/40">—</p>
+												</div>
+											</div>
+										</>
+									)}
 
 									<div className="relative mt-5 rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3">
 										<div className="flex items-center justify-between gap-3 text-xs">
@@ -648,14 +782,15 @@ function LandingPageContent() {
 							>
 								<div className="border-b border-white/8 px-6 py-5 sm:px-8">
 									<p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#86EFAC]/90">
-										One free search
+										{PUBLIC_SEARCH_FREE_LIMIT} free {pluralizeSearch()}
 									</p>
 									<h3 className="mt-2 text-2xl font-semibold tracking-tight text-white">
 										Try the same search flow before signing up
 									</h3>
 									<p className="mt-2 max-w-2xl text-sm leading-6 text-white/62">
-										Use the full route/date/cabin flow once for free. After that,
-										create an account to keep comparing trips.
+										Use the full route/date/cabin flow {PUBLIC_SEARCH_FREE_LIMIT}{" "}
+										{pluralizeTime()} for free. After that, create an account to
+										keep comparing trips.
 									</p>
 								</div>
 
@@ -841,6 +976,148 @@ function LandingPageContent() {
 						) : null}
 
 					</section>
+
+					{/* ---------------------------------------------------------------- */}
+					{/* Real verdicts, real savings — empty-state gated.                 */}
+					{/* SAVINGS_EXAMPLES = [] → entire section returns null. No skeleton,*/}
+					{/* no eyebrow, no header. We only advertise savings we can show.    */}
+					{/* ---------------------------------------------------------------- */}
+					{SAVINGS_EXAMPLES.length > 0 ? (
+						<section
+							data-testid="savings-examples-section"
+							className="mx-auto max-w-7xl px-6 py-16"
+						>
+							<div className="mb-10 text-center">
+								<p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#86EFAC]/90">
+									Real verdicts
+								</p>
+								<h2 className="mt-2 text-3xl font-semibold tracking-tight text-white sm:text-4xl">
+									Real searches, real savings.
+								</h2>
+								<p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-white/62">
+									Each card is a single verdict we returned, with cash, points,
+									and what you would have saved by booking with rewards.
+								</p>
+							</div>
+
+							<div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+								{SAVINGS_EXAMPLES.map((ex, i) => (
+									<div
+										key={`${ex.route}-${i}`}
+										data-testid="savings-example-card"
+										className="rounded-2xl border border-white/10 bg-[rgba(7,16,30,0.56)] p-6 backdrop-blur-2xl"
+									>
+										<div className="flex items-center justify-between">
+											<h3 className="text-lg font-semibold tracking-tight text-white">
+												{ex.route}
+											</h3>
+											<span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-emerald-200">
+												{ex.cabin}
+											</span>
+										</div>
+										<p className="mt-0.5 text-xs text-white/45">
+											{ex.monthLabel}
+										</p>
+
+										<dl className="mt-5 space-y-2.5 text-sm">
+											<div className="flex items-baseline justify-between">
+												<dt className="text-white/55">Cash</dt>
+												<dd className="font-semibold text-white">
+													{formatUSD(ex.cashPrice)}
+												</dd>
+											</div>
+											<div className="flex items-baseline justify-between">
+												<dt className="text-white/55">Points</dt>
+												<dd className="text-right font-semibold text-white">
+													{formatPoints(ex.pointsCost)}
+													<span className="ml-1 text-xs font-normal text-white/45">
+														{ex.pointsProgram} + {formatUSD(ex.taxes)} tax
+													</span>
+												</dd>
+											</div>
+											<div className="flex items-baseline justify-between border-t border-white/10 pt-2.5">
+												<dt className="text-[#86EFAC]/90">You save</dt>
+												<dd className="font-semibold text-[#86EFAC]">
+													{formatUSD(ex.savings)}
+												</dd>
+											</div>
+										</dl>
+									</div>
+								))}
+							</div>
+						</section>
+					) : null}
+
+					{/* ---------------------------------------------------------------- */}
+					{/* Social proof — 3 independently-gated sub-blocks (stars + traveler*/}
+					{/* counter + testimonials). Section renders only when at least one */}
+					{/* sub-block has data. We never invent rating numbers or quotes.    */}
+					{/* ---------------------------------------------------------------- */}
+					{(AVG_RATING !== null && RATING_COUNT !== null) ||
+					TRAVELER_COUNT !== null ||
+					TESTIMONIALS.length > 0 ? (
+						<section
+							data-testid="social-proof-section"
+							className="mx-auto max-w-7xl px-6 py-16"
+						>
+							{(AVG_RATING !== null && RATING_COUNT !== null) ||
+							TRAVELER_COUNT !== null ? (
+								<div
+									data-testid="social-proof-stats"
+									className="mb-10 flex flex-wrap items-center justify-center gap-x-12 gap-y-4 text-center"
+								>
+									{AVG_RATING !== null && RATING_COUNT !== null ? (
+										<div data-testid="social-proof-rating">
+											<div className="flex items-center justify-center gap-2">
+												<Star className="h-5 w-5 fill-amber-300 text-amber-300" />
+												<span className="text-2xl font-semibold text-white">
+													{AVG_RATING.toFixed(1)}
+												</span>
+											</div>
+											<p className="mt-1 text-xs text-white/55">
+												{RATING_COUNT.toLocaleString()} ratings
+											</p>
+										</div>
+									) : null}
+									{TRAVELER_COUNT !== null ? (
+										<div data-testid="social-proof-travelers">
+											<div className="text-2xl font-semibold text-white">
+												{TRAVELER_COUNT.toLocaleString()}+
+											</div>
+											<p className="mt-1 text-xs text-white/55">
+												travelers compared
+											</p>
+										</div>
+									) : null}
+								</div>
+							) : null}
+
+							{TESTIMONIALS.length > 0 ? (
+								<div data-testid="social-proof-testimonials">
+									<div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+										{TESTIMONIALS.map((t, i) => (
+											<figure
+												key={`${t.name}-${i}`}
+												data-testid="testimonial-card"
+												className="rounded-2xl border border-white/10 bg-[rgba(7,16,30,0.56)] p-6 backdrop-blur-2xl"
+											>
+												<blockquote className="text-sm leading-6 text-white/80">
+													&ldquo;{t.quote}&rdquo;
+												</blockquote>
+												<figcaption className="mt-4 text-xs text-white/55">
+													<span className="font-medium text-white/80">
+														{t.name}
+													</span>
+													{t.role ? ` · ${t.role}` : ""}
+													{t.verdictRoute ? ` · ${t.verdictRoute}` : ""}
+												</figcaption>
+											</figure>
+										))}
+									</div>
+								</div>
+							) : null}
+						</section>
+					) : null}
 
 					{/* ---------------------------------------------------------------- */}
 					{/* Scroll-driven product flow — DESKTOP ONLY                        */}
