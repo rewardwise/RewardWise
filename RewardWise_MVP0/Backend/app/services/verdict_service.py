@@ -11,6 +11,39 @@ CPP_GRAY_ZONE_MIDPOINT = 1.5
 CPP_USE_POINTS_STRONG_THRESHOLD = 1.8
 CHEAP_CASH_THRESHOLD_USD = 250
 
+# Tier explanation copy is rendered verbatim by the frontend. Any wording
+# change here is a user-visible change. Avoid the words "redemption", "cents
+# per point", and "cpp" — the ELI5 ribbon stays plain English.
+TIER_EXPLANATION_PREMIUM = (
+    "This is one of the best uses of your points for this trip — strong value, "
+    "book if you're ready."
+)
+TIER_EXPLANATION_SOLID = (
+    "Your points stretch further than cash here, but it's not a top-tier "
+    "redemption. Worth doing if you want to preserve cash."
+)
+TIER_EXPLANATION_MARGINAL = (
+    "Barely better than cash. Consider waiting for a stronger date or "
+    "comparing other routes."
+)
+
+
+def _classify_tier(cpp: Optional[float]) -> tuple[Optional[str], Optional[str]]:
+    """Return (verdict_tier, tier_explanation) for a use_points verdict.
+
+    Bands mirror the cpp thresholds above. Callers gate on recommendation —
+    this helper only computes the cpp-band label.
+    """
+    if cpp is None:
+        return None, None
+    if cpp >= CPP_USE_POINTS_STRONG_THRESHOLD:
+        return "premium", TIER_EXPLANATION_PREMIUM
+    if cpp >= CPP_GRAY_ZONE_MIDPOINT:
+        return "solid", TIER_EXPLANATION_SOLID
+    if cpp >= CPP_PAY_CASH_THRESHOLD:
+        return "marginal", TIER_EXPLANATION_MARGINAL
+    return None, None
+
 # Mirrors Frontend/utils/dateInput.ts DEFAULT_CASH_HORIZON_DAYS = 329
 # (SerpAPI / Google Flights GDS bound, established in PR #140). Past this
 # horizon, cash providers legitimately return no data; within it, an empty
@@ -273,6 +306,10 @@ def _base_response(
     }
     pay_cash = recommendation == "pay_cash"
     verdict = f"{verdict_label}: {headline} {explanation}".strip()
+    verdict_tier: Optional[str] = None
+    tier_explanation: Optional[str] = None
+    if recommendation == "use_points" and winner is not None:
+        verdict_tier, tier_explanation = _classify_tier(winner.get("cpp"))
     return {
         "recommendation": recommendation,
         "verdict_label": verdict_label,
@@ -290,6 +327,8 @@ def _base_response(
         "safe_fallback_used": safe_fallback_used,
         "metrics": _metrics(cash_price, winner),
         "next_step": next_step,
+        "verdict_tier": verdict_tier,
+        "tier_explanation": tier_explanation,
     }
 
 
