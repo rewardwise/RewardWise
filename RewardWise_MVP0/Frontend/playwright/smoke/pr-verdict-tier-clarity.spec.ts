@@ -67,6 +67,21 @@ test.describe('PR 3: verdict-tier explanation clarity (badge + threshold + CPP t
 	}) => {
 		await page.goto('/home')
 
+		// Defensive landing-nav guard: prod `/` and authenticated `/home`
+		// may render a marketing landing page with an "Or try a search first
+		// — no signup needed" CTA instead of the search form directly.
+		// Click through it when present; otherwise fall through to the form.
+		const tryASearchCta = page.getByRole('button', {
+			name: /try a search first/i,
+		})
+		if (
+			await tryASearchCta
+				.isVisible({ timeout: 5_000 })
+				.catch(() => false)
+		) {
+			await tryASearchCta.click()
+		}
+
 		const airportInputs = page.getByPlaceholder('City or airport')
 		await airportInputs.first().fill('JFK')
 		await airportInputs.first().press('Enter')

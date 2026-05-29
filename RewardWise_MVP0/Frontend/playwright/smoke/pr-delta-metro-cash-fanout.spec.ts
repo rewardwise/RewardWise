@@ -65,6 +65,19 @@ test.describe('PR-δ: multi-airport metro cash fan-out — cash data flows end-t
 
     await page.goto('/')
 
+    // Defensive landing-nav guard: prod `/` may render a marketing
+    // landing page with an "Or try a search first — no signup needed"
+    // CTA instead of the search form directly. Click through it when
+    // present; otherwise fall through to the form.
+    const tryASearchCta = page.getByRole('button', {
+      name: /try a search first/i,
+    })
+    if (
+      await tryASearchCta.isVisible({ timeout: 5_000 }).catch(() => false)
+    ) {
+      await tryASearchCta.click()
+    }
+
     // Metro selection: type the metro code, the autocomplete surfaces a
     // metro result whose Enter-selection emits the comma-joined CSV.
     const inputs = page.getByPlaceholder('City or airport')
