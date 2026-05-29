@@ -1,5 +1,6 @@
 import { defineConfig, devices } from '@playwright/test'
 import { join } from 'node:path'
+import { getVercelBypassHeader } from './playwright/auth/vercel-bypass'
 
 export default defineConfig({
   // testDir is the playwright/ root so both tests/ (legacy critical-paths)
@@ -24,6 +25,9 @@ export default defineConfig({
     baseURL: process.env.PLAYWRIGHT_BASE_URL || 'https://www.mytravelwallet.ai',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
+    // Bypass Vercel SSO interstitial on preview deployments. No-op on prod
+    // (header is ignored) and an empty object on localhost / unset secret.
+    extraHTTPHeaders: getVercelBypassHeader(),
   },
   projects: [
     // ── Chromium ────────────────────────────────────────────────────────────
