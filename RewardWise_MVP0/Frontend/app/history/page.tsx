@@ -390,7 +390,7 @@ export default function HistoryPage() {
 							) : !user ? (
 								<div className="p-6">
 									<p className="mb-3 text-sm text-gray-400">
-										You need an active team session to view your trip history.
+										Sign in to see your trip history.
 									</p>
 									<button
 										onClick={() => router.push("/")}
@@ -664,16 +664,6 @@ export default function HistoryPage() {
 												</div>
 											)}
 
-											{selectedTrip.calculatedCpp != null && (
-												<div className="rounded-lg bg-gray-950/50 p-3">
-													<p className="text-[10px] uppercase tracking-wider text-gray-500">
-														CPP
-													</p>
-													<p className="mt-1 text-sm font-semibold text-white">
-														{selectedTrip.calculatedCpp.toFixed(2)}¢
-													</p>
-												</div>
-											)}
 										</div>
 
 										{selectedTrip.summary && (

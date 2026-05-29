@@ -3,11 +3,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowRight,
   BarChart3,
-  Bell,
   CalendarClock,
   ChevronRight,
   Clock3,
@@ -18,7 +17,6 @@ import {
   Loader2,
   LogOut,
   Mail,
-  Map,
   PlaneTakeoff,
   Save,
   ShieldCheck,
@@ -50,22 +48,7 @@ type BillingDetails = {
   stripe_subscription_id: string | null;
 };
 
-type NotificationSettings = {
-  watchlistEmailAlerts: boolean;
-  weeklyPortfolioSummary: boolean;
-  dealAlerts: boolean;
-  pointsExpiryWarnings: boolean;
-};
-
-type NotificationKey = keyof NotificationSettings;
-type ProfileSection = "account" | "subscription" | "actions" | "notifications";
-
-const defaultNotificationSettings: NotificationSettings = {
-  watchlistEmailAlerts: true,
-  weeklyPortfolioSummary: true,
-  dealAlerts: true,
-  pointsExpiryWarnings: true,
-};
+type ProfileSection = "account" | "subscription" | "actions";
 
 function formatBillingDate(value?: string | null) {
   if (!value) return null;
@@ -105,15 +88,7 @@ function getStoredDisplayName(userMetadata?: Record<string, unknown> | null) {
 export default function ProfilePage() {
   const router = useRouter();
   const { user, signOut, subscription } = useAuth();
-  const hasLoadedSettings = useRef(false);
-  const settingsStorageKey = useMemo(
-    () => `rw:profile-notification-settings:${user?.id ?? "guest"}`,
-    [user?.id],
-  );
 
-  const [notificationSettings, setNotificationSettings] = useState(
-    defaultNotificationSettings,
-  );
   const [dayPassExpiresAt, setDayPassExpiresAt] = useState<number | null>(null);
   const [billingDetails, setBillingDetails] = useState<BillingDetails | null>(
     null,
@@ -355,61 +330,6 @@ export default function ProfilePage() {
     }
   };
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const raw = localStorage.getItem(settingsStorageKey);
-        if (raw) {
-          const parsed = JSON.parse(raw) as Partial<NotificationSettings>;
-          if (!cancelled) {
-            setNotificationSettings((prev) => ({ ...prev, ...parsed }));
-          }
-        }
-
-        if (user?.id) {
-          const { data, error } = await supabase.auth.getUser();
-          if (error) throw error;
-          const remote = (data.user?.user_metadata?.notification_settings ??
-            null) as Partial<NotificationSettings> | null;
-          if (remote && !cancelled) {
-            setNotificationSettings((prev) => ({ ...prev, ...remote }));
-          }
-        }
-      } catch (error) {
-        console.warn("Could not load notification settings", error);
-      } finally {
-        if (!cancelled) hasLoadedSettings.current = true;
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [settingsStorageKey, user?.id]);
-
-  useEffect(() => {
-    if (!hasLoadedSettings.current) return;
-    try {
-      localStorage.setItem(
-        settingsStorageKey,
-        JSON.stringify(notificationSettings),
-      );
-    } catch (error) {
-      console.warn("Could not save notification settings", error);
-    }
-    if (!user?.id) return;
-    (async () => {
-      const { error } = await supabase.auth.updateUser({
-        data: {
-          notification_settings: notificationSettings,
-        },
-      });
-      if (error) {
-        console.warn("Could not sync notification settings", error);
-      }
-    })();
-  }, [notificationSettings, settingsStorageKey, user?.id]);
-
   const tools = [
     {
       icon: Wallet,
@@ -430,12 +350,6 @@ export default function ProfilePage() {
       page: "/health-check",
     },
     {
-      icon: Map,
-      label: "Transfer Paths",
-      desc: "Find partner transfer routes",
-      page: "/transfer-optimizer",
-    },
-    {
       icon: Coffee,
       label: "Concierge",
       desc: "Human help from $19",
@@ -446,33 +360,6 @@ export default function ProfilePage() {
       label: "Past Searches",
       desc: "Revisit previous verdicts",
       page: "/history",
-    },
-  ];
-
-  const notificationRows: Array<{
-    key: NotificationKey;
-    label: string;
-    desc: string;
-  }> = [
-    {
-      key: "watchlistEmailAlerts",
-      label: "Watchlist alerts",
-      desc: "Get notified when a saved route becomes worth booking.",
-    },
-    {
-      key: "weeklyPortfolioSummary",
-      label: "Weekly portfolio summary",
-      desc: "A simple recap of cards, points, and missed opportunities.",
-    },
-    {
-      key: "dealAlerts",
-      label: "Deal alerts",
-      desc: "Launch offers and unusually strong redemption opportunities.",
-    },
-    {
-      key: "pointsExpiryWarnings",
-      label: "Points expiry warnings",
-      desc: "Reminders before balances become risky.",
     },
   ];
 
@@ -500,19 +387,13 @@ export default function ProfilePage() {
       desc: "Travel tools",
       icon: PlaneTakeoff,
     },
-    {
-      key: "notifications",
-      label: "Notifications",
-      desc: "Email prefs",
-      icon: Bell,
-    },
   ];
 
   const planDescription =
     subscription === "pro"
       ? cancellationScheduled
         ? `Your Pro access stays active through ${accessEndsLabel || "the end of your billing period"}.`
-        : "You have monthly access to RewardWise features."
+        : "You have monthly access to MyTravelWallet features."
       : hasActiveDayPass
         ? `Your day pass is active for ${dayPassTimeLeft}.`
         : "You can still manage your account and upgrade when ready.";
@@ -626,8 +507,6 @@ export default function ProfilePage() {
                       "Your current plan, billing date, and cancellation options."}
                     {activeSection === "actions" &&
                       "Fast paths back into the tools you use most."}
-                    {activeSection === "notifications" &&
-                      "Choose which travel and account alerts you want."}
                   </p>
                 </div>
               </div>
@@ -746,10 +625,6 @@ export default function ProfilePage() {
                             placeholder="Add your name"
                             className="mt-2 min-h-11 w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-emerald-300/60 focus:ring-2 focus:ring-emerald-300/15"
                           />
-                          <p className="mt-2 text-xs text-emerald-50/65">
-                            Saved to your auth profile, so no database migration
-                            is needed.
-                          </p>
                         </div>
 
                         <button
@@ -792,7 +667,7 @@ export default function ProfilePage() {
                       </div>
                       <p className="hidden max-w-md text-sm leading-6 text-slate-400 sm:block">
                         Sign out of this device or permanently delete your
-                        RewardWise account.
+                        MyTravelWallet account.
                       </p>
                     </div>
 
@@ -1015,59 +890,6 @@ export default function ProfilePage() {
                 </div>
               )}
 
-              {activeSection === "notifications" && (
-                <section className="rounded-[1.25rem] border border-white/10 bg-white/[0.045] p-4 sm:rounded-[1.5rem] sm:p-5">
-                  <div className="mb-5 flex items-start justify-between gap-4">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        Preferences
-                      </p>
-                      <h2 className="mt-2 text-xl font-bold text-white">
-                        Notification settings
-                      </h2>
-                      <p className="mt-2 text-sm leading-6 text-slate-400">
-                        Keep the alerts that help you book smarter, turn off the
-                        rest.
-                      </p>
-                    </div>
-                    <Bell className="h-5 w-5 text-cyan-300" />
-                  </div>
-
-                  <div className="divide-y divide-white/10 overflow-hidden rounded-2xl border border-white/10 bg-slate-950/45">
-                    {notificationRows.map((row) => (
-                      <label
-                        key={row.key}
-                        className="flex cursor-pointer items-start justify-between gap-3 p-3 transition hover:bg-white/[0.04] sm:gap-4 sm:p-4"
-                      >
-                        <span className="min-w-0">
-                          <span className="block text-sm font-semibold text-slate-100">
-                            {row.label}
-                          </span>
-                          <span className="mt-1 block text-xs leading-5 text-slate-400">
-                            {row.desc}
-                          </span>
-                        </span>
-
-                        <span className="relative inline-flex shrink-0 items-center">
-                          <input
-                            type="checkbox"
-                            checked={notificationSettings[row.key]}
-                            onChange={(event) =>
-                              setNotificationSettings((prev) => ({
-                                ...prev,
-                                [row.key]: event.target.checked,
-                              }))
-                            }
-                            className="peer sr-only"
-                          />
-                          <span className="h-7 w-12 rounded-full bg-slate-700 transition peer-checked:bg-emerald-400" />
-                          <span className="absolute left-1 h-5 w-5 rounded-full bg-white transition peer-checked:translate-x-5" />
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </section>
-              )}
             </div>
           </section>
         </main>

@@ -90,15 +90,11 @@ export default function AboutPage() {
 							</div>
 
 							<p>
-								Most users save <span className="text-emerald-400 font-semibold">$150+ per trip</span>. Heavy travelers with points across multiple programs? We&apos;re talking <span className="text-emerald-400 font-semibold">thousands of dollars a year</span> that would otherwise be left on the table, or worse, expire unused.
+								The goal is simple: <span className="text-emerald-400 font-semibold">save on flights you&apos;d otherwise overpay for</span>, and put the points you&apos;ve already earned to work before they expire unused.
 							</p>
 
 							<p>
 								But honestly, the savings are just the start. What I really care about is what those savings <span className="text-white font-medium">unlock</span>. A grandparent who gets to be there for a first birthday. A family reunion that actually happens instead of being “maybe next year.” A friend who can finally visit.
-							</p>
-
-							<p>
-								That&apos;s why we&apos;re building <span className="text-white font-medium">Circle</span>, a way for your family and close friends to pool points together, help each other out, and optimize travel for everyone. Your mom&apos;s unused Delta miles could get your sister&apos;s family home for the holidays. Your best friend&apos;s Amex points could top off what you need for that upgrade.
 							</p>
 
 							<p className="text-white font-medium text-lg pt-2">

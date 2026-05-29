@@ -107,7 +107,7 @@ function ForgotPasswordPageInner() {
 								Reset your password
 							</h1>
 							<p className="mt-2 text-sm leading-6 text-white/65">
-								Send a secure reset link to your approved team email.
+								Enter your email and we&apos;ll send you a reset link.
 							</p>
 
 							{error ? (
@@ -153,10 +153,6 @@ function ForgotPasswordPageInner() {
 									)}
 								</button>
 							</form>
-
-							<p className="mt-5 text-center text-xs leading-5 text-white/38">
-								Only approved team accounts can access the product.
-							</p>
 						</>
 					)}
 				</div>
