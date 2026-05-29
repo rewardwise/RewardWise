@@ -2,6 +2,7 @@
 
 import { getStripe } from "@/utils/stripe/client";
 import { getStripeEnv } from "@/utils/stripe/env";
+import type Stripe from "stripe";
 import { checkRateLimit, getClientIp } from "@/utils/security/rate-limit";
 import { createRouteHandlerClient } from "@/utils/supabase/route-handler";
 import { createClient } from "@supabase/supabase-js";
@@ -11,6 +12,7 @@ import {
 	acquirePendingCheckoutLock,
 	releasePendingCheckoutLock,
 } from "@/utils/entitlements/pending-checkout-lock";
+import { isThankYouEmail } from "@/utils/auth/thank-you-accounts";
 import {
 	CONFIRM_SERVER_TEMPORARY,
 	PAY_CHECKOUT_IN_FLIGHT,
@@ -132,30 +134,66 @@ export async function POST(request: Request) {
 			? "MyTravelWallet Pro - PM Test Monthly"
 			: "MyTravelWallet Pro - Monthly";
 
+		const isThankYou = isThankYouEmail(user.email);
+
+		const baseParams: Stripe.Checkout.SessionCreateParams = {
+			mode: "subscription",
+			payment_method_types: ["card"],
+			line_items: [
+				{
+					price_data: {
+						currency: "usd",
+						unit_amount: monthlyAmount,
+						recurring: { interval: "month" },
+						product_data: { name: productName },
+					},
+					quantity: 1,
+				},
+			],
+			success_url: `${origin}/subscribe?success=1`,
+			cancel_url: `${origin}/subscribe?canceled=1&surface=subscribe`,
+			client_reference_id: user.id,
+			customer_email: user.email,
+			metadata: {
+				user_id: user.id,
+				thank_you: isThankYou ? "true" : "false",
+			},
+		};
+
 		let session;
 		try {
-			session = await stripe.checkout.sessions.create({
-				mode: "subscription",
-				payment_method_types: ["card"],
-				line_items: [
-					{
-						price_data: {
-							currency: "usd",
-							unit_amount: monthlyAmount,
-							recurring: { interval: "month" },
-							product_data: { name: productName },
-						},
-						quantity: 1,
-					},
-				],
-				success_url: `${origin}/subscribe?success=1`,
-				cancel_url: `${origin}/subscribe?canceled=1&surface=subscribe`,
-				client_reference_id: user.id,
-				customer_email: user.email,
-				metadata: {
-					user_id: user.id,
-				},
-			});
+			if (isThankYou) {
+				// Allowlisted: try coupon attach first. If the coupon is
+				// rejected (expired past 2026-07-29, deleted, or otherwise
+				// invalid), fall back to trial_period_days so an allowlisted
+				// user NEVER sees a charging session. Fail-closed by design —
+				// these are people we personally emailed "first 2 months free".
+				try {
+					session = await stripe.checkout.sessions.create({
+						...baseParams,
+						discounts: [{ coupon: "mtw-thank-you-2026-05" }],
+					});
+				} catch (couponErr) {
+					if (isCouponRejection(couponErr)) {
+						console.warn(
+							"[thank-you] coupon rejected, falling back to trial_period_days",
+							{
+								user_id: user.id,
+								error_code: (couponErr as { code?: string })?.code,
+								error_message: (couponErr as { message?: string })?.message,
+							},
+						);
+						session = await stripe.checkout.sessions.create({
+							...baseParams,
+							subscription_data: { trial_period_days: 60 },
+						});
+					} else {
+						throw couponErr;
+					}
+				}
+			} else {
+				session = await stripe.checkout.sessions.create(baseParams);
+			}
 		} catch (stripeErr) {
 			// Stripe failure means no checkout session was minted, so
 			// release the lock to avoid a 5-minute user lockout on a
@@ -177,4 +215,20 @@ export async function POST(request: Request) {
 		console.error("subscribe checkout:", e);
 		return NextResponse.json({ error: SUBSCRIBE_GENERIC_FAIL }, { status: 500 });
 	}
+}
+
+// Narrow detector: only retries on coupon-specific Stripe errors. Network/
+// auth/other errors propagate. Triggers the trial_period_days fallback so
+// an allowlisted thank-you user is never billed full price on a coupon
+// expiry past 2026-07-29 or a deleted-coupon misconfiguration.
+function isCouponRejection(err: unknown): boolean {
+	if (!err || typeof err !== "object") return false;
+	const e = err as { type?: string; code?: string; param?: string; message?: string };
+	if (e.type !== "StripeInvalidRequestError") return false;
+	if (e.code === "coupon_expired") return true;
+	if (e.param === "discounts" || e.param === "discounts[0][coupon]") return true;
+	if (e.code === "resource_missing" && typeof e.message === "string" && /coupon/i.test(e.message)) {
+		return true;
+	}
+	return false;
 }
