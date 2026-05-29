@@ -3,7 +3,10 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
-from app.services.flight_pricing.flightapi_provider import get_flightapi_cash_price
+from app.services.flight_pricing.flightapi_provider import (
+    get_flightapi_cash_for_metro,
+    get_flightapi_cash_price,
+)
 from app.services.flight_pricing.mock_provider import get_mock_cash_price
 from app.services.flight_pricing.serpapi_provider import get_serpapi_cash_price
 
@@ -55,6 +58,13 @@ async def _fetch_from_provider(
     max_stops: str = "any",
 ) -> dict:
     if provider == "flightapi":
+        # FlightAPI's positional URL schema can't carry comma-separated
+        # multi-airport. Route metro CSVs (`"SFO,OAK,SJC"`) through the
+        # fan-out helper; single airports stay on the fast path. seats.aero
+        # has no equivalent issue (its query-string API accepts commas
+        # natively), so only the FlightAPI branch needs this split.
+        if "," in origin or "," in destination:
+            return await get_flightapi_cash_for_metro(origin, destination, date, cabin, travelers, return_date, max_stops=max_stops)
         return await get_flightapi_cash_price(origin, destination, date, cabin, travelers, return_date, max_stops=max_stops)
     if provider in {"serpapi", "google_flights"}:
         return await get_serpapi_cash_price(origin, destination, date, cabin, travelers, return_date, max_stops=max_stops)
