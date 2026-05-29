@@ -225,6 +225,105 @@ describe("VerdictCard — Use Points headline shows cash fare baseline (Bug B)",
   });
 });
 
+// Ticket 86b9v4aft: every use_points verdict should explain WHY points won.
+// Three new elements between mainExplanation and the metrics box:
+//   - tier badge ("Premium value · 2.40¢/pt" / "Solid value · 1.60¢/pt" /
+//     "Marginal value · 1.30¢/pt") with color matching the verdict tier
+//   - tier_explanation paragraph (verbatim from BE)
+//   - "Point value" 4th tile in the metrics grid (matches tier color)
+// All three gate on verdict_tier + metrics.cpp + recommendation==use_points.
+describe("VerdictCard — verdict tier explanation surface (use_points)", () => {
+  const STRONG_COPY =
+    "This is one of the best uses of your points for this trip — strong value, book if you're ready.";
+  const SOLID_COPY =
+    "Your points stretch further than cash here, but it's not a top-tier redemption. Worth doing if you want to preserve cash.";
+  const MARGINAL_COPY =
+    "Barely better than cash. Consider waiting for a stronger date or comparing other routes.";
+
+  function renderTier(tier: "premium" | "solid" | "marginal", cpp: number, copy: string) {
+    renderCard({
+      verdict_tier: tier,
+      tier_explanation: copy,
+      metrics: { cash_price: 800, points_cost: 35000, taxes: 5.6, estimated_savings: 200, cpp },
+    } as Partial<typeof baseVerdict>);
+  }
+
+  it("strong (premium): badge + threshold line + cpp tile render with emerald tone", () => {
+    renderTier("premium", 2.4, STRONG_COPY);
+    const badge = container.querySelector('[data-testid="verdict-tier-badge"]');
+    expect(badge, "tier badge must render for premium").not.toBeNull();
+    expect(badge?.getAttribute("data-tier")).toBe("premium");
+    expect(badge?.textContent).toContain("Premium value");
+    expect(badge?.textContent).toContain("2.40¢/pt");
+    expect(badge?.className).toContain("emerald");
+
+    const line = container.querySelector('[data-testid="verdict-tier-explanation"]');
+    expect(line?.textContent).toBe(STRONG_COPY);
+
+    const cppTile = container.querySelector('[data-testid="verdict-cpp-tile"]');
+    expect(cppTile, "CPP tile must render in metrics box").not.toBeNull();
+    expect(cppTile?.textContent).toContain("Point value");
+    expect(cppTile?.textContent).toContain("2.40¢/pt");
+  });
+
+  it("solid: badge renders with amber tone and exact solid copy", () => {
+    renderTier("solid", 1.6, SOLID_COPY);
+    const badge = container.querySelector('[data-testid="verdict-tier-badge"]');
+    expect(badge?.getAttribute("data-tier")).toBe("solid");
+    expect(badge?.textContent).toContain("Solid value");
+    expect(badge?.textContent).toContain("1.60¢/pt");
+    expect(badge?.className).toContain("amber");
+
+    const line = container.querySelector('[data-testid="verdict-tier-explanation"]');
+    expect(line?.textContent).toBe(SOLID_COPY);
+  });
+
+  it("marginal: badge renders with slate tone and exact marginal copy", () => {
+    // Marginal tier (1.25-1.49 cpp) does not currently fire for use_points in
+    // production (cpp 1.25-1.49 routes to pay_cash branch). Tested here to
+    // lock the wiring in case the BE bands are ever loosened.
+    renderTier("marginal", 1.3, MARGINAL_COPY);
+    const badge = container.querySelector('[data-testid="verdict-tier-badge"]');
+    expect(badge?.getAttribute("data-tier")).toBe("marginal");
+    expect(badge?.textContent).toContain("Marginal value");
+    expect(badge?.textContent).toContain("1.30¢/pt");
+    expect(badge?.className).toContain("slate");
+
+    const line = container.querySelector('[data-testid="verdict-tier-explanation"]');
+    expect(line?.textContent).toBe(MARGINAL_COPY);
+  });
+
+  it("does not render tier surface when verdict_tier is null", () => {
+    renderCard({
+      metrics: { cash_price: 800, points_cost: 35000, taxes: 5.6, estimated_savings: 200, cpp: 2.4 },
+    } as Partial<typeof baseVerdict>);
+    expect(container.querySelector('[data-testid="verdict-tier-badge"]')).toBeNull();
+    expect(container.querySelector('[data-testid="verdict-tier-explanation"]')).toBeNull();
+    expect(container.querySelector('[data-testid="verdict-cpp-tile"]')).toBeNull();
+  });
+
+  it("does not render tier surface on pay_cash even if tier fields are set", () => {
+    renderCard({
+      recommendation: "pay_cash",
+      pay_cash: true,
+      verdict_tier: "marginal",
+      tier_explanation: MARGINAL_COPY,
+      metrics: { cash_price: 169, points_cost: 35000, taxes: 5.6, estimated_savings: 50, cpp: 1.3 },
+    } as Partial<typeof baseVerdict>);
+    expect(container.querySelector('[data-testid="verdict-tier-badge"]')).toBeNull();
+    expect(container.querySelector('[data-testid="verdict-tier-explanation"]')).toBeNull();
+  });
+
+  it("tier explanation copy contains no compound jargon", () => {
+    // ELI5 ribbon: forbid the phrases that would signal the jargon mode.
+    // The bare word "redemption" is permitted (e.g. "top-tier redemption").
+    const forbidden = /redemption rate|cents per point|\bcpp\b/i;
+    expect(STRONG_COPY).not.toMatch(forbidden);
+    expect(SOLID_COPY).not.toMatch(forbidden);
+    expect(MARGINAL_COPY).not.toMatch(forbidden);
+  });
+});
+
 // Ticket 86ba11m1f: guest landing-page verdicts default to "pay_cash" because
 // no wallet info is available. Add a "Why cash?" explainer + static wallet
 // examples to convert guests to signup. Gated on publicPreview && pay_cash.

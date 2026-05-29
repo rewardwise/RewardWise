@@ -14,7 +14,11 @@ import pytest
 
 from app.services.verdict_service import (
     CASH_HORIZON_DAYS,
+    TIER_EXPLANATION_MARGINAL,
+    TIER_EXPLANATION_PREMIUM,
+    TIER_EXPLANATION_SOLID,
     _build_next_step,
+    _classify_tier,
     _is_past_cash_horizon,
     generate_verdict,
 )
@@ -365,6 +369,84 @@ def test_missing_cash_upstream_passes_into_response_payload():
     )
     assert result["data_quality"] == "missing_cash_upstream"
     assert result["missing_sources"] == ["cash_price"]
+
+
+# ---- Verdict tier badge + explanation (ticket 86b9v4aft) --------------------
+
+@pytest.mark.parametrize(
+    "cpp,expected_tier,expected_copy",
+    [
+        (2.4, "premium", TIER_EXPLANATION_PREMIUM),
+        (1.8, "premium", TIER_EXPLANATION_PREMIUM),
+        (1.6, "solid", TIER_EXPLANATION_SOLID),
+        (1.5, "solid", TIER_EXPLANATION_SOLID),
+        (1.3, "marginal", TIER_EXPLANATION_MARGINAL),
+        (1.25, "marginal", TIER_EXPLANATION_MARGINAL),
+    ],
+)
+def test_classify_tier_maps_cpp_to_tier_and_copy(cpp, expected_tier, expected_copy):
+    tier, explanation = _classify_tier(cpp)
+    assert tier == expected_tier
+    assert explanation == expected_copy
+
+
+@pytest.mark.parametrize("cpp", [None, 0.5, 1.0, 1.24])
+def test_classify_tier_below_floor_returns_none(cpp):
+    """cpp below pay_cash threshold (or missing) yields no tier label."""
+    tier, explanation = _classify_tier(cpp)
+    assert tier is None
+    assert explanation is None
+
+
+def test_use_points_strong_emits_premium_tier():
+    """cpp >= 1.8 with use_points: verdict_tier=premium, full explanation copy."""
+    result = _run(cash_price=800.0, award_options=[_award(cpp=2.4)])
+    assert result["recommendation"] == "use_points"
+    assert result["verdict_tier"] == "premium"
+    assert result["tier_explanation"] == TIER_EXPLANATION_PREMIUM
+    assert result["metrics"]["cpp"] == pytest.approx(2.4)
+
+
+def test_use_points_gray_zone_emits_solid_tier():
+    """1.5 <= cpp < 1.8 with use_points: verdict_tier=solid."""
+    result = _run(cash_price=800.0, award_options=[_award(cpp=1.6)])
+    assert result["recommendation"] == "use_points"
+    assert result["verdict_tier"] == "solid"
+    assert result["tier_explanation"] == TIER_EXPLANATION_SOLID
+    assert result["metrics"]["cpp"] == pytest.approx(1.6)
+
+
+def test_pay_cash_omits_tier_fields():
+    """pay_cash recommendation: verdict_tier and tier_explanation both None.
+
+    The marginal cpp band (1.25-1.49) currently routes to pay_cash, so verdict_tier
+    must be None on the wire even though _classify_tier would return 'marginal'.
+    """
+    result = _run(cash_price=800.0, award_options=[_award(cpp=1.3)])
+    assert result["recommendation"] == "pay_cash"
+    assert result["verdict_tier"] is None
+    assert result["tier_explanation"] is None
+
+
+def test_wait_omits_tier_fields():
+    """Wait verdicts (no data) emit no tier fields."""
+    result = _run(cash_price=None, award_options=[])
+    assert result["recommendation"] == "wait"
+    assert result["verdict_tier"] is None
+    assert result["tier_explanation"] is None
+
+
+def test_tier_explanation_contains_no_jargon():
+    """ELI5 ribbon: tier copy must never include 'redemption rate', 'cents per
+    point', or the literal 'cpp' token. The full sentence may mention the word
+    'redemption' (e.g. 'top-tier redemption') — guard against the compound
+    jargon phrases only.
+    """
+    forbidden = ["redemption rate", "cents per point", "cpp"]
+    for copy in (TIER_EXPLANATION_PREMIUM, TIER_EXPLANATION_SOLID, TIER_EXPLANATION_MARGINAL):
+        lowered = copy.lower()
+        for phrase in forbidden:
+            assert phrase not in lowered, f"tier copy leaked jargon '{phrase}': {copy}"
 
 
 def test_legacy_missing_cash_literal_no_longer_emitted():

@@ -326,8 +326,30 @@ export default function VerdictCard({
   const displayPoints = metrics.points_cost ?? (bestOutbound ? bestOutbound.points * travelers : winner?.points ? winner.points * travelers : null);
   const displayTaxes = metrics.taxes ?? bestOutbound?.taxes ?? winner?.taxes ?? null;
   const displaySavings = metrics.estimated_savings ?? null;
+  const displayCpp = metrics.cpp ?? bestOutbound?.cpp ?? winner?.cpp ?? null;
   const hasAward = displayPoints != null && displayPoints > 0;
   const mainExplanation = verdict.explanation || verdict.verdict || "Zoe compared the live cash fare against the strongest award option available for this trip.";
+
+  const verdictTier = recommendation === "use_points" ? verdict.verdict_tier ?? null : null;
+  const tierExplanation = recommendation === "use_points" ? verdict.tier_explanation ?? null : null;
+  const tierLabel = (() => {
+    if (verdictTier === "premium") return "Premium value";
+    if (verdictTier === "solid") return "Solid value";
+    if (verdictTier === "marginal") return "Marginal value";
+    return null;
+  })();
+  const tierClasses = (() => {
+    if (verdictTier === "premium") return "border-emerald-400/40 bg-emerald-500/15 text-emerald-100";
+    if (verdictTier === "solid") return "border-amber-400/40 bg-amber-500/15 text-amber-100";
+    if (verdictTier === "marginal") return "border-slate-400/30 bg-slate-500/15 text-slate-200";
+    return "";
+  })();
+  const tierTileValueClass = (() => {
+    if (verdictTier === "premium") return "text-emerald-400";
+    if (verdictTier === "solid") return "text-amber-300";
+    if (verdictTier === "marginal") return "text-slate-200";
+    return "text-white";
+  })();
 
   const recommendationHeadline = (() => {
     if (recommendation === "use_points") {
@@ -787,6 +809,25 @@ export default function VerdictCard({
               <p className="mt-5 max-w-4xl text-lg font-medium leading-8 text-slate-300 md:text-xl">
                 {mainExplanation}
               </p>
+              {tierLabel && displayCpp != null && (
+                <div className="mt-4 flex flex-col gap-2 md:max-w-3xl">
+                  <span
+                    data-testid="verdict-tier-badge"
+                    data-tier={verdictTier ?? undefined}
+                    className={`inline-flex w-fit items-center rounded-full border px-3 py-1 text-sm font-semibold ${tierClasses}`}
+                  >
+                    {tierLabel} · {displayCpp.toFixed(2)}¢/pt
+                  </span>
+                  {tierExplanation && (
+                    <p
+                      data-testid="verdict-tier-explanation"
+                      className="text-sm leading-6 text-slate-300"
+                    >
+                      {tierExplanation}
+                    </p>
+                  )}
+                </div>
+              )}
               {searchedRangeCopy && hasBetterDate && (
                 <div
                   data-testid="best-date-callout-prominent"
@@ -811,7 +852,9 @@ export default function VerdictCard({
               )}
 
               <div className="mt-8 rounded-2xl bg-white/[0.04] p-5 md:p-6">
-                <div className="grid gap-5 md:grid-cols-3">
+                <div
+                  className={`grid gap-5 ${tierLabel && displayCpp != null ? "md:grid-cols-4" : "md:grid-cols-3"}`}
+                >
                   <div>
                     <p className="text-sm font-semibold text-slate-400">Cash fare</p>
                     <p className="mt-2 text-2xl font-bold text-white">{fmtMoney(displayCashPrice, displayCashPrice != null && displayCashPrice % 1 !== 0 ? 2 : 0)}</p>
@@ -829,6 +872,14 @@ export default function VerdictCard({
                       {displaySavings != null ? `~${fmtMoney(displaySavings, 0)}` : "—"}
                     </p>
                   </div>
+                  {tierLabel && displayCpp != null && (
+                    <div data-testid="verdict-cpp-tile">
+                      <p className="text-sm font-semibold text-slate-400">Point value</p>
+                      <p className={`mt-2 text-2xl font-bold ${tierTileValueClass}`}>
+                        {displayCpp.toFixed(2)}¢/pt
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <p className="mt-5 text-base leading-7 text-slate-300">{reasoningCopy}</p>

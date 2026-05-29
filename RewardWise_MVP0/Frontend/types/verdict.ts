@@ -4,6 +4,8 @@ export type Confidence = "high" | "medium" | "low";
 
 export type Recommendation = "use_points" | "pay_cash" | "wait";
 
+export type VerdictTier = "premium" | "solid" | "marginal" | "pay_cash" | "wait";
+
 export interface VerdictWinner {
 	program: string | null;
 	points: number | null;
@@ -46,6 +48,9 @@ export interface Verdict {
 		points_cost?: number | null;
 		taxes?: number | null;
 		estimated_savings?: number | null;
+		cpp?: number | null;
 	};
 	next_step?: NextStep | null;
+	verdict_tier?: VerdictTier | null;
+	tier_explanation?: string | null;
 }
