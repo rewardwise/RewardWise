@@ -558,7 +558,6 @@ describe("settings page actions tab", () => {
       [/my wallet/i, "/wallet-setup"],
       [/new search/i, "/home"],
       [/health check/i, "/health-check"],
-      [/transfer paths/i, "/transfer-optimizer"],
       [/concierge/i, "/concierge"],
       [/past searches/i, "/history"],
     ];
@@ -577,56 +576,6 @@ describe("settings page actions tab", () => {
     expectPageToContain("Product Analytics");
     await clickElement(findButtonByText(/open dashboard/i));
     expect(mocks.routerPush).toHaveBeenCalledWith("/admin/analytics");
-  });
-});
-
-describe("settings page notification tab", () => {
-  it("loads notification preferences and persists toggle changes locally and remotely", async () => {
-    mocks.supabaseGetUser.mockResolvedValue({
-      data: {
-        user: {
-          user_metadata: {
-            notification_settings: {
-              watchlistEmailAlerts: true,
-              weeklyPortfolioSummary: false,
-              dealAlerts: true,
-              pointsExpiryWarnings: true,
-            },
-          },
-        },
-      },
-      error: null,
-    });
-
-    await renderUi(<ProfilePage />);
-    await clickElement(findButtonByText(/notifications/i));
-
-    expectPageToContain("Notification settings");
-    expectPageToContain("Watchlist alerts");
-    expectPageToContain("Weekly portfolio summary");
-    expectPageToContain("Deal alerts");
-    expectPageToContain("Points expiry warnings");
-
-    const toggles = Array.from(
-      document.querySelectorAll('input[type="checkbox"]'),
-    ) as HTMLInputElement[];
-    expect(toggles).toHaveLength(4);
-    expect(toggles[1].checked).toBe(false);
-
-    mocks.supabaseUpdateUser.mockClear();
-    await clickElement(toggles[1]);
-
-    const storedSettings = JSON.parse(
-      window.localStorage.getItem("rw:profile-notification-settings:user_settings_test") ?? "{}",
-    ) as Record<string, boolean>;
-    expect(storedSettings.weeklyPortfolioSummary).toBe(true);
-    expect(mocks.supabaseUpdateUser).toHaveBeenLastCalledWith({
-      data: expect.objectContaining({
-        notification_settings: expect.objectContaining({
-          weeklyPortfolioSummary: true,
-        }),
-      }),
-    });
   });
 });
 

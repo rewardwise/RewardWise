@@ -10,12 +10,10 @@ import { createClient } from "@/utils/supabase/client";
 import {
 	Plane,
 	Home,
-	Globe,
 	Clock,
 	User,
 	Info,
 	Bell,
-	AlertTriangle,
 	Gift,
 	TrendingUp,
 	Check,
@@ -107,13 +105,6 @@ export default function TopNav() {
 				]
 			: []),
 		{
-			id: "static-1",
-			icon: AlertTriangle,
-			title: "Beta access is limited",
-			desc: "Only approved testers can use Zoe during this preview.",
-			page: "/home",
-		},
-		{
 			id: "static-2",
 			icon: Gift,
 			title: "Feedback helps improve Zoe",
@@ -127,7 +118,6 @@ export default function TopNav() {
 	const tabs = [
 		{ id: "home", icon: Home, label: "Home", page: "/home" },
 		{ id: "trips", icon: Plane, label: "Trips", page: "/trips" },
-		{ id: "circle", icon: Globe, label: "Circle", page: "/circle" },
 		{ id: "history", icon: Clock, label: "History", page: "/history" },
 		{ id: "profile", icon: User, label: "Profile", page: "/profile" },
 		{ id: "about", icon: Info, label: "About", page: "/about" },

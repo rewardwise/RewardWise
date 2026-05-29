@@ -8,7 +8,6 @@ import { createClient } from "@/utils/supabase/client";
 import {
 	CheckCircle,
 	Coffee,
-	Star,
 	Check,
 	Crown,
 	Loader2,
@@ -259,9 +258,6 @@ export default function ConciergePage() {
 									<Crown className="w-5 h-5" />
 									{hasPaidPremium ? "Book another Premium trip" : "Get Premium"}
 								</button>
-								<p className="text-gray-500 text-xs text-center mt-2">
-									Avg savings: $2,400+ per trip
-								</p>
 							</div>
 						</div>
 
@@ -324,9 +320,6 @@ export default function ConciergePage() {
 										? "Book another Standard trip"
 										: "Get Standard"}
 								</button>
-								<p className="text-gray-500 text-xs text-center mt-2">
-									Avg savings: $800+ per trip
-								</p>
 							</div>
 						</div>
 					</div>
@@ -343,17 +336,6 @@ export default function ConciergePage() {
 					</div>
 				</div>
 
-				<div className="mt-8 text-center max-w-md">
-					<div className="flex items-center justify-center gap-1 mb-1">
-						{[1, 2, 3, 4, 5].map((s) => (
-							<Star key={s} className="w-4 h-4 text-amber-400 fill-amber-400" />
-						))}
-					</div>
-					<p className="text-gray-400 text-sm">
-						&quot;Saved us $3,200 on our anniversary trip to Tokyo. Worth every
-						penny.&quot; - Sarah K.
-					</p>
-				</div>
 			</div>
 		</div>
 	);

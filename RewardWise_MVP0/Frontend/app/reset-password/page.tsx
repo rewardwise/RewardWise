@@ -90,7 +90,7 @@ export default function ResetPasswordPage() {
 								Set new password
 							</h1>
 							<p className="mt-2 text-sm leading-6 text-white/65">
-								Choose a new password for your approved team account.
+								Choose a new password for your account.
 							</p>
 
 							{error ? (

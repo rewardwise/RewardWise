@@ -135,7 +135,6 @@ const PAGE_LABELS: Record<string, string> = {
 	"/about": "About",
 	"/trips": "Trips",
 	"/history": "History",
-	"/circle": "Circle",
 	"/wallet": "Wallet",
 	"/login": "Login",
 	"/auth/callback": "Auth callback",
