@@ -57,11 +57,33 @@ def _award(*, program="united", points=60000, taxes=50.0, cpp=1.5, direct=True, 
     }
 
 
+def _award_for_matched_cpp(
+    target_cpp,
+    *,
+    cash_price=800.0,
+    taxes=50.0,
+    program="united",
+    direct=True,
+    remaining_seats=4,
+):
+    """Award whose matched-scope cpp == target_cpp under default (1 pax, one-way).
+
+    Recommendation gates read matched_cpp = (cash - taxes) / (points × travelers × legs).
+    The seats.aero `cpp` field on the award object no longer drives anything — it stays
+    on winner_payload for the FE per-leg display only.
+    """
+    points = round((cash_price - taxes) / target_cpp * 100)
+    return _award(
+        program=program, points=points, taxes=taxes, cpp=target_cpp,
+        direct=direct, remaining_seats=remaining_seats,
+    )
+
+
 # ---- CPP threshold branches ---------------------------------------------------
 
 def test_T1_cpp_1p0_returns_pay_cash():
-    """cpp=1.0 sits in pay_cash with medium confidence; high-confidence band is cpp<1.0 OR cash<=200."""
-    result = _run(cash_price=800.0, award_options=[_award(cpp=1.0)])
+    """matched_cpp=1.0 sits in pay_cash with medium confidence; high-confidence band is cpp<1.0 OR cash<=200."""
+    result = _run(cash_price=800.0, award_options=[_award_for_matched_cpp(1.0)])
     assert result["recommendation"] == "pay_cash"
     assert result["verdict_label"] == "Pay Cash"
     assert result["confidence"] == "medium"
@@ -69,20 +91,20 @@ def test_T1_cpp_1p0_returns_pay_cash():
 
 def test_T1b_cpp_0p9_with_high_cash_returns_pay_cash_high_confidence():
     """Locks the high-confidence band boundary (cpp strictly < 1.0)."""
-    result = _run(cash_price=800.0, award_options=[_award(cpp=0.9)])
+    result = _run(cash_price=800.0, award_options=[_award_for_matched_cpp(0.9)])
     assert result["recommendation"] == "pay_cash"
     assert result["confidence"] == "high"
 
 
 def test_T2_cpp_1p24_just_below_threshold_returns_pay_cash():
-    result = _run(cash_price=800.0, award_options=[_award(cpp=1.24)])
+    result = _run(cash_price=800.0, award_options=[_award_for_matched_cpp(1.24)])
     assert result["recommendation"] == "pay_cash"
     assert result["verdict_label"] == "Pay Cash"
 
 
 def test_T3_cpp_1p25_lower_gray_zone_returns_pay_cash():
-    """Flipped in Phase 3: 1.25 <= cpp < 1.5 is now pay_cash gray zone."""
-    result = _run(cash_price=800.0, award_options=[_award(cpp=1.25)])
+    """1.25 <= matched_cpp < 1.5 is pay_cash gray zone."""
+    result = _run(cash_price=800.0, award_options=[_award_for_matched_cpp(1.25)])
     assert result["recommendation"] == "pay_cash"
     assert result["verdict_label"] == "Pay Cash"
     assert result["confidence"] == "medium"
@@ -90,8 +112,8 @@ def test_T3_cpp_1p25_lower_gray_zone_returns_pay_cash():
 
 
 def test_T4_cpp_1p5_gray_zone_midpoint_returns_use_points():
-    """Flipped in Phase 3: 1.5 <= cpp < 1.8 is now use_points gray zone."""
-    result = _run(cash_price=800.0, award_options=[_award(cpp=1.5)])
+    """1.5 <= matched_cpp < 1.8 is use_points gray zone."""
+    result = _run(cash_price=800.0, award_options=[_award_for_matched_cpp(1.5)])
     assert result["recommendation"] == "use_points"
     assert result["verdict_label"] == "Use Points"
     assert result["confidence"] == "medium"
@@ -99,8 +121,8 @@ def test_T4_cpp_1p5_gray_zone_midpoint_returns_use_points():
 
 
 def test_T5_cpp_1p79_upper_gray_zone_returns_use_points():
-    """Flipped in Phase 3: 1.5 <= cpp < 1.8 is now use_points gray zone."""
-    result = _run(cash_price=800.0, award_options=[_award(cpp=1.79)])
+    """1.5 <= matched_cpp < 1.8 is use_points gray zone."""
+    result = _run(cash_price=800.0, award_options=[_award_for_matched_cpp(1.79)])
     assert result["recommendation"] == "use_points"
     assert result["verdict_label"] == "Use Points"
     assert result["confidence"] == "medium"
@@ -108,14 +130,14 @@ def test_T5_cpp_1p79_upper_gray_zone_returns_use_points():
 
 
 def test_T6_cpp_1p8_exact_returns_use_points_high_confidence():
-    result = _run(cash_price=800.0, award_options=[_award(cpp=1.8)])
+    result = _run(cash_price=800.0, award_options=[_award_for_matched_cpp(1.8)])
     assert result["recommendation"] == "use_points"
     assert result["verdict_label"] == "Use Points"
     assert result["confidence"] == "high"
 
 
 def test_T7_cpp_2p0_returns_use_points_high_confidence():
-    result = _run(cash_price=800.0, award_options=[_award(cpp=2.0)])
+    result = _run(cash_price=800.0, award_options=[_award_for_matched_cpp(2.0)])
     assert result["recommendation"] == "use_points"
     assert result["confidence"] == "high"
 
@@ -171,16 +193,14 @@ def test_T12_awards_only_no_cash_in_wallet_match_returns_wait():
 # ---- Response shape ----------------------------------------------------------
 
 def test_T13_response_shape_contains_critical_fields():
-    """Default _award (points=60000, taxes=50) + cash=800, one-way × 1 traveler.
+    """Response shape under a strong-use_points verdict.
 
-    metrics.cpp is matched-scope, computed from cash − taxes / points_cost:
-        (800 - 50) / 60000 × 100 = 1.25¢
-    This is intentionally distinct from winner.cpp (2.0) — winner.cpp is the
-    per-pax / one-way score that still drives the recommendation gate, and
-    is preserved on the winner payload, but metrics.cpp is the user-facing
-    matched-scope number that reconciles with savings.
+    cash=800, taxes=50, points=37500, one-way × 1 traveler ⇒
+        matched_cpp = (800 - 50) / 37500 × 100 = 2.0¢ → use_points strong.
+    metrics.cpp == 2.0 == winner.cpp here (single pax, one-way: no scope mismatch);
+    multi-traveler / RT cases below cover the scopes diverging.
     """
-    result = _run(cash_price=800.0, award_options=[_award(cpp=2.0)])
+    result = _run(cash_price=800.0, award_options=[_award(points=37500, taxes=50.0, cpp=2.0)])
     for key in (
         "recommendation",
         "verdict_label",
@@ -200,50 +220,56 @@ def test_T13_response_shape_contains_critical_fields():
         "pay_cash",
     ):
         assert key in result, f"missing field: {key}"
-    assert result["metrics"]["cpp"] == pytest.approx(1.25)
-    assert result["metrics"]["points_cost"] == 60000
-    assert result["metrics"]["points_cost_per_traveler"] == 60000
+    assert result["recommendation"] == "use_points"
+    assert result["metrics"]["cpp"] == pytest.approx(2.0)
+    assert result["metrics"]["points_cost"] == 37500
+    assert result["metrics"]["points_cost_per_traveler"] == 37500
     assert result["metrics"]["travelers"] == 1
+    assert result["winner"]["cpp"] == 2.0
     assert result["pay_cash"] is False
 
 
 # ---- Cash-cheap override (documented sharp boundary at $251) -----------------
 
 def test_T14_cash_under_250_overrides_use_points_cpp_returns_pay_cash():
-    """cash_price <= 250 forces pay_cash even when cpp would otherwise pick use_points.
+    """cash_price <= 250 forces pay_cash regardless of matched_cpp.
 
     Pre-existing sharp boundary at $251 documented but out of scope for this PR.
     """
-    result = _run(cash_price=200.0, award_options=[_award(cpp=1.6)])
+    result = _run(cash_price=200.0, award_options=[_award_for_matched_cpp(1.6, cash_price=200.0)])
     assert result["recommendation"] == "pay_cash"
     assert result["verdict_label"] == "Pay Cash"
 
 
-# ---- Gray-zone messaging (new in Phase 3) -----------------------------------
+# ---- Gray-zone messaging ----------------------------------------------------
 
 def test_T15_cpp_1p3_pay_cash_gray_zone_messaging():
-    """1.25 <= cpp < 1.5: pay_cash with gray-zone framing."""
-    result = _run(cash_price=800.0, award_options=[_award(program="united", points=70000, cpp=1.3)])
+    """1.25 <= matched_cpp < 1.5: pay_cash with gray-zone framing.
+    cash=800, taxes=50, points=57692 ⇒ matched_cpp = (800 - 50) / 57692 × 100 ≈ 1.3¢.
+    """
+    result = _run(cash_price=800.0, award_options=[_award(program="united", points=57692, taxes=50.0, cpp=1.3)])
     assert result["recommendation"] == "pay_cash"
     assert result["verdict_label"] == "Pay Cash"
     assert result["confidence"] == "medium"
     assert "Pay cash" in result["headline"]
     assert "below the threshold" in result["explanation"]
     assert "United" in result["explanation"]
-    assert "70,000 points" in result["explanation"]
+    assert "57,692 points" in result["explanation"]
     assert result["next_step"] is None
 
 
 def test_T16_cpp_1p7_use_points_gray_zone_messaging():
-    """1.5 <= cpp < 1.8: use_points with gray-zone framing."""
-    result = _run(cash_price=800.0, award_options=[_award(program="aeroplan", points=55000, cpp=1.7)])
+    """1.5 <= matched_cpp < 1.8: use_points with gray-zone framing.
+    cash=800, taxes=50, points=44118 ⇒ matched_cpp = (800 - 50) / 44118 × 100 ≈ 1.7¢.
+    """
+    result = _run(cash_price=800.0, award_options=[_award(program="aeroplan", points=44118, taxes=50.0, cpp=1.7)])
     assert result["recommendation"] == "use_points"
     assert result["verdict_label"] == "Use Points"
     assert result["confidence"] == "medium"
     assert "Use points" in result["headline"]
     assert "beats paying cash" in result["explanation"]
     assert "Aeroplan" in result["explanation"]
-    assert "55,000 points" in result["explanation"]
+    assert "44,118 points" in result["explanation"]
     assert result["next_step"] is None
 
 
@@ -542,3 +568,117 @@ def test_legacy_missing_cash_literal_no_longer_emitted():
             date=_date_offset(offset),
         )
         assert result["data_quality"] != "missing_cash"
+
+
+# ---- Matched-scope gate (this PR) -------------------------------------------
+#
+# Gates read matched_cpp = (cash − total_taxes) / (points_per_pax × travelers ×
+# legs) × 100, NOT winner.cpp from the seats.aero object. On multi-traveler RTs
+# winner.cpp overstates value by `legs × travelers`; the old gate biased toward
+# use_points on marginal redemptions. These tests pin the new shape.
+
+def test_matched_scope_multitraveler_oneway_flips_to_pay_cash():
+    """3-pax one-way, winner.cpp=3.6 looked strong; matched_cpp=1.2 is sub-threshold.
+
+    cash=$900, 1 outbound award @ 25k pts × 3 travelers, no taxes.
+      winner.cpp  = (900 - 0) / 25000 × 100 = 3.6¢/pt   (old gate ⇒ use_points strong)
+      matched_cpp = (900 - 0) / (25000 × 3) × 100 = 1.2¢/pt  (new gate ⇒ pay_cash)
+
+    Locks the flip the PR ships.
+    """
+    result = _run(
+        cash_price=900.0,
+        travelers=3,
+        award_options=[_award(points=25000, taxes=0.0, cpp=3.6)],
+    )
+    assert result["recommendation"] == "pay_cash"
+    assert result["verdict_label"] == "Pay Cash"
+    # winner.cpp stays on the payload for the FE per-leg display.
+    assert result["winner"]["cpp"] == 3.6
+    # metrics.cpp is the matched-scope number the user actually experiences.
+    assert result["metrics"]["cpp"] == pytest.approx(1.2)
+
+
+def test_matched_scope_multitraveler_rt_sums_return_into_total():
+    """3-pax RT, both legs award'd, matched_cpp lands in pay_cash gray zone.
+
+    cash=$1200, outbound 20k + return 20k = 40k per pax, × 3 = 120k total.
+    matched_cpp = 1200 / 120000 × 100 = 1.0¢/pt → forced pay_cash (sub-1.25¢).
+    """
+    outbound = _award(points=20000, taxes=0.0, cpp=2.0)
+    inbound = _award(points=20000, taxes=0.0, cpp=2.0)
+    result = _run(
+        cash_price=1200.0,
+        travelers=3,
+        is_roundtrip=True,
+        return_date="2026-09-29",
+        award_options=[outbound],
+        return_award_options=[inbound],
+    )
+    assert result["recommendation"] == "pay_cash"
+    assert result["metrics"]["cpp"] == pytest.approx(1.0)
+    assert result["metrics"]["points_cost"] == 120_000
+
+
+def test_matched_scope_genuine_premium_redemption_survives_use_points():
+    """Survivor: SFO→SIN PE × 3 shape. Old gate said use_points; new gate also
+    says use_points because matched_cpp is still strong.
+
+    cash=$2850, outbound 79k pts + return 79k pts = 158k per pax, × 3 = 474k total.
+    matched_cpp = 2850 / 474000 × 100 ≈ 0.601¢/pt. Hmm, that's actually sub-threshold.
+    A real premium redemption looks different — use a realistic SQ Suites case:
+    cash=$12000, outbound 90k + return 90k = 180k per pax × 3 = 540k.
+    matched_cpp = 12000 / 540000 × 100 ≈ 2.22¢/pt → use_points strong.
+    """
+    outbound = _award(program="singapore", points=90000, taxes=200.0, cpp=12.0)
+    inbound = _award(program="singapore", points=90000, taxes=200.0, cpp=12.0)
+    result = _run(
+        cash_price=12000.0,
+        travelers=3,
+        is_roundtrip=True,
+        return_date="2026-09-29",
+        award_options=[outbound],
+        return_award_options=[inbound],
+        cabin="business",
+    )
+    assert result["recommendation"] == "use_points"
+    assert result["confidence"] == "high"
+    # winner.cpp at 12¢ on the FE leg display; matched-scope ≈ 2.2¢ for the booking.
+    assert result["winner"]["cpp"] == 12.0
+    assert result["metrics"]["cpp"] >= 1.8
+
+
+def test_matched_scope_one_pax_oneway_unchanged():
+    """1-pax one-way has no scope bias; matched_cpp == winner.cpp, so the
+    recommendation is unchanged from the legacy gate.
+    """
+    result = _run(
+        cash_price=800.0,
+        travelers=1,
+        is_roundtrip=False,
+        award_options=[_award(points=37500, taxes=50.0, cpp=2.0)],
+    )
+    assert result["recommendation"] == "use_points"
+    assert result["confidence"] == "high"
+    assert result["winner"]["cpp"] == 2.0
+    assert result["metrics"]["cpp"] == pytest.approx(2.0)
+
+
+def test_matched_scope_rt_no_program_match_falls_back_to_one_way_costing():
+    """When no inbound award matches the outbound program, matched_cpp is computed
+    on outbound only (the user can only book outbound on points).
+    """
+    outbound = _award(program="united", points=40000, taxes=0.0, cpp=3.0)
+    inbound = _award(program="aeroplan", points=40000, taxes=0.0, cpp=3.0)  # program mismatch
+    result = _run(
+        cash_price=1200.0,
+        travelers=1,
+        is_roundtrip=True,
+        return_date="2026-09-29",
+        award_options=[outbound],
+        return_award_options=[inbound],
+    )
+    # matched_cpp = 1200 / 40000 × 100 = 3.0¢/pt → use_points strong.
+    assert result["recommendation"] == "use_points"
+    assert result["metrics"]["cpp"] == pytest.approx(3.0)
+    assert result["metrics"]["points_cost"] == 40_000  # one-way costing
