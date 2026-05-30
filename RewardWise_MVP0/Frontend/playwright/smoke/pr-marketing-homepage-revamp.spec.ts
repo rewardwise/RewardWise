@@ -100,6 +100,17 @@ test.describe('PR marketing-homepage-revamp: hero + empty-state sections + confi
     await expect(
       page.getByRole('button', { name: /create your account/i }),
     ).toHaveCount(0)
+
+    // HERO_EXAMPLE populated with a real verdict (closes the prior PR's
+    // merge-gate #1). Savings anchor renders on both viewports — assertion
+    // must match the dollar value sourced from prod verdicts at ship time
+    // (SFO → SIN family Premium Economy, $9,499 saved). Update both this
+    // string and HERO_EXAMPLE in app/page.tsx in lockstep if the constant
+    // changes.
+    const savings = page.locator('[data-testid="hero-savings-anchor"]')
+    await expect(savings).toBeVisible()
+    await expect(savings).toContainText(/\$9,499/)
+    await expect(savings).toContainText(/SFO\s*→\s*SIN/i)
   })
 
   test('clicking the primary CTA reveals the inline try-search panel', async ({

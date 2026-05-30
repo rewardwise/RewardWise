@@ -219,20 +219,32 @@ const TOTAL_SCROLL = SCROLL_PER_STEP * STORY_STEPS.length;
 type HeroExample = {
 	origin: string;            // e.g., "EWR"
 	destination: string;       // e.g., "YHZ"
-	cabin: string;             // e.g., "Business"
+	cabin: string;             // display-cased, e.g., "Business" / "Premium Economy"
+	travelers: number;         // 1+ — match the search the verdict was generated for
 	cashPrice: number;         // USD
 	pointsCost: number;        // e.g., 65000
-	pointsProgram: string;     // e.g., "Aeroplan"
+	pointsProgram: string;     // display-cased, e.g., "Singapore KrisFlyer"
 	taxes: number;             // USD — the cash you still pay on the award
 	savings: number;           // USD — cash_price - taxes
 	verdictDate: string;       // e.g., "Apr 2026"
 };
 
-// TODO(merge-gate): populate with one real, dated verdict before merging this
-// PR. While HERO_EXAMPLE is null the hero hides its savings anchor and the
-// right-column card renders a number-less illustration — informative but not
-// load-bearing for the value claim. Sabby supplies this before merge.
-const HERO_EXAMPLE: HeroExample | null = null;
+// Sourced from the prod verdicts table on 2026-05-29 — a real high-savings
+// use_points verdict (data_quality=full, confidence=high). SFO → SIN family
+// trip on Singapore KrisFlyer chosen because it matches the "relatable
+// international family trip" framing without inventing numbers.
+const HERO_EXAMPLE: HeroExample | null = {
+	origin: "SFO",
+	destination: "SIN",
+	cabin: "Premium Economy",
+	travelers: 3,
+	cashPrice: 9498.99,
+	pointsCost: 79000,
+	pointsProgram: "Singapore KrisFlyer",
+	taxes: 0,
+	savings: 9498.99,
+	verdictDate: "May 2026",
+};
 
 type SavingsExample = {
 	route: string;             // e.g., "EWR → YHZ"
@@ -700,7 +712,8 @@ function LandingPageContent() {
 														{HERO_EXAMPLE.origin} → {HERO_EXAMPLE.destination}
 													</h3>
 													<p className="mt-0.5 text-xs text-white/42">
-														{HERO_EXAMPLE.cabin} · 1 traveler
+														{HERO_EXAMPLE.cabin} · {HERO_EXAMPLE.travelers}{" "}
+														{HERO_EXAMPLE.travelers === 1 ? "traveler" : "travelers"}
 													</p>
 												</div>
 												<span className="shrink-0 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1.5 text-xs font-semibold text-emerald-200">
