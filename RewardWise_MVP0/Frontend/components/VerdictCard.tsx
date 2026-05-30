@@ -327,11 +327,31 @@ export default function VerdictCard({
   const bestReturn = returnAwardOptions[0] ?? null;
   const metrics = verdict.metrics ?? {};
   const displayCashPrice = metrics.cash_price ?? cashPrice ?? bestCashFlight?.price ?? null;
-  const displayPoints = metrics.points_cost ?? (bestOutbound ? bestOutbound.points * travelers : winner?.points ? winner.points * travelers : null);
+  // Round-trip-aware fallback: sum outbound + return points before scaling by
+  // travelers. Pre-fix this took bestOutbound.points × travelers and dropped
+  // the return-leg points, undercounting the true RT cost by ~2×.
+  // Backend ships metrics.points_cost already in matched (full-booking)
+  // scope, so the metrics-first branch wins whenever the backend hydrated.
+  const fallbackPerTravelerPoints = bestOutbound
+    ? bestOutbound.points + (bestReturn?.points ?? 0)
+    : winner?.points != null
+      ? winner.points + (bestReturn?.points ?? 0)
+      : null;
+  const displayPoints =
+    metrics.points_cost ??
+    (fallbackPerTravelerPoints != null ? fallbackPerTravelerPoints * travelers : null);
+  const displayPointsPerTraveler =
+    metrics.points_cost_per_traveler ?? fallbackPerTravelerPoints ?? null;
+  const travelersCount = metrics.travelers ?? travelers;
   const displayTaxes = metrics.taxes ?? bestOutbound?.taxes ?? winner?.taxes ?? null;
   const displaySavings = metrics.estimated_savings ?? null;
   const displayCpp = metrics.cpp ?? bestOutbound?.cpp ?? winner?.cpp ?? null;
   const hasAward = displayPoints != null && displayPoints > 0;
+  const showPerTravelerCaption =
+    hasAward &&
+    travelersCount > 1 &&
+    displayPointsPerTraveler != null &&
+    displayPointsPerTraveler > 0;
   const mainExplanation = verdict.explanation || verdict.verdict || "Zoe compared the live cash fare against the strongest award option available for this trip.";
 
   const verdictTier = recommendation === "use_points" ? verdict.verdict_tier ?? null : null;
@@ -865,10 +885,18 @@ export default function VerdictCard({
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-slate-400">Best award</p>
-                    <p className="mt-2 text-2xl font-bold text-white">
+                    <p className="mt-2 text-2xl font-bold text-white" data-testid="verdict-points-total">
                       {hasAward ? `${Number(displayPoints).toLocaleString()} pts` : "—"}
                       {displayTaxes != null && displayTaxes > 0 && <span className="text-base font-semibold text-slate-300"> + {fmtMoney(displayTaxes, 0)}</span>}
                     </p>
+                    {showPerTravelerCaption && (
+                      <p
+                        className="mt-1 text-xs text-slate-400"
+                        data-testid="verdict-points-per-traveler"
+                      >
+                        {`${Number(displayPointsPerTraveler).toLocaleString()} pts each · ${travelersCount} travelers`}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-slate-400">Value preserved</p>
