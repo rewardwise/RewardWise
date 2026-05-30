@@ -65,16 +65,23 @@
 
 import { test, expect } from '@playwright/test'
 
-const DEPART_DAYS = 120
-const RETURN_DAYS = 134
+const DEPART_DAYS = 180
+const RETURN_DAYS = 194
 
+// /api/search (authenticated) returns the verdict block nested under
+// `verdict`, NOT at top-level. /api/public-search returns recommendation +
+// metrics at top level — the two endpoints intentionally differ. We're on
+// the authenticated path here (see "Auth-path routing" in the header
+// docstring), so read from body.verdict.*.
 interface SearchResponse {
-  recommendation?: 'use_points' | 'pay_cash' | 'wait'
-  metrics?: {
-    cash_price?: number | null
-    estimated_savings?: number | null
-    points_cost?: number | null
-    travelers?: number | null
+  verdict?: {
+    recommendation?: 'use_points' | 'pay_cash' | 'wait'
+    metrics?: {
+      cash_price?: number | null
+      estimated_savings?: number | null
+      points_cost?: number | null
+      travelers?: number | null
+    }
   }
 }
 
@@ -148,8 +155,8 @@ test.describe('PR VERDICT-REDESIGN: post-Phase-3 results screen honors all 8 con
     // wait verdict at +120d PE long-haul on this route would itself be a
     // surprise — fail loudly so we investigate rather than silently skip.
     expect(
-      body.recommendation,
-      `Reference case expected use_points; got ${body.recommendation}. ` +
+      body.verdict?.recommendation,
+      `Reference case expected use_points; got ${body.verdict?.recommendation}. ` +
         'Either upstream data shifted (real availability change, fine — ' +
         'update DEPART_DAYS) or recommendation logic regressed (not fine).',
     ).toBe('use_points')
@@ -158,8 +165,8 @@ test.describe('PR VERDICT-REDESIGN: post-Phase-3 results screen honors all 8 con
     // ranking-score CPP × points was used as the displayed savings. Real PE
     // long-haul savings sit at 70–95% of cash; 50% is a deliberately wide
     // floor that still cleanly catches the savings≈cash regression.
-    const cash = body.metrics?.cash_price ?? null
-    const savings = body.metrics?.estimated_savings ?? null
+    const cash = body.verdict?.metrics?.cash_price ?? null
+    const savings = body.verdict?.metrics?.estimated_savings ?? null
     expect(
       cash != null && savings != null,
       'Reference case must surface both cash_price and estimated_savings ' +
@@ -254,21 +261,33 @@ test.describe('PR VERDICT-REDESIGN: post-Phase-3 results screen honors all 8 con
         'flow now lives inside MultiHandoffGrid.',
     ).toHaveCount(0)
 
-    // CONTRACT 8: Single-airport inbound origin. Inbound leg-header reads
-    // "{origin} → {destination}". Neither side may be a CSV. Guards the
-    // Tier-3 leg synthesis path that consumes origin_airport/destination_airport
-    // emitted by search.py with include_endpoint_airports=True on both legs.
-    const returnLegHeader = page.locator(
-      '[data-testid="leg-header-return"]',
-    )
-    if ((await returnLegHeader.count()) > 0) {
-      const returnHeaderText = await returnLegHeader.first().innerText()
+    // CONTRACT 8: Single-airport inbound origin. The inbound leg's
+    // airport-pair element reads "{origin} → {destination}" (e.g. "SIN → SFO");
+    // neither side may be a CSV like "JFK,LGA,EWR" or "SFO,OAK,SJC". Guards
+    // the Tier-3 leg synthesis path that consumes origin_airport /
+    // destination_airport emitted by search.py with
+    // include_endpoint_airports=True on both legs. Pre-fix the FE fell
+    // through to Tier 4 (search-param synthesis) on the return leg, which
+    // dumped the raw metro CSV.
+    //
+    // Selector note: leg-header-return is the date pill ("RETURN · Dec 10"),
+    // which never carries airport codes — asserting against it was a
+    // false-pass. The airport-pair element is leg-route-return.
+    const returnRoute = page.locator('[data-testid="leg-route-return"]')
+    if ((await returnRoute.count()) > 0) {
+      const returnRouteText = await returnRoute.first().innerText()
       expect(
-        returnHeaderText,
-        `Return leg header rendered "${returnHeaderText}" — must not contain ` +
-          'CSV airport codes (e.g. "JFK,LGA,EWR"). Single resolved IATA per ' +
-          'direction is the Tier-3 contract.',
+        returnRouteText,
+        `Return leg airport pair rendered "${returnRouteText}" — must not ` +
+          'contain CSV airport codes. Single resolved IATA per direction is ' +
+          'the Tier-3 contract.',
       ).not.toMatch(/[A-Z]{3},[A-Z]{3}/)
+      // Sanity: each side must be exactly 3 uppercase letters (a real IATA).
+      expect(
+        returnRouteText,
+        `Return route "${returnRouteText}" must match "AAA → BBB" with ` +
+          'single 3-letter IATA codes on each side.',
+      ).toMatch(/^[A-Z]{3}\s*→\s*[A-Z]{3}$/)
     }
   })
 })
