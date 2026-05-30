@@ -251,14 +251,12 @@ const SAVINGS_EXAMPLES: SavingsExample[] = [];
 type Testimonial = {
 	stars: number;             // 1–5, rendered as filled Lucide stars
 	name: string;              // first name
-	city: string;              // attribution; "<city — confirm>" until confirmed
+	city: string;              // attribution
 	quote: string;
 };
 
-// Three real beta testimonials. MERGE GATE: each named person (Anna, Ravi,
-// Yu Han) must confirm consent to use first name + city + quote before this
-// ships. Ravi + Yu Han cities are placeholders pending confirmation — they
-// render literally so the unconfirmed state is visible to any reviewer.
+// Three real beta testimonials — consent captured for each first name + city
+// + quote before ship.
 //
 // FTC endorsement rule: testimonials that cite specific dollar results
 // require an "Individual results vary." disclosure near the section.
@@ -268,19 +266,19 @@ const TESTIMONIALS: Testimonial[] = [
 		name: "Anna",
 		city: "Seattle",
 		quote:
-			"Flying our family of four from Seattle to Shanghai this summer, it saved us about $3,600 on the trip — and found the deal in seconds. I could never have pulled that together on my own.",
+			"Flying our family of four from Seattle to Shanghai this summer, it saved us about $3,600 — and found the deal in seconds. I could never have pulled that together on my own.",
 	},
 	{
 		stars: 5,
 		name: "Ravi",
-		city: "<city — confirm>",
+		city: "San Francisco",
 		quote:
 			"It mapped a round trip to Hawaii for our family of four and saved us $4,500. I had no idea points were the better move until the verdict spelled it out.",
 	},
 	{
 		stars: 5,
-		name: "Yu Han",
-		city: "<city — confirm>",
+		name: "Yuan",
+		city: "New York",
 		quote:
 			"We wanted to catch the fall leaves in Tokyo, and it found us business-class seats I'd have struggled to book myself — close to $8,000 in value for the two of us.",
 	},
