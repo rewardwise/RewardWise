@@ -171,6 +171,15 @@ def test_T12_awards_only_no_cash_in_wallet_match_returns_wait():
 # ---- Response shape ----------------------------------------------------------
 
 def test_T13_response_shape_contains_critical_fields():
+    """Default _award (points=60000, taxes=50) + cash=800, one-way × 1 traveler.
+
+    metrics.cpp is matched-scope, computed from cash − taxes / points_cost:
+        (800 - 50) / 60000 × 100 = 1.25¢
+    This is intentionally distinct from winner.cpp (2.0) — winner.cpp is the
+    per-pax / one-way score that still drives the recommendation gate, and
+    is preserved on the winner payload, but metrics.cpp is the user-facing
+    matched-scope number that reconciles with savings.
+    """
     result = _run(cash_price=800.0, award_options=[_award(cpp=2.0)])
     for key in (
         "recommendation",
@@ -191,7 +200,10 @@ def test_T13_response_shape_contains_critical_fields():
         "pay_cash",
     ):
         assert key in result, f"missing field: {key}"
-    assert result["metrics"]["cpp"] == 2.0
+    assert result["metrics"]["cpp"] == pytest.approx(1.25)
+    assert result["metrics"]["points_cost"] == 60000
+    assert result["metrics"]["points_cost_per_traveler"] == 60000
+    assert result["metrics"]["travelers"] == 1
     assert result["pay_cash"] is False
 
 
@@ -399,8 +411,13 @@ def test_classify_tier_below_floor_returns_none(cpp):
 
 
 def test_use_points_strong_emits_premium_tier():
-    """cpp >= 1.8 with use_points: verdict_tier=premium, full explanation copy."""
-    result = _run(cash_price=800.0, award_options=[_award(cpp=2.4)])
+    """cpp >= 1.8 with use_points: verdict_tier=premium, full explanation copy.
+
+    Cash chosen so matched-scope metrics.cpp lands at 2.4¢ with the default
+    award (points=60000, taxes=50): (1490 − 50) / 60000 × 100 = 2.4¢.
+    winner.cpp=2.4 still drives the strong recommendation path.
+    """
+    result = _run(cash_price=1490.0, award_options=[_award(cpp=2.4)])
     assert result["recommendation"] == "use_points"
     assert result["verdict_tier"] == "premium"
     assert result["tier_explanation"] == TIER_EXPLANATION_PREMIUM
@@ -408,12 +425,75 @@ def test_use_points_strong_emits_premium_tier():
 
 
 def test_use_points_gray_zone_emits_solid_tier():
-    """1.5 <= cpp < 1.8 with use_points: verdict_tier=solid."""
-    result = _run(cash_price=800.0, award_options=[_award(cpp=1.6)])
+    """1.5 <= cpp < 1.8 with use_points: verdict_tier=solid.
+
+    Cash chosen so matched-scope metrics.cpp lands at 1.6¢ with the default
+    award (points=60000, taxes=50): (1010 − 50) / 60000 × 100 = 1.6¢.
+    winner.cpp=1.6 still drives the gray-zone use_points recommendation.
+    """
+    result = _run(cash_price=1010.0, award_options=[_award(cpp=1.6)])
     assert result["recommendation"] == "use_points"
     assert result["verdict_tier"] == "solid"
     assert result["tier_explanation"] == TIER_EXPLANATION_SOLID
     assert result["metrics"]["cpp"] == pytest.approx(1.6)
+
+
+# ---- Round-trip × multi-traveler reference (matched-scope metrics) ----------
+
+def test_metrics_cpp_reconciles_rt_multi_traveler_reference_case():
+    """SFO → SIN PE round-trip × 3 travelers — the prod case that motivated this PR.
+
+    Both legs cost 79,000 points per pax on Singapore KrisFlyer. Cash savings
+    versus the live KLM/Delta fare came in at ~$9,499 grand-total. Honest
+    redemption cost is:
+        points_cost              = (79,000 + 79,000) × 3 = 474,000
+        points_cost_per_traveler = 79,000 + 79,000       = 158,000
+        cpp (matched scope)      = 9499 / 474000 × 100   ≈ 2.00¢
+
+    Pre-fix surface rendered points_cost = 79,000 × 3 = 237,000 (one-way × pax)
+    and cpp = 4.01¢ (the per-pax / one-way score). Both numbers were wrong on
+    the user's actual booking scope. This reference test pins the corrected
+    numbers and the cpp × points_cost / 100 ≈ savings reconciliation so the
+    bias cannot silently come back.
+    """
+    outbound = _award(
+        program="singapore",
+        points=79000,
+        taxes=0.0,
+        cpp=4.0,  # per-pax / one-way score from seats.aero; recommendation gate reads this
+    )
+    inbound = _award(
+        program="singapore",
+        points=79000,
+        taxes=0.0,
+        cpp=4.0,
+    )
+    result = _run(
+        cash_price=9499.0,
+        award_options=[outbound],
+        return_award_options=[inbound],
+        is_roundtrip=True,
+        return_date="2026-09-29",
+        travelers=3,
+        user_programs=["singapore"],
+    )
+    metrics = result["metrics"]
+    assert result["recommendation"] == "use_points"
+    assert metrics["points_cost"] == 474_000
+    assert metrics["points_cost_per_traveler"] == 158_000
+    assert metrics["travelers"] == 3
+    assert metrics["cpp"] == pytest.approx(2.00, abs=0.01)
+    assert metrics["estimated_savings"] == pytest.approx(9499.0, abs=0.01)
+    # Matched-scope cpp must reconcile with savings: cpp × points / 100 ≈ savings.
+    assert (
+        metrics["cpp"] * metrics["points_cost"] / 100
+        == pytest.approx(metrics["estimated_savings"], abs=1.0)
+    )
+    # Matched-scope cpp ≈ 2.0¢ → premium tier band.
+    assert result["verdict_tier"] == "premium"
+    # winner.cpp (per-pax / one-way) is preserved on the payload for the
+    # recommendation gate; metrics.cpp is the matched-scope display value.
+    assert result["winner"]["cpp"] == pytest.approx(4.0)
 
 
 def test_pay_cash_omits_tier_fields():

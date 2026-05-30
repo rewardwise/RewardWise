@@ -200,17 +200,88 @@ def _cash_label(cash_price: Optional[float]) -> str:
     return f"${cash_price:.0f}" if cash_price is not None else "cash unavailable"
 
 
-def _metrics(cash_price: Optional[float], winner: Optional[dict]) -> dict:
+def _pick_inbound_winner(
+    outbound_winner: Optional[dict], return_awards: Optional[list]
+) -> Optional[dict]:
+    """Return the inbound award that matches the outbound winner's program.
+
+    Used to honestly cost a round-trip redemption: seats.aero awards are one-way
+    per pax, so the true RT cost is outbound + return points (both per pax).
+    Picking the program-matched inbound preserves the user-bookable assumption —
+    you can't mix programs on a single award itinerary. When no program-matched
+    return is available, fall back to one-way costing (return = None) rather
+    than silently swapping in an unbookable cross-program return.
+    """
+    if not outbound_winner or not return_awards:
+        return None
+    program = (outbound_winner.get("program") or "").lower()
+    if not program:
+        return None
+    for award in return_awards:
+        if (award.get("program") or "").lower() == program:
+            return award
+    return None
+
+
+def _metrics(
+    cash_price: Optional[float],
+    winner: Optional[dict],
+    inbound_winner: Optional[dict] = None,
+    travelers: int = 1,
+) -> dict:
+    """Grand-total, matched-scope verdict metrics.
+
+    Every numeric field below is the FULL BOOKING total — all travelers, both
+    legs when round-trip (just outbound when one-way). This is the scope users
+    see in the cash fare from the provider and the scope they care about for
+    "what does this redemption actually cost me." Specifically:
+
+        points_cost                = (outbound + return) × travelers
+        points_cost_per_traveler   = (outbound + return)
+        taxes                      = (outbound + return) × travelers
+        cpp                        = (cash − taxes) / points_cost × 100
+
+    The cpp here is matched-scope, so cpp × points_cost / 100 ≈ savings
+    reconciles cleanly. This replaces the prior implementation that copied
+    `winner.cpp` (one-way per-pax score) into metrics — that bias rendered
+    multi-traveler RT verdicts as e.g. "237k pts / 4.01¢" when the honest
+    numbers are "474k pts / 2.00¢".
+
+    `winner.cpp` (the per-pax one-way score on the award object) is still
+    used by the recommendation gates in generate_verdict and remains
+    untouched on the winner payload for back-compat. See the comment block
+    at the first recommendation gate for the known bias and the follow-up
+    PR that re-scopes the gate logic.
+    """
     winner = winner or {}
-    taxes = winner.get("taxes") or 0
-    points_cost = winner.get("points")
-    cpp = winner.get("cpp")
-    savings = None
-    if cash_price is not None and taxes is not None:
-        savings = max(0, round(float(cash_price) - float(taxes), 2))
+    travelers = max(int(travelers or 1), 1)
+
+    outbound_points_per_pax = int(winner.get("points") or 0)
+    return_points_per_pax = int((inbound_winner or {}).get("points") or 0)
+    points_per_pax_rt = outbound_points_per_pax + return_points_per_pax
+
+    outbound_taxes = float(winner.get("taxes") or 0)
+    return_taxes = float((inbound_winner or {}).get("taxes") or 0)
+    taxes = round((outbound_taxes + return_taxes) * travelers, 2)
+
+    points_cost: Optional[int] = (
+        points_per_pax_rt * travelers if points_per_pax_rt > 0 else None
+    )
+    points_cost_per_traveler: Optional[int] = (
+        points_per_pax_rt if points_per_pax_rt > 0 else None
+    )
+
+    cpp: Optional[float] = None
+    savings: Optional[float] = None
+    if cash_price is not None:
+        savings = max(0.0, round(float(cash_price) - taxes, 2))
+        if points_cost and points_cost > 0:
+            cpp = round((float(cash_price) - taxes) / points_cost * 100, 4)
     return {
         "cash_price": cash_price,
         "points_cost": points_cost,
+        "points_cost_per_traveler": points_cost_per_traveler,
+        "travelers": travelers,
         "taxes": taxes,
         "cpp": cpp,
         "estimated_savings": savings,
@@ -291,6 +362,8 @@ def _base_response(
     booking_note: str,
     booking_link: Optional[dict] = None,
     winner: Optional[dict] = None,
+    inbound_winner: Optional[dict] = None,
+    travelers: int = 1,
     cash_price: Optional[float] = None,
     data_quality: str = "full",
     missing_sources: Optional[list] = None,
@@ -306,10 +379,14 @@ def _base_response(
     }
     pay_cash = recommendation == "pay_cash"
     verdict = f"{verdict_label}: {headline} {explanation}".strip()
+    metrics = _metrics(cash_price, winner, inbound_winner, travelers)
+    # Tier badge is driven by the matched-scope cpp on metrics, not by
+    # winner.cpp. winner.cpp is one-way per-pax and overstates the
+    # redemption rate on multi-traveler / round-trip searches.
     verdict_tier: Optional[str] = None
     tier_explanation: Optional[str] = None
     if recommendation == "use_points" and winner is not None:
-        verdict_tier, tier_explanation = _classify_tier(winner.get("cpp"))
+        verdict_tier, tier_explanation = _classify_tier(metrics.get("cpp"))
     return {
         "recommendation": recommendation,
         "verdict_label": verdict_label,
@@ -325,7 +402,7 @@ def _base_response(
         "data_quality": data_quality,
         "missing_sources": missing_sources,
         "safe_fallback_used": safe_fallback_used,
-        "metrics": _metrics(cash_price, winner),
+        "metrics": metrics,
         "next_step": next_step,
         "verdict_tier": verdict_tier,
         "tier_explanation": tier_explanation,
@@ -359,6 +436,7 @@ def _gray_zone_response(
     return_date: Optional[str],
     travelers: int,
     winner_payload: dict,
+    inbound_winner: Optional[dict],
     data_quality: str,
     missing_sources: list,
 ) -> dict:
@@ -418,6 +496,8 @@ def _gray_zone_response(
             recommendation=recommendation,
         ),
         winner=winner_payload,
+        inbound_winner=inbound_winner,
+        travelers=travelers,
         cash_price=cash_price,
         data_quality=data_quality,
         missing_sources=missing_sources,
@@ -439,8 +519,6 @@ async def generate_verdict(
     return_award_options: list,
     user_programs: Optional[list] = None,
 ) -> dict:
-    del is_roundtrip, return_award_options  # reserved for future richer copy
-
     # When origin/destination came in as a metro CSV (e.g. "JFK,LGA,EWR"),
     # use the first airport as a fallback for prompts that need a single code,
     # and prefer the actual winning award's airport once we have a winner.
@@ -481,6 +559,7 @@ async def generate_verdict(
             confidence_reason="Both the cash and award data sources were unavailable for this search.",
             booking_note="Retry this search in a moment or try a nearby date.",
             cash_price=cash_price,
+            travelers=travelers,
             data_quality=data_quality,
             missing_sources=missing_sources,
             safe_fallback_used=True,
@@ -507,6 +586,7 @@ async def generate_verdict(
             confidence_reason="Live cash pricing was available, but no matching award availability was found.",
             booking_note="Book the cash fare and save your points for a stronger redemption.",
             cash_price=cash_price,
+            travelers=travelers,
             data_quality=data_quality,
             missing_sources=missing_sources,
             safe_fallback_used=bool(missing_sources),
@@ -537,6 +617,7 @@ async def generate_verdict(
             confidence_reason="Award space was found, but not through the user's redeemable programs.",
             booking_note="Keep your points for a route your wallet can actually support.",
             cash_price=cash_price,
+            travelers=travelers,
             data_quality=data_quality,
             missing_sources=missing_sources,
             safe_fallback_used=bool(missing_sources),
@@ -553,6 +634,12 @@ async def generate_verdict(
 
     # Candidate winner.
     winner = (candidates or all_awards)[0]
+    # Round-trip inbound winner: program-matched return award, or None if no
+    # match (one-way fallback). Costs the redemption honestly as
+    # outbound + return points instead of doubling outbound or dropping return.
+    inbound_winner: Optional[dict] = (
+        _pick_inbound_winner(winner, return_award_options) if is_roundtrip else None
+    )
     program = winner.get("program") or "unknown"
     points = int(winner.get("points") or 0)
     taxes = float(winner.get("taxes") or 0)
@@ -594,6 +681,8 @@ async def generate_verdict(
                 recommendation="wait",
             ),
             winner=winner_payload,
+            inbound_winner=inbound_winner,
+            travelers=travelers,
             cash_price=cash_price,
             data_quality=data_quality,
             missing_sources=missing_sources,
@@ -615,6 +704,19 @@ async def generate_verdict(
     savings = max(0, round(cash_price - taxes, 2))
     urgency = 0 < remaining_seats <= 3
 
+    # KNOWN BIAS — the recommendation gates below read winner.cpp, which is
+    # the per-pax / one-way cents-per-point score from the seats.aero award
+    # object. On multi-traveler or round-trip searches that score does NOT
+    # match the user's actual redemption scope (full booking total) and
+    # systematically OVERSTATES value, biasing toward use_points on marginal
+    # multi-traveler cases.
+    #
+    # This PR fixes the DISPLAYED metrics + tier badge (metrics.cpp is
+    # matched-scope; tier classifier reads metrics.cpp). The gates here are
+    # deliberately left on winner.cpp so the recommendation rule does not
+    # change in this PR. The follow-up gate-rescope PR will switch the gates
+    # to matched-scope cpp and report the historical verdict-flip count
+    # before merge. See the PR description for the bias quantification.
     if cash_price <= CHEAP_CASH_THRESHOLD_USD or cpp < CPP_PAY_CASH_THRESHOLD:
         explanation = (
             f"Cash is only {_cash_label(cash_price)}, while the best award I found is {points:,} points"
@@ -640,6 +742,8 @@ async def generate_verdict(
                 recommendation="pay_cash",
             ),
             winner=winner_payload,
+            inbound_winner=inbound_winner,
+            travelers=travelers,
             cash_price=cash_price,
             data_quality=data_quality,
             missing_sources=missing_sources,
@@ -691,6 +795,8 @@ async def generate_verdict(
                 recommendation="use_points",
             ),
             winner=winner_payload,
+            inbound_winner=inbound_winner,
+            travelers=travelers,
             cash_price=cash_price,
             data_quality=data_quality,
             missing_sources=missing_sources,
@@ -727,6 +833,7 @@ async def generate_verdict(
             return_date=return_date,
             travelers=travelers,
             winner_payload=winner_payload,
+            inbound_winner=inbound_winner,
             data_quality=data_quality,
             missing_sources=missing_sources,
         )
@@ -748,6 +855,7 @@ async def generate_verdict(
             return_date=return_date,
             travelers=travelers,
             winner_payload=winner_payload,
+            inbound_winner=inbound_winner,
             data_quality=data_quality,
             missing_sources=missing_sources,
         )
@@ -772,6 +880,8 @@ async def generate_verdict(
             recommendation="wait",
         ),
         winner=winner_payload,
+        inbound_winner=inbound_winner,
+        travelers=travelers,
         cash_price=cash_price,
         data_quality=data_quality,
         missing_sources=missing_sources,
