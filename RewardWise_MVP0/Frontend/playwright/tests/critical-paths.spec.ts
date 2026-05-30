@@ -42,7 +42,7 @@ test.describe('Critical paths smoke', () => {
     await expect(page.getByRole('heading', { name: /Travel smarter/i })).toBeVisible({ timeout: 10000 })
 
     // Search form is hidden behind a toggle on the landing page — reveal it.
-    await page.getByRole('button', { name: /Or try a search first/i }).click()
+    await page.getByRole('button', { name: /try a (free )?search( first)?/i }).first().click()
 
     // After reveal, both airport inputs share the placeholder "City or airport".
     const cityInputs = page.getByPlaceholder('City or airport')
@@ -58,7 +58,7 @@ test.describe('Critical paths smoke', () => {
     test.skip(true, 'Blocked by production "one free search" gate — server returns rate-limit banner instead of verdict on the 2nd+ unauthenticated search per IP. Needs auth fixture or mocked APIs (V1). Test body retained so un-skipping requires only removing this line.')
 
     await page.goto('/')
-    await page.getByRole('button', { name: /Or try a search first/i }).click()
+    await page.getByRole('button', { name: /try a (free )?search( first)?/i }).first().click()
 
     // Roundtrip requires return date; switch to one way to keep the test minimal.
     await page.getByRole('button', { name: /^One Way$/ }).click()
@@ -77,7 +77,7 @@ test.describe('Critical paths smoke', () => {
     test.skip(true, 'Blocked by production "one free search" gate — same as SEA→NRT flow above. PR #87 metro-grouping regression coverage is therefore gapped until auth fixture or mocked APIs land (V1).')
 
     await page.goto('/')
-    await page.getByRole('button', { name: /Or try a search first/i }).click()
+    await page.getByRole('button', { name: /try a (free )?search( first)?/i }).first().click()
     await page.getByRole('button', { name: /^One Way$/ }).click()
 
     const cityInputs = page.getByPlaceholder('City or airport')

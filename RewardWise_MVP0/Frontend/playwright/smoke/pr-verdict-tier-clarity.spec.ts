@@ -68,12 +68,17 @@ test.describe('PR 3: verdict-tier explanation clarity (badge + threshold + CPP t
 		await page.goto('/home')
 
 		// Defensive landing-nav guard: prod `/` and authenticated `/home`
-		// may render a marketing landing page with an "Or try a search first
-		// — no signup needed" CTA instead of the search form directly.
-		// Click through it when present; otherwise fall through to the form.
-		const tryASearchCta = page.getByRole('button', {
-			name: /try a search first/i,
-		})
+		// may render a marketing landing page with a "Try a (free) search
+		// (first)" CTA instead of the search form directly. Regex covers
+		// all known variants (the marketing revamp shipped "Try a free
+		// search"; the older copy was "Or try a search first — no signup
+		// needed"). Click through when present; otherwise fall through to
+		// the form.
+		const tryASearchCta = page
+			.getByRole('button', {
+				name: /try a (free )?search( first)?/i,
+			})
+			.first()
 		if (
 			await tryASearchCta
 				.isVisible({ timeout: 5_000 })

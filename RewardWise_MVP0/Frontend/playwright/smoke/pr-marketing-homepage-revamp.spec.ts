@@ -33,8 +33,11 @@
  * routed to /signup instead of revealing the inline panel.
  *
  * Trial-gate isolation: each test uses a fresh storageState (no auth cookies)
- * and a synthetic cf-connecting-ip header so the public-search IP-hash
- * dedup doesn't poison sequential runs.
+ * and synthetic x-real-ip + x-forwarded-for headers so the public-search
+ * IP-hash dedup doesn't poison sequential runs. cf-connecting-ip is NOT
+ * set — Cloudflare in front of Render rejects requests that try to
+ * override it (HTTP 403 / "error code: 1000"). See
+ * pr-pe-cabin-translation file docstring for the full CF-fronted caveat.
  *
  * Runs at both viewports (chromium-1440-auth + chromium-375-auth via
  * playwright.config.ts projects, but storageState is overridden to empty
@@ -67,7 +70,6 @@ test.describe('PR marketing-homepage-revamp: hero + empty-state sections + confi
     // header lets the runner reach the actual app DOM. Empty object on
     // prod / localhost — see playwright/auth/vercel-bypass.ts.
     await context.setExtraHTTPHeaders({
-      'cf-connecting-ip': syntheticIp,
       'x-real-ip': syntheticIp,
       'x-forwarded-for': syntheticIp,
       ...getVercelBypassHeader(),

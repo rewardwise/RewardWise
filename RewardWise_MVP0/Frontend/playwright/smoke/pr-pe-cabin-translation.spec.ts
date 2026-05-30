@@ -32,11 +32,22 @@
  *       viewports hit 429 before reaching seats.aero and the cabin bug
  *       goes undetected.
  *   (b) Once the IP is in the trial table, no in-band way to clear it.
- * Fix: synthesize a unique `cf-connecting-ip` (the backend's
- * first-priority IP header, see Backend/app/api/search.py:415) per
- * Playwright context. Each viewport gets a fresh IP-hash → fresh trial
- * row → unambiguous 200 (post-fix) or 500 (pre-fix). The 429 path becomes
- * unreachable, so the falsification is clean.
+ * Fix: synthesize a unique IP via `x-real-ip` + `x-forwarded-for` (the
+ * backend's 2nd + 3rd-priority IP headers, see
+ * Backend/app/api/search.py:415) per Playwright context.
+ *
+ * Caveat — trial-gate isolation regression under Cloudflare-fronted Render:
+ * `cf-connecting-ip` was the original first-priority header here, but
+ * Cloudflare (a) rejects requests that set it from outside (HTTP 403 /
+ * "error code: 1000") and (b) overwrites it at the edge with the real
+ * client IP. So in production CF deploys, the backend now sees CF's
+ * cf-connecting-ip first and ignores our synthetic x-real-ip — the
+ * isolation we'd intend is broken regardless. Smokes still benefit from
+ * NOT setting cf-connecting-ip (else CF rejects entirely); a fresh
+ * x-real-ip remains useful for local-dev / non-CF setups. A real
+ * follow-up (test-bypass header on the backend, or moving smokes to an
+ * authenticated /api/search path) is tracked in the harness PR
+ * description rather than buried here.
  *
  * Selectors mirror partial-data-and-horizon.spec.ts. storageState is
  * overridden to an empty session so the landing page does not redirect
@@ -65,20 +76,31 @@ test.describe('PR PE-CABIN: landing-page Premium Economy public-search renders w
     page,
     context,
   }) => {
-    // Unique-per-run synthetic IP. Sent via all three headers the backend
-    // trusts (cf-connecting-ip first, then x-real-ip, then x-forwarded-for
-    // — see _client_ip_from_request) so the trial-gate hash is fresh on
-    // every run, regardless of which Render edge IP this Playwright
-    // worker happens to egress from. Prefix tags the row in the trial
-    // table for trivial cleanup if it ever accumulates.
+    // Unique-per-run synthetic IP via x-real-ip + x-forwarded-for. See
+    // the file-level docstring for the cf-connecting-ip / Cloudflare
+    // caveat; prefix tags the row in the trial table for cleanup.
     const syntheticIp = `smoke-pe-cabin-${randomUUID()}`
     await context.setExtraHTTPHeaders({
-      'cf-connecting-ip': syntheticIp,
       'x-real-ip': syntheticIp,
       'x-forwarded-for': syntheticIp,
     })
 
     await page.goto('/')
+
+    // Defensive landing-nav guard: prod `/` may render a marketing
+    // landing page with a "Try a (free) search (first)" CTA instead of
+    // the search form directly. Click through when present; otherwise
+    // fall through to the form.
+    const tryASearchCta = page
+      .getByRole('button', {
+        name: /try a (free )?search( first)?/i,
+      })
+      .first()
+    if (
+      await tryASearchCta.isVisible({ timeout: 5_000 }).catch(() => false)
+    ) {
+      await tryASearchCta.click()
+    }
 
     const inputs = page.getByPlaceholder('City or airport')
     await inputs.first().fill('SFO')
@@ -112,8 +134,8 @@ test.describe('PR PE-CABIN: landing-page Premium Economy public-search renders w
     expect(
       status,
       'Pre-fix returned 500 with "create an account to continue" on every PE ' +
-        'search. Post-fix must return 200 — synthetic cf-connecting-ip header ' +
-        'guarantees a fresh trial row so the 429 trial-gate path is ' +
+        'search. Post-fix must return 200 — synthetic x-real-ip keeps the ' +
+        'trial row fresh in local/non-CF runs so the 429 trial-gate path is ' +
         'unreachable and cannot mask a regression.',
     ).toBe(200)
 

@@ -56,9 +56,12 @@ test.describe('PR-δ: multi-airport metro cash fan-out — cash data flows end-t
     page,
     context,
   }) => {
+    // Synthetic IP via x-real-ip + x-forwarded-for only — cf-connecting-ip
+    // is rejected by Cloudflare in front of Render (HTTP 403 / "error
+    // code: 1000"). See pr-pe-cabin-translation file docstring for the
+    // full trial-gate-isolation caveat under CF-fronted backends.
     const syntheticIp = `smoke-metro-fanout-${randomUUID()}`
     await context.setExtraHTTPHeaders({
-      'cf-connecting-ip': syntheticIp,
       'x-real-ip': syntheticIp,
       'x-forwarded-for': syntheticIp,
     })
@@ -66,12 +69,16 @@ test.describe('PR-δ: multi-airport metro cash fan-out — cash data flows end-t
     await page.goto('/')
 
     // Defensive landing-nav guard: prod `/` may render a marketing
-    // landing page with an "Or try a search first — no signup needed"
-    // CTA instead of the search form directly. Click through it when
+    // landing page with a "Try a (free) search (first)" CTA instead of
+    // the search form directly. Regex covers all known variants (the
+    // marketing revamp shipped "Try a free search"; the older copy was
+    // "Or try a search first — no signup needed"). Click through when
     // present; otherwise fall through to the form.
-    const tryASearchCta = page.getByRole('button', {
-      name: /try a search first/i,
-    })
+    const tryASearchCta = page
+      .getByRole('button', {
+        name: /try a (free )?search( first)?/i,
+      })
+      .first()
     if (
       await tryASearchCta.isVisible({ timeout: 5_000 }).catch(() => false)
     ) {
