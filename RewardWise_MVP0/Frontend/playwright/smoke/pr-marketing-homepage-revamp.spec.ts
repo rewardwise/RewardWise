@@ -22,10 +22,11 @@
  *   4. Real-verdicts (SAVINGS_EXAMPLES) section is empty-state-gated: when
  *      SAVINGS_EXAMPLES = [], the entire section is absent from the DOM (no
  *      eyebrow, no header, no skeleton). At ship the array is empty.
- *   5. Social-proof section is empty-state-gated by three independent
- *      sub-blocks (rating, traveler counter, testimonials). When all three
- *      are null/empty, the entire section is absent from the DOM. At ship
- *      all three are null/empty.
+ *   5. Social-proof section: testimonials sub-block ships populated with 3
+ *      beta entries (5 stars + name·city attribution each) plus an FTC
+ *      "individual results vary" disclosure. Aggregate sub-blocks (rating,
+ *      traveler counter) stay hidden because AVG_RATING / RATING_COUNT /
+ *      TRAVELER_COUNT remain null — we never invent aggregate numbers.
  *
  * Falsifies pre-fix: assertions 1, 3, 4, 5 all fail against pre-PR prod
  * because the surfaces did not exist; assertion 2 fails because the CTA
@@ -42,6 +43,7 @@
 
 import { test, expect } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
+import { getVercelBypassHeader } from '../auth/vercel-bypass'
 
 // Match the build-time default in Frontend/utils/public-search.ts. Override
 // with PLAYWRIGHT_PUBLIC_SEARCH_FREE_LIMIT if running against a deploy that
@@ -61,10 +63,14 @@ test.use({ storageState: { cookies: [], origins: [] } })
 test.describe('PR marketing-homepage-revamp: hero + empty-state sections + configurable paywall', () => {
   test.beforeEach(async ({ context }) => {
     const syntheticIp = `smoke-marketing-revamp-${randomUUID()}`
+    // Vercel preview deployments sit behind an SSO interstitial; the bypass
+    // header lets the runner reach the actual app DOM. Empty object on
+    // prod / localhost — see playwright/auth/vercel-bypass.ts.
     await context.setExtraHTTPHeaders({
       'cf-connecting-ip': syntheticIp,
       'x-real-ip': syntheticIp,
       'x-forwarded-for': syntheticIp,
+      ...getVercelBypassHeader(),
     })
   })
 
@@ -154,22 +160,57 @@ test.describe('PR marketing-homepage-revamp: hero + empty-state sections + confi
     ).toHaveCount(0)
   })
 
-  test('social-proof slots all empty → social-proof section absent from DOM', async ({
+  test('social-proof renders 3 testimonials × 5 stars + name·city + FTC disclosure; aggregate stats stay hidden', async ({
     page,
   }) => {
     await page.goto('/')
 
+    // Section renders (TESTIMONIALS now populated with 3 beta entries).
+    const section = page.locator('[data-testid="social-proof-section"]')
+    await expect(section).toBeVisible()
+
+    // Testimonials sub-block renders; rating + traveler-count sub-blocks
+    // stay hidden because AVG_RATING/RATING_COUNT/TRAVELER_COUNT are all null.
     await expect(
-      page.locator('[data-testid="social-proof-section"]'),
-    ).toHaveCount(0)
+      page.locator('[data-testid="social-proof-testimonials"]'),
+    ).toBeVisible()
     await expect(
       page.locator('[data-testid="social-proof-stats"]'),
     ).toHaveCount(0)
     await expect(
-      page.locator('[data-testid="social-proof-testimonials"]'),
+      page.locator('[data-testid="social-proof-rating"]'),
     ).toHaveCount(0)
-    await expect(page.locator('[data-testid="testimonial-card"]')).toHaveCount(
-      0,
-    )
+    await expect(
+      page.locator('[data-testid="social-proof-travelers"]'),
+    ).toHaveCount(0)
+
+    // Exactly 3 testimonial cards, each with exactly 5 stars.
+    const cards = page.locator('[data-testid="testimonial-card"]')
+    await expect(cards).toHaveCount(3)
+    for (let i = 0; i < 3; i++) {
+      await expect(
+        cards.nth(i).locator('[data-testid="testimonial-star"]'),
+      ).toHaveCount(5)
+    }
+
+    // Attribution present — at least the confirmed entry (Anna · Seattle)
+    // renders with name + city. Ravi / Yu Han ship behind the consent +
+    // city-confirm gate, so the smoke asserts the structural form, not the
+    // unconfirmed strings.
+    await expect(
+      section.getByText(/Anna/).first(),
+    ).toBeVisible()
+    await expect(
+      section.getByText(/· Seattle/).first(),
+    ).toBeVisible()
+
+    // FTC endorsement disclosure: required when testimonials cite specific
+    // dollar results (the three quotes name $3,600 / $4,500 / $8,000).
+    await expect(
+      page.locator('[data-testid="testimonials-disclosure"]'),
+    ).toBeVisible()
+    await expect(
+      page.locator('[data-testid="testimonials-disclosure"]'),
+    ).toContainText(/individual results vary/i)
   })
 })
