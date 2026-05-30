@@ -1,6 +1,20 @@
 from __future__ import annotations
 
+import re
 from typing import Any
+
+# IATA airport / city codes are exactly 3 uppercase letters. Skyscanner place
+# objects also carry a numeric "id" (e.g. 16216 for SFO, 16292 for SIN) — those
+# are internal place IDs, never user-renderable IATAs. _normalize_iata is the
+# gate that keeps numeric place IDs out of departure_iata / arrival_iata.
+_IATA_PATTERN = re.compile(r"^[A-Z]{3}$")
+
+
+def _normalize_iata(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip().upper()
+    return text if _IATA_PATTERN.match(text) else None
 
 
 def _first_present(data: dict[str, Any], keys: list[str], default: Any = None) -> Any:
@@ -63,9 +77,15 @@ def _get_place_name(place: dict[str, Any] | None, fallback_code: str | None = No
 
 
 def _get_place_code(place: dict[str, Any] | None, fallback_code: str | None = None) -> str | None:
+    # "id" is intentionally NOT in the chain: Skyscanner's place.id is the
+    # numeric internal ID (e.g. 16216), not an IATA. Falling through to it
+    # rendered "16292 → 16216" on prod return legs (CONTRACT 8 smoke).
+    fallback = _normalize_iata(fallback_code)
     if not place:
-        return fallback_code
-    return _first_present(place, ["iata", "iataCode", "displayCode", "code", "id"], fallback_code)
+        return fallback
+    candidate = _first_present(place, ["iata", "iataCode", "displayCode", "code"])
+    normalized = _normalize_iata(candidate)
+    return normalized if normalized is not None else fallback
 
 
 def _carrier_name(carrier: dict[str, Any] | None, fallback: str | None = None) -> str | None:
