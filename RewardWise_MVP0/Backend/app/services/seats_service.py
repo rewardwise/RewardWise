@@ -292,6 +292,38 @@ async def search_award_availability(
             if hydrated_trips:
                 award["trips"] = hydrated_trips
 
+    # Resolve metro CSV airport codes ("SFO,OAK,SJC") to the single IATA that
+    # was actually booked, derived from the first/last segment of the award's
+    # best trip. seats.aero's Route.OriginAirport / Route.DestinationAirport
+    # echoes the metro CSV back verbatim when the search input was a metro CSV
+    # (autocomplete-resolved BAY → "SFO,OAK,SJC"). Without this resolution, the
+    # CSV propagates downstream to the FE — Frontend/utils/flightLegs.ts Tier 3
+    # synthesis renders the raw CSV in the airport-pair span ("SIN → SFO,OAK,
+    # SJC"), which is the founder-flagged "three airports on the return leg"
+    # bug. Resolution rules:
+    #   • Only intervene when the current value contains a comma (CSV input).
+    #     Non-CSV inputs are already single IATAs from Route or the
+    #     first-segment-of-input fallback — leave them untouched.
+    #   • Prefer trips[0].segments[0/-1] — the booked trip's actual endpoints.
+    #     If no trips/segments are available (hydration didn't fire, or the
+    #     award has no segment detail), leave the CSV in place. The FE Tier 4
+    #     fallback then handles it the same way it did pre-fix, so worst case
+    #     is no-regression.
+    for r in results:
+        trips = r.get("trips") or []
+        first_trip_segments = trips[0].get("segments") if trips else None
+        if first_trip_segments:
+            current_origin = r.get("origin_airport")
+            if isinstance(current_origin, str) and "," in current_origin:
+                seg_origin = first_trip_segments[0].get("origin")
+                if seg_origin and "," not in seg_origin:
+                    r["origin_airport"] = seg_origin
+            current_destination = r.get("destination_airport")
+            if isinstance(current_destination, str) and "," in current_destination:
+                seg_destination = first_trip_segments[-1].get("destination")
+                if seg_destination and "," not in seg_destination:
+                    r["destination_airport"] = seg_destination
+
     # Internal-only field — never expose to API consumers.
     for r in results:
         r.pop("_trip_candidates", None)
