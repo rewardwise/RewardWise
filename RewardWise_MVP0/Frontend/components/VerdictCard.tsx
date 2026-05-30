@@ -3,17 +3,9 @@
 
 import { useMemo, useState } from "react";
 import {
-  Bell,
   Calendar,
-  Check,
-  ChevronDown,
-  ChevronUp,
-  ExternalLink,
-  PlaneLanding,
-  PlaneTakeoff,
   Sparkles,
 } from "lucide-react";
-import { useAlerts } from "@/context/AlertContext";
 import { cabinLabel } from "@/utils/cabin";
 import { fmtMoney } from "@/utils/format";
 import { dedupeByProgram, filterByDate } from "@/utils/awardOptions";
@@ -22,7 +14,6 @@ import VerdictTopRow from "@/components/verdict/VerdictTopRow";
 import EmptyWalletCTA from "@/components/verdict/EmptyWalletCTA";
 import ErrorStateCard from "@/components/verdict/ErrorStateCard";
 import FlightSection, { FlightLeg } from "@/components/verdict/FlightSection";
-import AwardDetailsSection, { AwardProgramOption } from "@/components/verdict/AwardDetailsSection";
 import MultiHandoffGrid, { MultiHandoffProgram, MultiHandoffCashAirline } from "@/components/verdict/MultiHandoffGrid";
 import WalletFramingPreview from "@/components/verdict/WalletFramingPreview";
 import PartialDataCard from "@/components/verdict/PartialDataCard";
@@ -295,8 +286,8 @@ export default function VerdictCard({
   // Metro + flex searches return multiple award_options per program (different
   // airport pairs / dates). Pin to winning_date first so flex multi-date noise
   // doesn't surface trips on a date the user didn't book (86ba4t6f1), then
-  // collapse to best-per-program before any consumer (AwardDetailsSection
-  // header, MultiHandoffGrid cards, FlightSection segments) reads the list.
+  // collapse to best-per-program before any consumer (MultiHandoffGrid cards,
+  // FlightSection segments) reads the list.
   const awardOptions = useMemo(
     () => dedupeByProgram(filterByDate(rawAwardOptions, winningDate)),
     [rawAwardOptions, winningDate],
@@ -306,11 +297,7 @@ export default function VerdictCard({
     [rawReturnAwardOptions, winningReturnDate],
   );
 
-  const { addToWatchlist, isWatching } = useAlerts();
-  const [justAdded, setJustAdded] = useState(false);
   const [speaking, setSpeaking] = useState(false);
-  const [flightDetailsOpen, setFlightDetailsOpen] = useState(false);
-  const alreadyWatching = isWatching(origin, destination, departDate);
 
   const recommendation = verdict.recommendation ?? (verdict.pay_cash ? "pay_cash" : "use_points");
   const recommendationLabel = verdict.verdict_label ?? (recommendation === "pay_cash" ? "Pay Cash" : recommendation === "wait" ? "Wait" : "Use Points");
@@ -352,6 +339,7 @@ export default function VerdictCard({
     travelersCount > 1 &&
     displayPointsPerTraveler != null &&
     displayPointsPerTraveler > 0;
+  const remainingSeats = bestOutbound?.remaining_seats ?? null;
   const mainExplanation = verdict.explanation || verdict.verdict || "Zoe compared the live cash fare against the strongest award option available for this trip.";
 
   const verdictTier = recommendation === "use_points" ? verdict.verdict_tier ?? null : null;
@@ -368,26 +356,25 @@ export default function VerdictCard({
     if (verdictTier === "marginal") return "border-slate-400/30 bg-slate-500/15 text-slate-200";
     return "";
   })();
-  const tierTileValueClass = (() => {
-    if (verdictTier === "premium") return "text-emerald-400";
-    if (verdictTier === "solid") return "text-amber-300";
-    if (verdictTier === "marginal") return "text-slate-200";
-    return "text-white";
-  })();
 
   const recommendationHeadline = (() => {
     if (recommendation === "use_points") {
-      return displayCashPrice != null
-        ? `Use Points · Cash fare ${fmtMoney(displayCashPrice, displayCashPrice % 1 === 0 ? 0 : 2)}`
-        : "Use Points";
+      return displaySavings != null
+        ? `Use points — Save ~${fmtMoney(displaySavings, 0)}`
+        : "Use points";
     }
     if (recommendation === "pay_cash") {
       return displayCashPrice != null
-        ? `Pay Cash · ${fmtMoney(displayCashPrice, displayCashPrice % 1 === 0 ? 0 : 2)}`
-        : "Pay Cash";
+        ? `Pay cash — ${fmtMoney(displayCashPrice, 0)}`
+        : "Pay cash";
     }
     return verdict.verdict_label ?? "Wait";
   })();
+
+  const honestyLine =
+    recommendation === "use_points" && hasAward && displayCashPrice != null
+      ? `${Number(displayPoints).toLocaleString()} pts instead of ${fmtMoney(displayCashPrice, 0)} cash`
+      : null;
 
   const isOutboundFlex = Boolean(departDateEnd && departDateEnd !== departDate);
   const isReturnFlex = Boolean(
@@ -447,15 +434,6 @@ export default function VerdictCard({
     if (bestOutbound?.airlines) return bestOutbound.airlines;
     return null;
   })();
-
-  const programOptions: AwardProgramOption[] = awardOptions.map((opt) => ({
-    program: opt.program,
-    points: opt.points,
-    taxes: opt.taxes,
-    cpp: opt.cpp,
-    remaining_seats: opt.remaining_seats,
-    direct: opt.direct,
-  }));
 
   // Top-1 program per leg: wallet-fit-adjusted cpp, single card not five.
   // selectTopProgram returns null if all awards have null/zero cpp.
@@ -522,204 +500,6 @@ export default function VerdictCard({
     utterance.onerror = () => setSpeaking(false);
     setSpeaking(true);
     window.speechSynthesis.speak(utterance);
-  };
-
-  const handleSetAlert = () => {
-    if (alreadyWatching || justAdded) return;
-    addToWatchlist({
-      origin,
-      destination,
-      departDate,
-      returnDate,
-      cabin: cabin ?? "economy",
-      passengers: travelers,
-      tripType: isRoundtrip ? "roundtrip" : "oneway",
-      cashPrice,
-      pointsRequired: winner?.points ? winner.points * travelers : null,
-      program: winner?.program ?? null,
-      verdict: recommendation === "pay_cash" ? "cash" : "points",
-    });
-    setJustAdded(true);
-  };
-
-  const renderCashLeg = (flight: CashFlight | CashReturnFlight | null, label: string, isReturnLeg = false) => {
-    if (!flight) return null;
-    const legs = flight.legs ?? [];
-    const hasSegments = legs.length > 0;
-    const departureCode = (flight as CashFlight).departure_iata || "—";
-    const arrivalCode = (flight as CashFlight).arrival_iata || "—";
-    const departureAirport = (flight as CashFlight).departure_airport;
-    const arrivalAirport = (flight as CashFlight).arrival_airport;
-    const bookingLink = "booking_url" in flight ? flight.booking_url : null;
-    const seller = "vendor" in flight ? flight.vendor : null;
-    const stopPlaces = (flight as CashFlight).stop_places ?? [];
-    const fareBasis = "fare_basis_codes" in flight ? joinList(flight.fare_basis_codes) : "—";
-    const bookingCodes = "booking_codes" in flight ? joinList(flight.booking_codes) : "—";
-    const fareFamilies = "fare_families" in flight ? joinList(flight.fare_families) : "—";
-    const lastUpdated = "price_last_updated" in flight ? fmtShortDateTime(flight.price_last_updated) : "—";
-    const quoteAge = "quote_age" in flight ? quoteAgeText(flight.quote_age) : "—";
-    const transferType = "transfer_type" in flight && flight.transfer_type ? flight.transfer_type : "—";
-    const bookingProposition = "booking_proposition" in flight && flight.booking_proposition ? flight.booking_proposition : "—";
-    const providerScore = "score" in flight && flight.score != null ? String(flight.score) : "—";
-
-    const summaryTiles = [
-      { label: "Airline", value: segmentAirlines(legs) },
-      { label: "Stops", value: stopText((flight as CashFlight).stops) },
-      { label: "Duration", value: fmtDuration((flight as CashFlight).total_duration) || "—" },
-      { label: "Seller", value: seller || "Seller pending" },
-    ];
-
-    const hiddenTiles = [
-      { label: "Flight", value: flightNumbers(legs) },
-      { label: "Updated", value: lastUpdated },
-      { label: "Quote age", value: quoteAge },
-      { label: "Fare basis", value: fareBasis },
-      { label: "Booking code", value: bookingCodes },
-      { label: "Fare family", value: fareFamilies },
-      { label: "Transfer", value: transferType },
-      { label: "Booking type", value: bookingProposition },
-      { label: "Provider score", value: providerScore },
-    ];
-
-    return (
-      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-        <div className="flex items-start gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-indigo-400/20 bg-indigo-500/15">
-            {isReturnLeg ? <PlaneLanding className="h-4 w-4 text-indigo-300" /> : <PlaneTakeoff className="h-4 w-4 text-indigo-300" />}
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="mb-1 text-xs uppercase tracking-[0.14em] text-indigo-300">{label}</p>
-                <p className="text-base font-bold text-white">{departureCode} → {arrivalCode}</p>
-              </div>
-              {"price" in flight && flight.price != null && <p className="text-lg font-extrabold text-emerald-300">{fmtMoney(flight.price, flight.price % 1 === 0 ? 0 : 2)}</p>}
-            </div>
-
-            <p className="mt-1 text-sm text-slate-300">
-              {fmtTime((flight as CashFlight).departure_time) || "Time pending"}
-              {fmtTime((flight as CashFlight).arrival_time) ? ` – ${fmtTime((flight as CashFlight).arrival_time)}` : ""}
-              {(flight as CashFlight).total_duration ? ` · ${fmtDuration((flight as CashFlight).total_duration)}` : ""}
-              {` · ${stopText((flight as CashFlight).stops)}`}
-            </p>
-
-            {(departureAirport || arrivalAirport) && (
-              <p className="mt-2 text-xs leading-5 text-slate-500">
-                {departureAirport || departureCode} → {arrivalAirport || arrivalCode}
-              </p>
-            )}
-
-            {stopPlaces.length > 0 && (
-              <p className="mt-1 text-xs leading-5 text-slate-500">
-                Layover: {stopPlaces.map((stop) => stop.iata || stop.name).filter(Boolean).join(", ")}
-              </p>
-            )}
-
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              {summaryTiles.map((tile) => (
-                <div key={`${label}-${tile.label}`} className="rounded-xl border border-white/8 bg-slate-900/55 px-3 py-2">
-                  <p className="text-[10px] uppercase tracking-[0.12em] text-slate-500">{tile.label}</p>
-                  <p className="mt-1 break-words text-sm font-semibold text-white">{tile.value}</p>
-                </div>
-              ))}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setFlightDetailsOpen((value) => !value)}
-              className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2 text-sm font-semibold text-slate-200 hover:bg-white/[0.06]"
-            >
-              {flightDetailsOpen ? "Hide flight details" : "Show flight details"}
-              {flightDetailsOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            </button>
-
-            {flightDetailsOpen && (
-              <div className="mt-3 space-y-4">
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {hiddenTiles.map((tile) => (
-                    <div key={`${label}-${tile.label}`} className="rounded-xl border border-white/8 bg-slate-900/55 px-3 py-2">
-                      <p className="text-[10px] uppercase tracking-[0.12em] text-slate-500">{tile.label}</p>
-                      <p className="mt-1 break-words text-sm font-semibold text-white">{tile.value}</p>
-                    </div>
-                  ))}
-                </div>
-
-                {hasSegments && (
-                  <div className="space-y-3 border-t border-white/10 pt-4">
-                    <p className="text-[11px] uppercase tracking-[0.14em] text-slate-500">Segment details</p>
-                    {legs.map((leg, index) => (
-                      <div key={`${label}-${index}-${leg.flight_number ?? "segment"}`} className="flex gap-3">
-                        <div className="flex flex-col items-center">
-                          <div className="mt-1 h-2.5 w-2.5 rounded-full bg-indigo-300" />
-                          {index < legs.length - 1 && <div className="my-1 w-px flex-1 bg-white/10" />}
-                        </div>
-                        <div className="min-w-0 flex-1 pb-1">
-                          <div className="flex flex-wrap items-start justify-between gap-2">
-                            <div>
-                              <p className="text-sm font-semibold text-white">
-                                {leg.departure_iata || "—"} → {leg.arrival_iata || "—"}
-                              </p>
-                              <p className="mt-0.5 text-xs text-slate-400">
-                                {fmtTime(leg.departure_time) || "Time pending"}
-                                {fmtTime(leg.arrival_time) ? ` – ${fmtTime(leg.arrival_time)}` : ""}
-                                {leg.duration ? ` · ${fmtDuration(leg.duration)}` : ""}
-                              </p>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-xs font-semibold text-slate-200">{leg.airline || "Airline pending"}</p>
-                              <p className="text-[11px] text-slate-500">
-                                {leg.flight_number ? `Flight ${leg.flight_number}` : "Flight # pending"}
-                                {leg.airplane ? ` · ${leg.airplane}` : ""}
-                                {leg.travel_class ? ` · ${leg.travel_class}` : ""}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {bookingLink && (
-              <a href={bookingLink} target="_blank" rel="noopener noreferrer" className="mt-4 inline-flex items-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-500/10 px-3 py-2 text-sm font-semibold text-emerald-200 hover:bg-emerald-500/15">
-                Open booking option <ExternalLink className="h-3.5 w-3.5" />
-              </a>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderAwardLeg = (option: AwardOption | null, label: string, isReturnLeg = false) => {
-    if (!option) return null;
-    const trip = option.trips?.[0];
-    const first = trip?.segments?.[0];
-    const last = trip?.segments?.[trip.segments.length - 1];
-    return (
-      <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-        <div className="flex items-start gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-emerald-400/20 bg-emerald-500/15">
-            {isReturnLeg ? <PlaneLanding className="h-4 w-4 text-emerald-300" /> : <PlaneTakeoff className="h-4 w-4 text-emerald-300" />}
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="mb-1 text-xs uppercase tracking-[0.14em] text-slate-400">{label}</p>
-            <p className="text-sm font-semibold text-white">{fmtProgram(option.program)}</p>
-            <p className="mt-1 text-xs text-slate-400">
-              {first?.origin && last?.destination ? `${first.origin} → ${last.destination}` : "Award itinerary"}
-              {trip?.departs_at && trip?.arrives_at ? ` · ${fmtTime(trip.departs_at)} – ${fmtTime(trip.arrives_at)}` : ""}
-              {trip?.total_duration ? ` · ${fmtDuration(trip.total_duration)}` : ""}
-            </p>
-          </div>
-          <div className="text-right">
-            <p className="font-bold text-emerald-300">{(option.points * travelers).toLocaleString()} pts</p>
-            {option.taxes != null && option.taxes > 0 && <p className="text-xs text-slate-400">+${Number(option.taxes).toFixed(2)}</p>}
-          </div>
-        </div>
-      </div>
-    );
   };
 
   // Empty wallet onboarding state: logged-in user with zero programs AND
@@ -875,13 +655,20 @@ export default function VerdictCard({
                 </p>
               )}
 
-              <div className="mt-8 rounded-2xl bg-white/[0.04] p-5 md:p-6">
-                <div
-                  className={`grid gap-5 ${tierLabel && displayCpp != null ? "md:grid-cols-4" : "md:grid-cols-3"}`}
+              {honestyLine && (
+                <p
+                  data-testid="verdict-honesty-line"
+                  className="mt-4 text-base font-medium text-slate-300"
                 >
+                  {honestyLine}
+                </p>
+              )}
+
+              <div className="mt-6 rounded-2xl bg-white/[0.04] p-5 md:p-6">
+                <div className="grid gap-5 md:grid-cols-3">
                   <div>
                     <p className="text-sm font-semibold text-slate-400">Cash fare</p>
-                    <p className="mt-2 text-2xl font-bold text-white">{fmtMoney(displayCashPrice, displayCashPrice != null && displayCashPrice % 1 !== 0 ? 2 : 0)}</p>
+                    <p className="mt-2 text-2xl font-bold text-white">{fmtMoney(displayCashPrice, 0)}</p>
                   </div>
                   <div>
                     <p className="text-sm font-semibold text-slate-400">Best award</p>
@@ -897,21 +684,21 @@ export default function VerdictCard({
                         {`${Number(displayPointsPerTraveler).toLocaleString()} pts each · ${travelersCount} travelers`}
                       </p>
                     )}
+                    {remainingSeats != null && remainingSeats > 0 && (
+                      <span
+                        data-testid="verdict-seats-chip"
+                        className="mt-2 inline-flex items-center rounded-full border border-amber-400/30 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-amber-200"
+                      >
+                        {remainingSeats} seat{remainingSeats !== 1 ? "s" : ""} left
+                      </span>
+                    )}
                   </div>
                   <div>
-                    <p className="text-sm font-semibold text-slate-400">Value preserved</p>
+                    <p className="text-sm font-semibold text-slate-400">Savings</p>
                     <p className="mt-2 text-2xl font-bold text-emerald-400">
                       {displaySavings != null ? `~${fmtMoney(displaySavings, 0)}` : "—"}
                     </p>
                   </div>
-                  {tierLabel && displayCpp != null && (
-                    <div data-testid="verdict-cpp-tile">
-                      <p className="text-sm font-semibold text-slate-400">Point value</p>
-                      <p className={`mt-2 text-2xl font-bold ${tierTileValueClass}`}>
-                        {displayCpp.toFixed(2)}¢/pt
-                      </p>
-                    </div>
-                  )}
                 </div>
 
                 <p className="mt-5 text-base leading-7 text-slate-300">{reasoningCopy}</p>
@@ -926,24 +713,20 @@ export default function VerdictCard({
                   outbound={outboundLeg}
                   inbound={inboundLeg}
                 />
-                <AwardDetailsSection
-                  recommendation={recommendation}
-                  operatingAirline={operatingAirline}
-                  awardOptions={programOptions}
-                  userPrograms={userPrograms}
-                  travelers={travelers}
-                />
                 {recommendation === "use_points" ? (
-                  <>
-                    <MultiHandoffGrid
-                      recommendation="use_points"
-                      programs={handoffPrograms}
-                      bestDate={bestDate}
-                      routeLabel={routeLabel}
-                      travelersLabel={travelersLabel}
-                      legLabel={isRoundtrip ? "Outbound" : undefined}
-                    />
-                    {isRoundtrip && returnHandoffPrograms.length > 0 ? (
+                  isRoundtrip && returnHandoffPrograms.length > 0 ? (
+                    <div
+                      data-testid="verdict-handoffs-grid"
+                      className="grid gap-5 md:grid-cols-2"
+                    >
+                      <MultiHandoffGrid
+                        recommendation="use_points"
+                        programs={handoffPrograms}
+                        bestDate={bestDate}
+                        routeLabel={routeLabel}
+                        travelersLabel={travelersLabel}
+                        legLabel="Outbound"
+                      />
                       <MultiHandoffGrid
                         recommendation="use_points"
                         programs={returnHandoffPrograms}
@@ -952,8 +735,16 @@ export default function VerdictCard({
                         travelersLabel={travelersLabel}
                         legLabel="Return"
                       />
-                    ) : null}
-                  </>
+                    </div>
+                  ) : (
+                    <MultiHandoffGrid
+                      recommendation="use_points"
+                      programs={handoffPrograms}
+                      bestDate={bestDate}
+                      routeLabel={routeLabel}
+                      travelersLabel={travelersLabel}
+                    />
+                  )
                 ) : recommendation === "pay_cash" ? (
                   <MultiHandoffGrid
                     recommendation="pay_cash"
@@ -1037,48 +828,34 @@ export default function VerdictCard({
 )}
 
             {/* Footer controls — full app only */}
-            {!publicPreview && (
-              <div className="mt-8 border-t border-white/10 pt-5">
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-end">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <button
-                      onClick={handleSetAlert}
-                      disabled={alreadyWatching || justAdded}
-                      className="flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold disabled:opacity-60"
-                      style={{ borderColor: "rgba(251,191,36,0.25)", background: "rgba(251,191,36,0.08)", color: "#fbbf24" }}
-                    >
-                      {alreadyWatching || justAdded ? <Check className="h-4 w-4" /> : <Bell className="h-4 w-4" />}
-                      {alreadyWatching || justAdded ? "Alert set" : "Set alert"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!onAskZoe) return;
-                        const cashStr = displayCashPrice != null ? fmtMoney(Math.round(displayCashPrice)) : null;
-                        const ptsStr = displayPoints != null ? `${Number(displayPoints).toLocaleString()} points` : null;
-                        const progStr = winner?.program ? winner.program.replace(/_/g, " ") : null;
-                        const cppStr = winner?.cpp != null ? `${winner.cpp.toFixed(2)} cents per point` : null;
-                        const savingsStr = displaySavings != null ? `saving roughly ${fmtMoney(Math.round(displaySavings))}` : null;
-                        const parts = [
-                          `The search returned a verdict for ${origin} → ${destination}`,
-                          `on ${bestDate}${returnDate ? ` returning ${returnDate}` : ""}, ${travelers} traveler${travelers !== 1 ? "s" : ""}, ${cabinLabel(cabin || "economy").toLowerCase()} class.`,
-                          `Verdict: ${recommendationLabel}.`,
-                          cashStr ? `Cash fare: ${cashStr}.` : null,
-                          ptsStr && progStr ? `Best award: ${ptsStr} via ${progStr}.` : null,
-                          cppStr ? `Value: ${cppStr}.` : null,
-                          savingsStr ? `Using points would save ${savingsStr} vs cash.` : null,
-                          `Confidence: ${confidence}.`,
-                          verdict.confidence_reason ?? null,
-                          verdict.explanation ?? null,
-                        ].filter(Boolean).join(" ");
-                        onAskZoe(parts);
-                      }}
-                      className="inline-flex items-center gap-2 rounded-xl bg-emerald-400 px-5 py-2.5 text-sm font-bold text-slate-950 hover:bg-emerald-300"
-                    >
-                      Ask Zoe <Sparkles className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
+            {!publicPreview && onAskZoe && (
+              <div className="mt-6 flex justify-end border-t border-white/10 pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const cashStr = displayCashPrice != null ? fmtMoney(Math.round(displayCashPrice), 0) : null;
+                    const ptsStr = displayPoints != null ? `${Number(displayPoints).toLocaleString()} points` : null;
+                    const progStr = winner?.program ? winner.program.replace(/_/g, " ") : null;
+                    const cppStr = metrics.cpp != null ? `${metrics.cpp.toFixed(2)} cents per point` : null;
+                    const savingsStr = displaySavings != null ? `saving roughly ${fmtMoney(Math.round(displaySavings), 0)}` : null;
+                    const parts = [
+                      `The search returned a verdict for ${origin} → ${destination}`,
+                      `on ${bestDate}${returnDate ? ` returning ${returnDate}` : ""}, ${travelers} traveler${travelers !== 1 ? "s" : ""}, ${cabinLabel(cabin || "economy").toLowerCase()} class.`,
+                      `Verdict: ${recommendationLabel}.`,
+                      cashStr ? `Cash fare: ${cashStr}.` : null,
+                      ptsStr && progStr ? `Best award: ${ptsStr} via ${progStr}.` : null,
+                      cppStr ? `Value: ${cppStr}.` : null,
+                      savingsStr ? `Using points would save ${savingsStr} vs cash.` : null,
+                      `Confidence: ${confidence}.`,
+                      verdict.confidence_reason ?? null,
+                      verdict.explanation ?? null,
+                    ].filter(Boolean).join(" ");
+                    onAskZoe(parts);
+                  }}
+                  className="inline-flex items-center gap-2 rounded-xl bg-emerald-400 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-emerald-300"
+                >
+                  Ask Zoe <Sparkles className="h-4 w-4" />
+                </button>
               </div>
             )}
 

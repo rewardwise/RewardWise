@@ -19,9 +19,9 @@
  *     renders directly below the badge with the plain-English copy for
  *     that tier (one of three locked strings — see Backend
  *     verdict_service.py TIER_EXPLANATION_* constants).
- *   - A 4th tile ([data-testid="verdict-cpp-tile"]) joins the metrics
- *     grid (Cash | Points | Estimated savings | Point value). Pre-fix
- *     CPP was only visible inside the collapsible AwardDetails pill.
+ *   - (Earlier drafts added a 4th "Point value" tile to the metrics grid.
+ *     The cause-aware-cash-copy PR removed it; the ¢/pt number now appears
+ *     inline on the tier badge label only.)
  *
  * Strategy: authenticated /home search for JFK→LAX one-way economy +14d.
  * The seeded smoke-test@ wallet carries enough premium-cabin transferable
@@ -210,13 +210,11 @@ test.describe('PR 3: verdict-tier explanation clarity (badge + threshold + CPP t
 			'Threshold copy leaked the "cpp" abbreviation ELI5 banned.',
 		).not.toMatch(/\bcpp\b/i)
 
-		// ── Element 3: CPP 4th tile lives inside the metrics box ──
-		// Asserts the redemption-rate number is now first-class metric-grid
-		// content, not only buried in the AwardDetails pill below the fold.
-		const cppTile = page.locator('[data-testid="verdict-cpp-tile"]')
-		await expect(cppTile).toBeVisible()
-		const cppText = (await cppTile.textContent()) ?? ''
-		expect(cppText).toContain('Point value')
-		expect(cppText).toMatch(/\d+\.\d{2}¢\/pt/)
+		// (Note: an earlier draft of this surface added a standalone "Point
+		// value" 4th tile to the metrics grid. The cause-aware-cash-copy PR
+		// dropped that tile — raw ¢/pt as a standalone metric is the jargon
+		// pattern the redesign removed. The redemption-rate number now lives
+		// inline on the tier badge label ("Premium value · X.XX¢/pt"),
+		// already verified by Element 1 above.)
 	})
 })

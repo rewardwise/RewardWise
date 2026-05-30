@@ -130,7 +130,7 @@ describe("VerdictCard — surface cleanup contract", () => {
     expect(container.textContent).toContain(EXPLANATION);
     expect(container.textContent).toContain("Cash fare");
     expect(container.textContent).toContain("Best award");
-    expect(container.textContent).toContain("Value preserved");
+    expect(container.textContent).toContain("Savings");
   });
 
   it("does not render a reasoning toggle button", () => {
@@ -157,12 +157,13 @@ describe("VerdictCard — surface cleanup contract", () => {
   });
 });
 
-// Bug B (ClickUp 86b9vjxgb): the Use Points verdict headline used to render
-// "Use Points · Save $X" using estimated_savings, which is unreliable while
-// Ankur's P0 cash-benchmark inflation (86b9twp77) is open. The headline now
-// anchors on the cash fare baseline instead, formatted as
-// "Use Points · Cash fare $X".
-describe("VerdictCard — Use Points headline shows cash fare baseline (Bug B)", () => {
+// Phase 3 redesign: headline leads with dollar savings on use_points
+// ("Use points — Save ~$X") and the cash amount on pay_cash ("Pay cash — $X"),
+// both rounded to 0 decimals. The honesty sub-line ("{N} pts instead of $X
+// cash") sits inside the reasoning block, not the headline. Cash fare is now
+// a metrics-tile label, not a headline label. Replaces the prior Bug B
+// "Use Points · Cash fare $X" contract.
+describe("VerdictCard — headline leads with dollar savings (Phase 3 redesign)", () => {
   // Query the headline <p> directly inside the VerdictTopRow stub, not the
   // whole stub div, so adjacent button labels (Listen / Helpful / Needs work)
   // do not bleed into the headline assertion.
@@ -172,41 +173,45 @@ describe("VerdictCard — Use Points headline shows cash fare baseline (Bug B)",
     return headline?.textContent?.trim() ?? "";
   }
 
-  it("use_points headline includes the Cash fare label and the cash baseline amount", () => {
+  it("use_points headline leads with the dollar savings amount, rounded", () => {
     renderCard({ metrics: { cash_price: 737, points_cost: 35000, taxes: 5.6, estimated_savings: 200 } });
     const headline = headlineText();
-    expect(headline).toContain("Use Points");
-    expect(headline).toContain("Cash fare $737");
-    // The old "Save $X" framing must be gone from the headline entirely.
-    // Stricter than "Save $" so any "Save" anywhere in the headline fails.
-    expect(headline).not.toContain("Save");
+    expect(headline).toContain("Use points");
+    expect(headline).toContain("Save ~$200");
+    // Phase 3 moved the cash-fare baseline out of the headline into the
+    // metrics tile so the hero stays one short, scannable line.
+    expect(headline).not.toContain("Cash fare");
   });
 
-  it("pay_cash headline is unchanged (no Cash fare label on this branch)", () => {
+  it("pay_cash headline shows the cash amount with the em dash separator", () => {
     renderCard({
       recommendation: "pay_cash" as const,
       pay_cash: true,
       metrics: { cash_price: 169, points_cost: 35000, taxes: 5.6, estimated_savings: 200 },
     });
     const headline = headlineText();
-    expect(headline).toContain("Pay Cash");
+    expect(headline).toContain("Pay cash");
     expect(headline).toContain("$169");
-    // Pay Cash branch deliberately keeps the original framing.
+    // Cash fare label belongs to the metrics tile, not the pay_cash headline.
     expect(headline).not.toContain("Cash fare");
   });
 
-  it("use_points headline renders bare when cash price is missing (no null/undefined leak)", () => {
-    // Null out every source of displayCashPrice in production:
-    //   metrics.cash_price ?? cashPrice ?? bestCashFlight?.price ?? null
-    // 1. metrics.cash_price = null (explicit)
-    // 2. cashPrice prop = undefined (omitted)
-    // 3. flights = [] (omitted, prop default at VerdictCard.tsx:314)
+  it("use_points headline falls back to bare 'Use points' when savings is missing", () => {
+    // Null out every source of displaySavings:
+    //   metrics.estimated_savings is the only path. cash_price=null also
+    //   guarantees the honesty line gate fails downstream — keep both null
+    //   so the headline-only contract is unambiguous.
     act(() => {
       root.render(
         <VerdictCard
           verdict={{
             ...baseVerdict,
-            metrics: { cash_price: null as unknown as number, points_cost: 35000, taxes: 5.6 },
+            metrics: {
+              cash_price: null as unknown as number,
+              points_cost: 35000,
+              taxes: 5.6,
+              estimated_savings: null as unknown as number,
+            },
           }}
           cashPrice={null}
           origin="SFO"
@@ -218,20 +223,22 @@ describe("VerdictCard — Use Points headline shows cash fare baseline (Bug B)",
       );
     });
     const headline = headlineText();
-    // Headline is literally "Use Points" with nothing after it.
-    expect(headline).toBe("Use Points");
+    expect(headline).toBe("Use points");
     expect(headline).not.toMatch(/null|undefined|NaN/);
     expect(headline).not.toContain("Cash fare");
+    expect(headline).not.toContain("Save");
   });
 });
 
 // Ticket 86b9v4aft: every use_points verdict should explain WHY points won.
-// Three new elements between mainExplanation and the metrics box:
+// Two surface elements between mainExplanation and the metrics box (the
+// original "Point value" 4th tile was dropped in Phase 3 — raw ¢/pt as a
+// stand-alone metric is the jargon-pattern the redesign removed; ¢/pt now
+// only appears inline on the tier badge):
 //   - tier badge ("Premium value · 2.40¢/pt" / "Solid value · 1.60¢/pt" /
 //     "Marginal value · 1.30¢/pt") with color matching the verdict tier
 //   - tier_explanation paragraph (verbatim from BE)
-//   - "Point value" 4th tile in the metrics grid (matches tier color)
-// All three gate on verdict_tier + metrics.cpp + recommendation==use_points.
+// Both gate on verdict_tier + metrics.cpp + recommendation==use_points.
 describe("VerdictCard — verdict tier explanation surface (use_points)", () => {
   const STRONG_COPY =
     "This is one of the best uses of your points for this trip — strong value, book if you're ready.";
@@ -248,7 +255,7 @@ describe("VerdictCard — verdict tier explanation surface (use_points)", () => 
     } as Partial<typeof baseVerdict>);
   }
 
-  it("strong (premium): badge + threshold line + cpp tile render with emerald tone", () => {
+  it("strong (premium): badge + threshold line render with emerald tone", () => {
     renderTier("premium", 2.4, STRONG_COPY);
     const badge = container.querySelector('[data-testid="verdict-tier-badge"]');
     expect(badge, "tier badge must render for premium").not.toBeNull();
@@ -259,11 +266,6 @@ describe("VerdictCard — verdict tier explanation surface (use_points)", () => 
 
     const line = container.querySelector('[data-testid="verdict-tier-explanation"]');
     expect(line?.textContent).toBe(STRONG_COPY);
-
-    const cppTile = container.querySelector('[data-testid="verdict-cpp-tile"]');
-    expect(cppTile, "CPP tile must render in metrics box").not.toBeNull();
-    expect(cppTile?.textContent).toContain("Point value");
-    expect(cppTile?.textContent).toContain("2.40¢/pt");
   });
 
   it("solid: badge renders with amber tone and exact solid copy", () => {
@@ -299,7 +301,6 @@ describe("VerdictCard — verdict tier explanation surface (use_points)", () => 
     } as Partial<typeof baseVerdict>);
     expect(container.querySelector('[data-testid="verdict-tier-badge"]')).toBeNull();
     expect(container.querySelector('[data-testid="verdict-tier-explanation"]')).toBeNull();
-    expect(container.querySelector('[data-testid="verdict-cpp-tile"]')).toBeNull();
   });
 
   it("does not render tier surface on pay_cash even if tier fields are set", () => {

@@ -97,8 +97,11 @@ def _build_award_options_with_per_date_cash(
     off its own date via cash_by_date, not a single anchor-date scalar.
 
     include_endpoint_airports controls whether origin_airport / destination_airport
-    are emitted (outbound leg includes them; return leg does not — matches the
-    pre-refactor response shape).
+    are emitted on each award row. The FE consumes these in
+    `Frontend/utils/flightLegs.ts` (Tier 3 leg synthesis) to render resolved
+    airport codes instead of the raw metro CSV (e.g. "JFK,LGA,EWR"). Both
+    outbound and return legs should pass True; the False default exists only
+    for callers that have no per-leg airport data to emit.
     """
     results: list[dict] = []
     for award in awards:
@@ -276,7 +279,7 @@ async def search(
         outbound_awards, cash_out_by_date, include_endpoint_airports=True
     )
     return_award_options = _build_award_options_with_per_date_cash(
-        return_awards, cash_ret_by_date, include_endpoint_airports=False
+        return_awards, cash_ret_by_date, include_endpoint_airports=True
     )
 
     # --- Pair-rank when both legs are flexible ---
@@ -645,10 +648,10 @@ async def public_search(
         )
 
         award_options = _build_award_options_with_per_date_cash(
-            outbound_awards, cash_out_by_date, include_endpoint_airports=False
+            outbound_awards, cash_out_by_date, include_endpoint_airports=True
         )
         return_award_options = _build_award_options_with_per_date_cash(
-            return_awards, cash_ret_by_date, include_endpoint_airports=False
+            return_awards, cash_ret_by_date, include_endpoint_airports=True
         )
 
         if cached_verdict_details is not None:
