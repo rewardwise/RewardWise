@@ -249,15 +249,45 @@ type SavingsExample = {
 const SAVINGS_EXAMPLES: SavingsExample[] = [];
 
 type Testimonial = {
+	stars: number;             // 1–5, rendered as filled Lucide stars
+	name: string;              // first name
+	city: string;              // attribution; "<city — confirm>" until confirmed
 	quote: string;
-	name: string;
-	role?: string;
-	verdictRoute?: string;     // e.g., "EWR → YHZ"
 };
 
-// Empty array → testimonial sub-block hidden. Same rule for the next two:
-// null → sub-block hidden. We never invent numbers.
-const TESTIMONIALS: Testimonial[] = [];
+// Three real beta testimonials. MERGE GATE: each named person (Anna, Ravi,
+// Yu Han) must confirm consent to use first name + city + quote before this
+// ships. Ravi + Yu Han cities are placeholders pending confirmation — they
+// render literally so the unconfirmed state is visible to any reviewer.
+//
+// FTC endorsement rule: testimonials that cite specific dollar results
+// require an "Individual results vary." disclosure near the section.
+const TESTIMONIALS: Testimonial[] = [
+	{
+		stars: 5,
+		name: "Anna",
+		city: "Seattle",
+		quote:
+			"Flying our family of four from Seattle to Shanghai this summer, it saved us about $3,600 on the trip — and found the deal in seconds. I could never have pulled that together on my own.",
+	},
+	{
+		stars: 5,
+		name: "Ravi",
+		city: "<city — confirm>",
+		quote:
+			"It mapped a round trip to Hawaii for our family of four and saved us $4,500. I had no idea points were the better move until the verdict spelled it out.",
+	},
+	{
+		stars: 5,
+		name: "Yu Han",
+		city: "<city — confirm>",
+		quote:
+			"We wanted to catch the fall leaves in Tokyo, and it found us business-class seats I'd have struggled to book myself — close to $8,000 in value for the two of us.",
+	},
+];
+
+// null → sub-block hidden. We never invent aggregate numbers; we only show
+// rating + traveler counter when real aggregate data exists.
 const AVG_RATING: number | null = null;
 const RATING_COUNT: number | null = null;
 const TRAVELER_COUNT: number | null = null;
@@ -1101,19 +1131,38 @@ function LandingPageContent() {
 												data-testid="testimonial-card"
 												className="rounded-2xl border border-white/10 bg-[rgba(7,16,30,0.56)] p-6 backdrop-blur-2xl"
 											>
-												<blockquote className="text-sm leading-6 text-white/80">
+												<div
+													className="flex items-center gap-0.5"
+													aria-label={`${t.stars} out of 5 stars`}
+												>
+													{Array.from({ length: t.stars }).map((_, s) => (
+														<Star
+															key={s}
+															data-testid="testimonial-star"
+															className="h-4 w-4 fill-amber-300 text-amber-300"
+														/>
+													))}
+												</div>
+												<blockquote className="mt-3 text-sm leading-6 text-white/80">
 													&ldquo;{t.quote}&rdquo;
 												</blockquote>
 												<figcaption className="mt-4 text-xs text-white/55">
 													<span className="font-medium text-white/80">
 														{t.name}
 													</span>
-													{t.role ? ` · ${t.role}` : ""}
-													{t.verdictRoute ? ` · ${t.verdictRoute}` : ""}
+													{` · ${t.city}`}
 												</figcaption>
 											</figure>
 										))}
 									</div>
+									{/* FTC endorsement rule: testimonials citing specific dollar
+									    results require an "individual results vary" disclosure. */}
+									<p
+										data-testid="testimonials-disclosure"
+										className="mt-6 text-center text-xs text-white/40"
+									>
+										Individual results vary.
+									</p>
 								</div>
 							) : null}
 						</section>
