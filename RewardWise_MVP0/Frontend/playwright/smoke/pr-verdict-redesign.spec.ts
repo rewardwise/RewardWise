@@ -216,17 +216,19 @@ test.describe('PR VERDICT-REDESIGN: post-Phase-3 results screen honors all 8 con
     ).toBeVisible()
     await expect(honestyLine).toContainText(/pts? instead of \$/)
 
-    // CONTRACT 4: Exactly one travelers-disclosure for travelers=3.
+    // CONTRACT 4: Exactly one per-traveler disclosure for travelers=3.
+    // Main's pr169 contract renamed verdict-travelers-disclosure →
+    // verdict-points-per-traveler with the "{N} pts each · {C} travelers" copy.
     const travelersDisclosure = page.locator(
-      '[data-testid="verdict-travelers-disclosure"]',
+      '[data-testid="verdict-points-per-traveler"]',
     )
     await expect(
       travelersDisclosure,
-      'With 3 travelers, the per-traveler disclosure under Best award must ' +
+      'With 3 travelers, the per-traveler caption under Best award must ' +
         'render exactly once. Zero = silent (regression). Duplicate = ' +
         'AwardDetailsSection re-rendered alongside the metrics tile.',
     ).toHaveCount(1)
-    await expect(travelersDisclosure).toContainText(/for 3 travelers/i)
+    await expect(travelersDisclosure).toContainText(/3 travelers/i)
 
     // CONTRACT 5: No Set alert button. Phase 3 removed it. Use a verdict-
     // scoped locator so a Set Alert button on /watchlist (different surface)
