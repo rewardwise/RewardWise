@@ -234,19 +234,21 @@ type HeroExample = {
 // trip on Singapore KrisFlyer chosen because it matches the "relatable
 // international family trip" framing without inventing numbers.
 //
-// Units note: prod stores cash_price as the TOTAL for the search (3 pax here)
-// but stores points_cost as PER-TRAVELER (winner.points = 79,000 = one award
-// unit). We render in TOTAL-TRIP mode for consistency, so pointsCost below is
-// 79,000 × 3 = 237,000. $9,499 ÷ 237,000 = ~4.0¢/pt, which matches the real
-// redemption rate. (The backend's stored cpp = 6.32 is internally inconsistent
-// — separate backend bug, tracked elsewhere; do not reconcile in display.)
+// Units note: seats.aero awards are ONE-WAY per pax. winner.points = 79,000 is
+// per-pax per-leg, confirmed empirically: /api/search returns separate
+// outbound + return award objects, each carrying its own 79,000. Real total
+// for a round-trip × 3 travelers is therefore (79,000 + 79,000) × 3 = 474,000.
+// $9,498.99 ÷ 474,000 ≈ 2.0¢/pt — honest matched-scope redemption rate. The
+// backend's stored cpp/points_cost surface this incorrectly today (under-
+// counts by 2× on RT); the matched-scope BE fix is tracked separately and
+// must not regress this hero figure when it lands.
 const HERO_EXAMPLE: HeroExample | null = {
 	origin: "SFO",
 	destination: "SIN",
 	cabin: "Premium Economy",
 	travelers: 3,
 	cashPrice: 9498.99,
-	pointsCost: 237000,
+	pointsCost: 474000,
 	pointsProgram: "Singapore KrisFlyer",
 	taxes: 0,
 	savings: 9498.99,
