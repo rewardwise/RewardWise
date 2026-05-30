@@ -9,6 +9,7 @@ from app.api.validators import limiter
 from app.admin.zoe_eval_routes import router as zoe_admin_router
 from app.api.zoe_stt import router as zoe_stt_router
 from app.api.zoe_voice import router as zoe_voice_router
+from app.cors_config import ALLOWED_ORIGINS, ALLOWED_ORIGIN_REGEX
 
 app = FastAPI(title="MyTravelWallet Backend")
 
@@ -16,16 +17,10 @@ app = FastAPI(title="MyTravelWallet Backend")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "https://reward-wise.vercel.app",
-        "https://mytravelwallet-ai.vercel.app",
-        "https://mytravelwallet.ai",
-        "https://www.mytravelwallet.ai",
-    ],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=ALLOWED_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
