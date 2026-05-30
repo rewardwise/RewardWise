@@ -52,6 +52,7 @@
 
 import { test, expect } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
+import { getVercelBypassHeader } from '../auth/vercel-bypass'
 
 const DEPART_DAYS = 120
 const RETURN_DAYS = 134
@@ -79,14 +80,37 @@ test.describe('PR VERDICT-REDESIGN: post-Phase-3 results screen honors all 8 con
     page,
     context,
   }) => {
+    // SFO autocomplete resolves to BAY (SFO·OAK·SJC) metro, so this is a
+    // round-trip metro fan-out × 3 travelers × PE long-haul search. End-to-
+    // end timing on preview (cold-start backend + multi-pair FlightAPI fan-
+    // out + seats.aero range-mode) regularly exceeds the playwright.config
+    // 60s default. Match the pr-delta-metro-cash-fanout headroom.
+    test.setTimeout(180_000)
+
     const syntheticIp = `smoke-verdict-redesign-${randomUUID()}`
     await context.setExtraHTTPHeaders({
       'cf-connecting-ip': syntheticIp,
       'x-real-ip': syntheticIp,
       'x-forwarded-for': syntheticIp,
+      ...getVercelBypassHeader(),
     })
 
     await page.goto('/')
+
+    // Defensive landing-nav guard: prod `/` may render a marketing landing
+    // page with an "Or try a search first — no signup needed" CTA instead of
+    // the search form directly. Click through it when present; otherwise
+    // fall through. Mirrors the guard added in commit 97efba2 for
+    // pr-verdict-tier-clarity + pr-delta-metro-cash-fanout.
+    const tryASearchCta = page.getByRole('button', {
+      name: /try a search first/i,
+    })
+    await tryASearchCta.click({ timeout: 15_000 }).catch(() => {
+      // Landing copy may have shifted; falling through is safe — if the
+      // search form is already mounted, the next fill() will find it. If
+      // not, the next fill() will time out with a clearer error than the
+      // isVisible probe we replaced.
+    })
 
     const inputs = page.getByPlaceholder('City or airport')
     await inputs.first().fill('SFO')
@@ -106,7 +130,7 @@ test.describe('PR VERDICT-REDESIGN: post-Phase-3 results screen honors all 8 con
       (res) =>
         /\/api\/public-search(\?|$)/.test(res.url()) &&
         res.request().method() === 'POST',
-      { timeout: 60_000 },
+      { timeout: 120_000 },
     )
 
     await page.getByRole('button', { name: /Search Flights/i }).click()
