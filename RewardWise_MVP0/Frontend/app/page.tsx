@@ -287,7 +287,7 @@ const TESTIMONIALS: Testimonial[] = [
 		name: "Anna",
 		city: "Seattle",
 		quote:
-			"Flying our family of four from Seattle to Shanghai this summer, it saved us about $3,600 — and found the deal in seconds. I could never have pulled that together on my own.",
+			"It found us ANA economy seats through Avianca LifeMiles for our family of four to Shanghai this summer — saved about $3,600 in seconds. I never would have thought to check that partner program on my own.",
 	},
 	{
 		stars: 5,
