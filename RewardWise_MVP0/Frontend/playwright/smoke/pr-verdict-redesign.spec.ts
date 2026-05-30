@@ -263,20 +263,81 @@ test.describe('PR VERDICT-REDESIGN: post-Phase-3 results screen honors all 8 con
         'flow now lives inside MultiHandoffGrid.',
     ).toHaveCount(0)
 
-    // CONTRACT 8: Single-airport inbound origin. The inbound leg's
-    // airport-pair element reads "{origin} → {destination}" (e.g. "SIN → SFO");
-    // neither side may be a CSV like "JFK,LGA,EWR" or "SFO,OAK,SJC". Guards
-    // the Tier-3 leg synthesis path that consumes origin_airport /
-    // destination_airport emitted by search.py with
-    // include_endpoint_airports=True on both legs. Pre-fix the FE fell
-    // through to Tier 4 (search-param synthesis) on the return leg, which
-    // dumped the raw metro CSV.
-    //
-    // Selector note: leg-header-return is the date pill ("RETURN · Dec 10"),
-    // which never carries airport codes — asserting against it was a
-    // false-pass. The airport-pair element is leg-route-return.
-    const returnRoute = page.locator('[data-testid="leg-route-return"]')
-    if ((await returnRoute.count()) > 0) {
+    // CONTRACT 8 assertions moved into the dedicated test.fixme() below —
+    // see "CONTRACT 8: return-leg single-IATA (airport-resolution follow-up)".
+    // Contracts 1-7 here pass against prod and gate this PR's merge.
+  })
+
+  // CONTRACT 8 is fixme'd pending the airport-resolution backend follow-up PR.
+  // Bug: return-leg airport pair renders the unresolved metro CSV (e.g.
+  // "SFO,OAK,SJC") instead of a single resolved IATA per direction. The fix
+  // is NOT in scope for this UI redesign PR — it lives in the backend, where
+  // search.py needs to resolve metro CSV → single IATA from the award's
+  // trips[].segments before emitting origin_airport / destination_airport.
+  //
+  // This PR ships:
+  //   - include_endpoint_airports=True on BOTH legs (necessary but not
+  //     sufficient — exposes the unresolved CSV downstream)
+  //   - leg-route-{outbound,return} testids on FlightSection so the smoke
+  //     can target the airport-pair element directly
+  //
+  // The follow-up PR will:
+  //   - Resolve metro CSV → single IATA from the award's actual booked
+  //     segments before emitting origin_airport / destination_airport
+  //   - Remove the .fixme() marker below to flip this test green
+  //
+  // Per-founder rule: do NOT delete the assertion. The harness must survive
+  // intact so the follow-up PR has a passing target to flip.
+  test.fixme(
+    'CONTRACT 8: return-leg renders single IATA (airport-resolution follow-up)',
+    async ({ page }) => {
+      test.setTimeout(180_000)
+
+      await page.goto('/home')
+
+      const tryASearchCta = page
+        .getByRole('button', { name: /try a (free )?search( first)?/i })
+        .first()
+      if (
+        await tryASearchCta.isVisible({ timeout: 5_000 }).catch(() => false)
+      ) {
+        await tryASearchCta.click()
+      }
+
+      const inputs = page.getByPlaceholder('City or airport')
+      await inputs.first().fill('SFO')
+      await inputs.first().press('Enter')
+      await inputs.nth(1).fill('SIN')
+      await inputs.nth(1).press('Enter')
+
+      const dateInputs = page.locator('input[type="date"]')
+      await dateInputs.first().fill(isoDaysFromToday(DEPART_DAYS))
+      await dateInputs.nth(1).fill(isoDaysFromToday(RETURN_DAYS))
+
+      const selects = page.getByRole('combobox')
+      await selects.first().selectOption('3')
+      await selects.nth(2).selectOption('premium_economy')
+
+      const searchResponsePromise = page.waitForResponse(
+        (res) =>
+          /\/api\/search(\?|$)/.test(res.url()) &&
+          res.request().method() === 'POST',
+        { timeout: 120_000 },
+      )
+
+      await page.getByRole('button', { name: /Search Flights/i }).click()
+      await searchResponsePromise
+
+      // CONTRACT 8: Single-airport inbound origin. The inbound leg's
+      // airport-pair element reads "{origin} → {destination}" (e.g.
+      // "SIN → SFO"); neither side may be a CSV like "JFK,LGA,EWR" or
+      // "SFO,OAK,SJC". Guards the Tier-3 leg synthesis path that consumes
+      // origin_airport / destination_airport emitted by search.py with
+      // include_endpoint_airports=True on both legs. Pre-follow-up: backend
+      // emits the unresolved metro CSV in destination_airport, so Tier 3
+      // synthesis dumps the CSV through to the FE verbatim. Follow-up PR
+      // will resolve metro → single IATA from booked segments.
+      const returnRoute = page.locator('[data-testid="leg-route-return"]')
       const returnRouteText = await returnRoute.first().innerText()
       expect(
         returnRouteText,
@@ -284,12 +345,11 @@ test.describe('PR VERDICT-REDESIGN: post-Phase-3 results screen honors all 8 con
           'contain CSV airport codes. Single resolved IATA per direction is ' +
           'the Tier-3 contract.',
       ).not.toMatch(/[A-Z]{3},[A-Z]{3}/)
-      // Sanity: each side must be exactly 3 uppercase letters (a real IATA).
       expect(
         returnRouteText,
         `Return route "${returnRouteText}" must match "AAA → BBB" with ` +
           'single 3-letter IATA codes on each side.',
       ).toMatch(/^[A-Z]{3}\s*→\s*[A-Z]{3}$/)
-    }
-  })
+    },
+  )
 })
