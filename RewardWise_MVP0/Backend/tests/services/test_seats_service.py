@@ -540,3 +540,175 @@ def test_defensive_catch_logs_warning(monkeypatch, caplog):
         "seats.aero search failed" in record.message for record in caplog.records
     )
 
+
+# ---------- Metro CSV airport resolution from segments (founder bug, 2026-05-30) ----
+#
+# When the search input is a metro CSV ("SFO,OAK,SJC" from BAY autocomplete),
+# seats.aero echoes the CSV back verbatim in Route.OriginAirport. The CSV then
+# propagates to FE rendering as "SIN → SFO,OAK,SJC" — the "three airports on the
+# return leg" bug the founder flagged. Resolution reads trips[0].segments[0/-1]
+# (the booked endpoints) and overwrites the CSV with the single IATA actually
+# used. Resolution only fires when the existing value contains a comma AND the
+# segment value is non-CSV, so the vanilla single-IATA path is untouched and
+# the no-segments path is a no-op (FE Tier 4 fallback then behaves identically
+# to pre-fix — worst case is no-regression, never worse).
+
+
+def _csv_award(
+    *,
+    route_origin: str = "SFO",
+    route_destination: str = "NRT",
+    seg_origin: str = "SFO",
+    seg_destination: str = "NRT",
+    with_segments: bool = True,
+) -> dict:
+    """Award envelope with explicit Route + segment values for CSV-resolution tests."""
+    trip: dict = {"ID": "t-csv", "TotalDuration": 600, "Stops": 0}
+    if with_segments:
+        trip["AvailabilitySegments"] = [{
+            "FlightNumber": "UA1",
+            "AircraftName": "777",
+            "OriginAirport": seg_origin,
+            "DestinationAirport": seg_destination,
+            "DepartsAt": "2026-09-15T10:00:00",
+            "ArrivesAt": "2026-09-16T14:00:00",
+            "FareClass": "Y",
+            "Cabin": "Economy",
+            "Distance": 5100,
+            "Order": 0,
+        }]
+    return {
+        "Source": "united",
+        "YAvailable": True,
+        "YMileageCost": 60000,
+        "YTotalTaxes": 5000,
+        "YRemainingSeats": 4,
+        "YDirect": True,
+        "YAirlines": "UA",
+        "AvailabilityTrips": json.dumps([trip]),
+        "Date": "2026-09-15",
+        "Route": {
+            "OriginAirport": route_origin,
+            "DestinationAirport": route_destination,
+            "ID": f"{route_origin}-{route_destination}",
+        },
+    }
+
+
+def test_csv_origin_resolved_to_first_segment_iata(monkeypatch):
+    """Route.OriginAirport CSV → resolved from trips[0].segments[0].origin."""
+    search = build_search_response([_csv_award(
+        route_origin="SFO,OAK,SJC", seg_origin="SFO",
+    )])
+    install_fakes(monkeypatch, search, {})
+    results = run_search()
+    assert len(results) == 1
+    assert results[0]["origin_airport"] == "SFO"
+
+
+def test_csv_destination_resolved_to_last_segment_iata(monkeypatch):
+    """Route.DestinationAirport CSV → resolved from trips[0].segments[-1].destination."""
+    search = build_search_response([_csv_award(
+        route_destination="SIN,XSP", seg_destination="SIN",
+    )])
+    install_fakes(monkeypatch, search, {})
+    results = run_search()
+    assert results[0]["destination_airport"] == "SIN"
+
+
+def test_non_csv_route_left_untouched(monkeypatch):
+    """Vanilla single-IATA Route → no rewrite happens (no-op for the 99% path)."""
+    search = build_search_response([_csv_award(
+        route_origin="JFK", route_destination="LHR",
+        seg_origin="JFK", seg_destination="LHR",
+    )])
+    install_fakes(monkeypatch, search, {})
+    results = run_search()
+    assert results[0]["origin_airport"] == "JFK"
+    assert results[0]["destination_airport"] == "LHR"
+
+
+def test_csv_kept_when_no_segments_available(monkeypatch):
+    """Award with CSV Route but no trips/segments → CSV left in place. Worst-case
+    guarantee: FE Tier 4 fallback then handles it exactly as it did pre-fix —
+    no-regression even if hydration fails or the award has no segment detail."""
+    search = build_search_response([_csv_award(
+        route_origin="SFO,OAK,SJC",
+        with_segments=False,
+    )])
+    # /trips fan-out fires (no inline segments), 404 makes hydration return empty.
+    install_fakes(monkeypatch, search, {"t-csv": "404"})
+    results = run_search()
+    assert results[0]["trips"] == []
+    assert results[0]["origin_airport"] == "SFO,OAK,SJC"
+
+
+def test_csv_segment_value_does_not_replace_csv_route(monkeypatch):
+    """Defensive: if the segment value is ALSO a CSV (shouldn't happen in
+    practice, but guard for it), keep the Route CSV rather than swap one CSV
+    for another. Better to surface the obvious bug than mask it."""
+    search = build_search_response([_csv_award(
+        route_origin="SFO,OAK,SJC", seg_origin="SFO,OAK",
+    )])
+    install_fakes(monkeypatch, search, {})
+    results = run_search()
+    assert results[0]["origin_airport"] == "SFO,OAK,SJC"
+
+
+def test_csv_both_legs_resolved_with_multi_segment_itinerary(monkeypatch):
+    """Two-segment trip with CSV on both legs → first.origin + last.destination.
+    Mirrors the real founder-flagged search: SFO,OAK,SJC → SIN,XSP with one
+    connection. Resolution must look at the first AND last segment, not just
+    the first, so the destination IATA reflects the actual booked endpoint."""
+    trip = {
+        "ID": "t-multi",
+        "TotalDuration": 1100,
+        "Stops": 1,
+        "AvailabilitySegments": [
+            {
+                "FlightNumber": "UA1",
+                "AircraftName": "777",
+                "OriginAirport": "SFO",
+                "DestinationAirport": "NRT",
+                "DepartsAt": "2026-09-15T10:00:00",
+                "ArrivesAt": "2026-09-16T14:00:00",
+                "FareClass": "Y",
+                "Cabin": "Economy",
+                "Distance": 5100,
+                "Order": 0,
+            },
+            {
+                "FlightNumber": "UA2",
+                "AircraftName": "787",
+                "OriginAirport": "NRT",
+                "DestinationAirport": "SIN",
+                "DepartsAt": "2026-09-16T16:00:00",
+                "ArrivesAt": "2026-09-16T22:00:00",
+                "FareClass": "Y",
+                "Cabin": "Economy",
+                "Distance": 3300,
+                "Order": 1,
+            },
+        ],
+    }
+    award = {
+        "Source": "united",
+        "YAvailable": True,
+        "YMileageCost": 60000,
+        "YTotalTaxes": 5000,
+        "YRemainingSeats": 4,
+        "YDirect": False,
+        "YAirlines": "UA",
+        "AvailabilityTrips": json.dumps([trip]),
+        "Date": "2026-09-15",
+        "Route": {
+            "OriginAirport": "SFO,OAK,SJC",
+            "DestinationAirport": "SIN,XSP",
+            "ID": "BAY-SIN",
+        },
+    }
+    install_fakes(monkeypatch, build_search_response([award]), {})
+    results = run_search()
+    assert results[0]["origin_airport"] == "SFO"
+    assert results[0]["destination_airport"] == "SIN"
+
