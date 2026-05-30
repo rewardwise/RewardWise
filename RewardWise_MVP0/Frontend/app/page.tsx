@@ -233,13 +233,20 @@ type HeroExample = {
 // use_points verdict (data_quality=full, confidence=high). SFO → SIN family
 // trip on Singapore KrisFlyer chosen because it matches the "relatable
 // international family trip" framing without inventing numbers.
+//
+// Units note: prod stores cash_price as the TOTAL for the search (3 pax here)
+// but stores points_cost as PER-TRAVELER (winner.points = 79,000 = one award
+// unit). We render in TOTAL-TRIP mode for consistency, so pointsCost below is
+// 79,000 × 3 = 237,000. $9,499 ÷ 237,000 = ~4.0¢/pt, which matches the real
+// redemption rate. (The backend's stored cpp = 6.32 is internally inconsistent
+// — separate backend bug, tracked elsewhere; do not reconcile in display.)
 const HERO_EXAMPLE: HeroExample | null = {
 	origin: "SFO",
 	destination: "SIN",
 	cabin: "Premium Economy",
 	travelers: 3,
 	cashPrice: 9498.99,
-	pointsCost: 79000,
+	pointsCost: 237000,
 	pointsProgram: "Singapore KrisFlyer",
 	taxes: 0,
 	savings: 9498.99,
@@ -749,6 +756,16 @@ function LandingPageContent() {
 													<p className="mt-1 text-lg font-semibold text-white">
 														{formatPoints(HERO_EXAMPLE.pointsCost)}
 													</p>
+													{HERO_EXAMPLE.travelers > 1 ? (
+														<p className="mt-0.5 text-[10px] text-white/40">
+															{formatPoints(
+																Math.round(
+																	HERO_EXAMPLE.pointsCost / HERO_EXAMPLE.travelers,
+																),
+															)}{" "}
+															each
+														</p>
+													) : null}
 													<p className="mt-0.5 text-[10px] text-white/40">
 														{HERO_EXAMPLE.pointsProgram} + {formatUSD(HERO_EXAMPLE.taxes)} tax
 													</p>
