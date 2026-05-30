@@ -28,8 +28,8 @@
  *      grid (md:grid-cols-2), headline leads with "Use points" with no
  *      `.99` cents, honesty line "pts instead of $...", per-traveler
  *      caption renders exactly once.
- *   6. (CONTRACT 8, fixme'd) — return-leg renders single IATA, not metro
- *      CSV. Pending the backend airport-resolution follow-up.
+ *   6. (CONTRACT 8) return-leg renders single IATA per direction (^[A-Z]{3}$
+ *      on each side, never a metro CSV, never a Skyscanner numeric place ID).
  *
  * Reference case (mirrors the locked Phase 3 design discussion):
  *   SFO → SIN, Round Trip, 3 travelers, Premium Economy, +180 days from
@@ -334,28 +334,27 @@ test.describe('PR VERDICT-REDESIGN: post-Phase-3 results screen honors coherence
     // pending the metro-CSV → IATA backend resolution follow-up.
   })
 
-  // CONTRACT 8 is fixme'd pending the airport-resolution backend follow-up PR.
-  // Bug: return-leg airport pair renders the unresolved metro CSV (e.g.
-  // "SFO,OAK,SJC") instead of a single resolved IATA per direction. The fix
-  // is NOT in scope for this UI redesign PR — it lives in the backend, where
-  // search.py needs to resolve metro CSV → single IATA from the award's
-  // trips[].segments before emitting origin_airport / destination_airport.
+  // CONTRACT 8: Return-leg airport pair must render a single resolved IATA
+  // per direction (e.g. "SIN → SFO"), never a CSV ("SFO,OAK,SJC → SIN") nor
+  // a Skyscanner numeric place ID ("16292 → 16216"). Two upstream paths can
+  // pollute the airport pair, and BOTH are now fixed on origin/main:
   //
-  // This PR ships:
-  //   - include_endpoint_airports=True on BOTH legs (necessary but not
-  //     sufficient — exposes the unresolved CSV downstream)
-  //   - leg-route-{outbound,return} testids on FlightSection so the smoke
-  //     can target the airport-pair element directly
+  //   1. seats.aero use_points Tier 3 fallback echoed metro CSV verbatim
+  //      from Route.OriginAirport / Route.DestinationAirport. Fixed in
+  //      PR #172 (a14f3c0) — seats_service now resolves metro CSV to a
+  //      single IATA from trips[0].segments[0/-1] post-hydration.
+  //   2. FlightAPI pay_cash Tier 1 normalizer fell through to the
+  //      Skyscanner place.id (numeric) when iata/iataCode/displayCode/code
+  //      were absent on the place dict. Fixed in this PR — _get_place_code
+  //      drops "id" from the fallback chain and validates output is
+  //      ^[A-Z]{3}$ before returning. Backed by
+  //      test_flightapi_parser_never_renders_numeric_place_id_as_iata_on_return_leg.
   //
-  // The follow-up PR will:
-  //   - Resolve metro CSV → single IATA from the award's actual booked
-  //     segments before emitting origin_airport / destination_airport
-  //   - Remove the .fixme() marker below to flip this test green
-  //
-  // Per-founder rule: do NOT delete the assertion. The harness must survive
-  // intact so the follow-up PR has a passing target to flip.
-  test.fixme(
-    'CONTRACT 8: return-leg renders single IATA (airport-resolution follow-up)',
+  // At +180d SFO→SIN PE × 3, the verdict commonly lands on pay_cash (path 2)
+  // — so this smoke exercises path 2 in production by default. The path-1
+  // regression is guarded by the seats_service test added in PR #172.
+  test(
+    'CONTRACT 8: return-leg renders single IATA',
     async ({ page }) => {
       test.setTimeout(180_000)
 
@@ -394,23 +393,30 @@ test.describe('PR VERDICT-REDESIGN: post-Phase-3 results screen honors coherence
       await page.getByRole('button', { name: /Search Flights/i }).click()
       await searchResponsePromise
 
-      // CONTRACT 8: Single-airport inbound origin. The inbound leg's
-      // airport-pair element reads "{origin} → {destination}" (e.g.
-      // "SIN → SFO"); neither side may be a CSV like "JFK,LGA,EWR" or
-      // "SFO,OAK,SJC". Guards the Tier-3 leg synthesis path that consumes
-      // origin_airport / destination_airport emitted by search.py with
-      // include_endpoint_airports=True on both legs. Pre-follow-up: backend
-      // emits the unresolved metro CSV in destination_airport, so Tier 3
-      // synthesis dumps the CSV through to the FE verbatim. Follow-up PR
-      // will resolve metro → single IATA from booked segments.
+      // CONTRACT 8: Return leg's airport-pair element reads
+      // "{origin} → {destination}" with a single 3-letter IATA on each side.
+      // Three rejection modes, each with its own message so the failure
+      // immediately fingers which upstream regression is live:
+      //   - CSV ("SFO,OAK,SJC → SIN"): seats_service metro resolution
+      //     (PR #172) regressed.
+      //   - Digits ("16292 → 16216"): _get_place_code numeric-ID fallback
+      //     (this PR) regressed.
+      //   - Anything else not matching ^[A-Z]{3} → [A-Z]{3}$: catchall.
       const returnRoute = page.locator('[data-testid="leg-route-return"]')
       const returnRouteText = await returnRoute.first().innerText()
       expect(
         returnRouteText,
         `Return leg airport pair rendered "${returnRouteText}" — must not ` +
-          'contain CSV airport codes. Single resolved IATA per direction is ' +
-          'the Tier-3 contract.',
+          'contain a CSV airport list. The seats.aero metro CSV resolution ' +
+          '(PR #172, seats_service.py) has regressed if this fires.',
       ).not.toMatch(/[A-Z]{3},[A-Z]{3}/)
+      expect(
+        returnRouteText,
+        `Return leg airport pair rendered "${returnRouteText}" — must not ` +
+          'contain digits. The FlightAPI normalizer numeric-ID fallback ' +
+          '(this PR, _get_place_code) has regressed if this fires; ' +
+          'Skyscanner place.id (e.g. 16216) is leaking through as the IATA.',
+      ).not.toMatch(/\d/)
       expect(
         returnRouteText,
         `Return route "${returnRouteText}" must match "AAA → BBB" with ` +
