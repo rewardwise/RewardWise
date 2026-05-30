@@ -45,14 +45,25 @@
  *   today. PE long-haul reliably triggers a use_points verdict on
  *   Singapore/Aeroplan/etc., which is what the redesign was scoped against.
  *
- * Same trial-gate isolation pattern as pr-pe-cabin-translation + cause-aware-
- * cash-copy: synthetic cf-connecting-ip per run so the trial table is fresh
- * and the 429 path cannot mask a regression.
+ * Auth-path routing: drives the verdict via /home → /api/search rather than
+ * / → /api/public-search. Rationale: /api/public-search is gated by a per-IP
+ * trial table whose hash priority reads cf-connecting-ip first, and
+ * Cloudflare in front of Render OVERWRITES cf-connecting-ip at the edge with
+ * the real client IP — so the synthetic-IP spoof every public-search smoke
+ * uses for isolation is silently ignored in prod. Once the CI egress IP
+ * accumulates ≥ 3 trial rows, every public-search smoke returns 429
+ * regardless of fix correctness. /api/search bypasses the trial gate
+ * entirely; the authenticated session minted by globalSetup carries the
+ * Supabase cookies the project's storageState surfaces. Verdict card
+ * renders identically on both paths.
+ *
+ * The broken public-search isolation is tracked as a separate follow-up
+ * (test-bypass header or move pe-cabin / cause-aware-cash / flightapi-
+ * cabin-map / delta-metro-cash-fanout to /api/search). This spec does not
+ * block on it.
  */
 
 import { test, expect } from '@playwright/test'
-import { randomUUID } from 'node:crypto'
-import { getVercelBypassHeader } from '../auth/vercel-bypass'
 
 const DEPART_DAYS = 120
 const RETURN_DAYS = 134
@@ -73,12 +84,9 @@ function isoDaysFromToday(days: number): string {
   return d.toISOString().split('T')[0]
 }
 
-test.use({ storageState: { cookies: [], origins: [] } })
-
 test.describe('PR VERDICT-REDESIGN: post-Phase-3 results screen honors all 8 contract items', () => {
   test('SFO→SIN PE round-trip ×3 falsifies regressions on headline, handoffs, disclosure, and reconciliation', async ({
     page,
-    context,
   }) => {
     // SFO autocomplete resolves to BAY (SFO·OAK·SJC) metro, so this is a
     // round-trip metro fan-out × 3 travelers × PE long-haul search. End-to-
@@ -87,30 +95,21 @@ test.describe('PR VERDICT-REDESIGN: post-Phase-3 results screen honors all 8 con
     // 60s default. Match the pr-delta-metro-cash-fanout headroom.
     test.setTimeout(180_000)
 
-    const syntheticIp = `smoke-verdict-redesign-${randomUUID()}`
-    await context.setExtraHTTPHeaders({
-      'cf-connecting-ip': syntheticIp,
-      'x-real-ip': syntheticIp,
-      'x-forwarded-for': syntheticIp,
-      ...getVercelBypassHeader(),
-    })
+    await page.goto('/home')
 
-    await page.goto('/')
-
-    // Defensive landing-nav guard: prod `/` may render a marketing landing
-    // page with an "Or try a search first — no signup needed" CTA instead of
-    // the search form directly. Click through it when present; otherwise
-    // fall through. Mirrors the guard added in commit 97efba2 for
-    // pr-verdict-tier-clarity + pr-delta-metro-cash-fanout.
-    const tryASearchCta = page.getByRole('button', {
-      name: /try a search first/i,
-    })
-    await tryASearchCta.click({ timeout: 15_000 }).catch(() => {
-      // Landing copy may have shifted; falling through is safe — if the
-      // search form is already mounted, the next fill() will find it. If
-      // not, the next fill() will time out with a clearer error than the
-      // isVisible probe we replaced.
-    })
+    // Defensive landing-nav guard: prod `/home` may render a marketing
+    // landing CTA above the search form depending on session state.
+    // Click through when present; otherwise fall through to the form.
+    const tryASearchCta = page
+      .getByRole('button', {
+        name: /try a (free )?search( first)?/i,
+      })
+      .first()
+    if (
+      await tryASearchCta.isVisible({ timeout: 5_000 }).catch(() => false)
+    ) {
+      await tryASearchCta.click()
+    }
 
     const inputs = page.getByPlaceholder('City or airport')
     await inputs.first().fill('SFO')
@@ -128,7 +127,7 @@ test.describe('PR VERDICT-REDESIGN: post-Phase-3 results screen honors all 8 con
 
     const searchResponsePromise = page.waitForResponse(
       (res) =>
-        /\/api\/public-search(\?|$)/.test(res.url()) &&
+        /\/api\/search(\?|$)/.test(res.url()) &&
         res.request().method() === 'POST',
       { timeout: 120_000 },
     )
@@ -138,9 +137,9 @@ test.describe('PR VERDICT-REDESIGN: post-Phase-3 results screen honors all 8 con
 
     expect(
       response.status(),
-      'Public search must return 200 — redesign is a presentation fix, the ' +
-        'PE cabin + reconciliation paths from PR #153 / backend metrics split ' +
-        'must still hold.',
+      'Authenticated /api/search must return 200 — redesign is a presentation ' +
+        'fix, the PE cabin + reconciliation paths from PR #153 / backend ' +
+        'metrics split must still hold.',
     ).toBe(200)
 
     const body = (await response.json()) as SearchResponse
