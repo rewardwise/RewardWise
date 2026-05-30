@@ -223,6 +223,35 @@ def _pick_inbound_winner(
     return None
 
 
+def _matched_cpp(
+    cash_price: Optional[float],
+    outbound_points: int,
+    outbound_taxes: float,
+    inbound_winner: Optional[dict],
+    travelers: int,
+) -> Optional[float]:
+    """Full-booking cents-per-point: (cash − total taxes) / total points × 100.
+
+    Scope: all travelers, both legs when a matched-program return award exists,
+    outbound-only when there is no matched return (one-way fallback). This is
+    the number the user actually experiences — winner.cpp on the seats.aero
+    object is per-pax / per-leg and biases the scope by `legs × travelers`.
+
+    Returns None when the math is undefined (no cash price, or zero points).
+    """
+    if cash_price is None:
+        return None
+    travelers = max(int(travelers or 1), 1)
+    return_points = int((inbound_winner or {}).get("points") or 0)
+    return_taxes = float((inbound_winner or {}).get("taxes") or 0)
+    points_per_pax = int(outbound_points or 0) + return_points
+    if points_per_pax <= 0:
+        return None
+    total_points = points_per_pax * travelers
+    total_taxes = (float(outbound_taxes or 0) + return_taxes) * travelers
+    return round((float(cash_price) - total_taxes) / total_points * 100, 4)
+
+
 def _metrics(
     cash_price: Optional[float],
     winner: Optional[dict],
@@ -271,12 +300,12 @@ def _metrics(
         points_per_pax_rt if points_per_pax_rt > 0 else None
     )
 
-    cpp: Optional[float] = None
+    cpp: Optional[float] = _matched_cpp(
+        cash_price, outbound_points_per_pax, outbound_taxes, inbound_winner, travelers
+    )
     savings: Optional[float] = None
     if cash_price is not None:
         savings = max(0.0, round(float(cash_price) - taxes, 2))
-        if points_cost and points_cost > 0:
-            cpp = round((float(cash_price) - taxes) / points_cost * 100, 4)
     return {
         "cash_price": cash_price,
         "points_cost": points_cost,
@@ -704,19 +733,21 @@ async def generate_verdict(
     savings = max(0, round(cash_price - taxes, 2))
     urgency = 0 < remaining_seats <= 3
 
-    # KNOWN BIAS — the recommendation gates below read winner.cpp, which is
-    # the per-pax / one-way cents-per-point score from the seats.aero award
-    # object. On multi-traveler or round-trip searches that score does NOT
-    # match the user's actual redemption scope (full booking total) and
-    # systematically OVERSTATES value, biasing toward use_points on marginal
-    # multi-traveler cases.
-    #
-    # This PR fixes the DISPLAYED metrics + tier badge (metrics.cpp is
-    # matched-scope; tier classifier reads metrics.cpp). The gates here are
-    # deliberately left on winner.cpp so the recommendation rule does not
-    # change in this PR. The follow-up gate-rescope PR will switch the gates
-    # to matched-scope cpp and report the historical verdict-flip count
-    # before merge. See the PR description for the bias quantification.
+    # Recommendation gates use MATCHED-SCOPE cpp — full-booking cash net of
+    # taxes over total points across all travelers and both legs (when a
+    # program-matched return exists). winner.cpp from the seats.aero award
+    # object is per-pax / per-leg and overstates value by `legs × travelers`,
+    # which biased gates toward use_points on multi-traveler RTs (verified by
+    # historical replay: 53.5% of legacy use_points verdicts were sub-1.25¢/pt
+    # under matched scope). winner.cpp stays on winner_payload (FE per-leg
+    # display), but every gate / tier band / confidence / next_step copy
+    # downstream reads matched_cpp via the local `cpp` rebind below.
+    matched_cpp = _matched_cpp(
+        cash_price, points, taxes, inbound_winner, travelers
+    )
+    if matched_cpp is not None:
+        cpp = matched_cpp
+
     if cash_price <= CHEAP_CASH_THRESHOLD_USD or cpp < CPP_PAY_CASH_THRESHOLD:
         explanation = (
             f"Cash is only {_cash_label(cash_price)}, while the best award I found is {points:,} points"
