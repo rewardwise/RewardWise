@@ -136,7 +136,10 @@ function FlightCard({ leg }: { leg: FlightLeg }) {
             ) : null}
           </p>
           <div className="mt-1 flex flex-wrap items-baseline gap-2">
-            <span className="text-lg font-extrabold text-white">
+            <span
+              data-testid={`leg-route-${testIdSuffix}`}
+              className="text-lg font-extrabold text-white"
+            >
               {first?.origin || "—"} → {last?.destination || "—"}
             </span>
             <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[11px] font-semibold text-slate-300">
