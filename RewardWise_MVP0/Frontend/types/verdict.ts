@@ -46,17 +46,11 @@ export interface Verdict {
 	metrics?: {
 		cash_price?: number | null;
 		points_cost?: number | null;
-		// Per-traveler round-trip points (outbound + return for RT, outbound only
-		// for one-way). Drives the "X pts each" caption beside the total.
 		points_cost_per_traveler?: number | null;
-		// Echoed back so the FE can render "for N travelers" copy without
-		// trusting the request input.
-		travelers?: number | null;
 		taxes?: number | null;
 		estimated_savings?: number | null;
-		// Matched-scope: (cash − taxes) / points_cost × 100. Reconciles with
-		// estimated_savings. Distinct from winner.cpp (per-pax / one-way).
 		cpp?: number | null;
+		travelers?: number | null;
 	};
 	next_step?: NextStep | null;
 	verdict_tier?: VerdictTier | null;

@@ -73,7 +73,10 @@ def test_flex_outbound_picks_winner_via_own_date_cash():
 
 
 def test_flex_outbound_with_endpoint_airports_preserves_field():
-    """Outbound leg gets origin_airport / destination_airport (return doesn't)."""
+    """Both outbound and return legs emit origin_airport / destination_airport
+    when include_endpoint_airports=True. The flag is now True on both legs in
+    search.py so the FE leg-synthesis Tier-3 path can resolve metro CSVs
+    (e.g. "JFK,LGA,EWR") to single airport codes on both directions."""
     award = _award("2026-06-01", 40_000)
     award["origin_airport"] = "SFO"
     award["destination_airport"] = "JFK"
@@ -83,13 +86,29 @@ def test_flex_outbound_with_endpoint_airports_preserves_field():
         [award], cash_by_date, include_endpoint_airports=True
     )
     ret_result = _build_award_options_with_per_date_cash(
-        [award], cash_by_date, include_endpoint_airports=False
+        [award], cash_by_date, include_endpoint_airports=True
     )
 
     assert out_result[0]["origin_airport"] == "SFO"
     assert out_result[0]["destination_airport"] == "JFK"
-    assert "origin_airport" not in ret_result[0]
-    assert "destination_airport" not in ret_result[0]
+    assert ret_result[0]["origin_airport"] == "SFO"
+    assert ret_result[0]["destination_airport"] == "JFK"
+
+
+def test_flex_endpoint_airports_omitted_when_flag_false():
+    """The False branch is preserved for callers that have no per-leg airport
+    data to emit. Both legs in search.py pass True; this guards the
+    omit-on-False semantic so the flag stays meaningful."""
+    award = _award("2026-06-01", 40_000)
+    award["origin_airport"] = "SFO"
+    award["destination_airport"] = "JFK"
+    cash_by_date = {"2026-06-01": 200.0}
+
+    result = _build_award_options_with_per_date_cash(
+        [award], cash_by_date, include_endpoint_airports=False
+    )
+    assert "origin_airport" not in result[0]
+    assert "destination_airport" not in result[0]
 
 
 # ---------------------------------------------------------------------------

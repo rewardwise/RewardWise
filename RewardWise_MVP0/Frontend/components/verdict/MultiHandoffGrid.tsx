@@ -92,7 +92,7 @@ export default function MultiHandoffGrid({
             const taxesPart =
               item.taxes != null && item.taxes > 0
                 ? ` + ${fmtMoneyShort(item.taxes)} taxes`
-                : "";
+                : " · no fuel surcharges";
             const programKey = item.program.toLowerCase().trim();
             const transferSources = (TRANSFER_PARTNERS[programKey] ?? []).slice(0, 3);
             const needsTransfer = transferSources.length > 0;

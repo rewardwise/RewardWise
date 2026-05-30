@@ -310,6 +310,10 @@ describe("VerdictCard — searchedRangeCopy for both-flexible round-trip", () =>
 		const cheapOtherDate = {
 			program: "United",
 			points: 28000,
+			taxes: 5.6,
+			cpp: 2.0,
+			direct: true,
+			remaining_seats: 4,
 			date: "2026-09-14",
 			airlines: "United",
 			trips: [
@@ -328,6 +332,10 @@ describe("VerdictCard — searchedRangeCopy for both-flexible round-trip", () =>
 		const winningDateOption = {
 			program: "United",
 			points: 32000,
+			taxes: 5.6,
+			cpp: 1.9,
+			direct: true,
+			remaining_seats: 4,
 			date: "2026-09-16",
 			airlines: "United",
 			trips: [
