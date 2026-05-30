@@ -36,9 +36,13 @@
  * read the rendered text and falsify the horizon lie directly.
  *
  * Trial-gate isolation: same synthetic-IP pattern as
- * pr-pe-cabin-translation.spec.ts — a unique cf-connecting-ip/x-real-ip
- * /x-forwarded-for triple per run so the trial table is hashed fresh,
- * eliminating the 429 path that would otherwise mask regressions.
+ * pr-pe-cabin-translation.spec.ts — a unique x-real-ip / x-forwarded-for
+ * pair per run so the trial table is hashed fresh, eliminating the 429
+ * path that would otherwise mask regressions. cf-connecting-ip is NOT
+ * set: Cloudflare in front of Render rejects requests that try to
+ * override it (HTTP 403 / "error code: 1000"), and it would be
+ * overwritten at the edge anyway. See pr-pe-cabin-translation file
+ * docstring for the full caveat.
  *
  * Selectors and storageState pattern mirror pr-pe-cabin-translation.
  */
@@ -66,12 +70,26 @@ test.describe('PR-α: cause-aware missing_cash copy does not lie about horizon',
   }) => {
     const syntheticIp = `smoke-cause-aware-cash-${randomUUID()}`
     await context.setExtraHTTPHeaders({
-      'cf-connecting-ip': syntheticIp,
       'x-real-ip': syntheticIp,
       'x-forwarded-for': syntheticIp,
     })
 
     await page.goto('/')
+
+    // Defensive landing-nav guard: prod `/` may render a marketing
+    // landing page with a "Try a (free) search (first)" CTA instead of
+    // the search form directly. Click through when present; otherwise
+    // fall through to the form.
+    const tryASearchCta = page
+      .getByRole('button', {
+        name: /try a (free )?search( first)?/i,
+      })
+      .first()
+    if (
+      await tryASearchCta.isVisible({ timeout: 5_000 }).catch(() => false)
+    ) {
+      await tryASearchCta.click()
+    }
 
     const inputs = page.getByPlaceholder('City or airport')
     await inputs.first().fill('SFO')

@@ -63,14 +63,32 @@ test.describe('PR-β1.5: FlightAPI CABIN_CLASS_MAP — PE cash data flows end-to
     page,
     context,
   }) => {
+    // Synthetic IP via x-real-ip + x-forwarded-for only — cf-connecting-ip
+    // is rejected by Cloudflare in front of Render (HTTP 403 / "error
+    // code: 1000"). See pr-pe-cabin-translation file docstring for the
+    // full trial-gate-isolation caveat under CF-fronted backends.
     const syntheticIp = `smoke-flightapi-cabin-${randomUUID()}`
     await context.setExtraHTTPHeaders({
-      'cf-connecting-ip': syntheticIp,
       'x-real-ip': syntheticIp,
       'x-forwarded-for': syntheticIp,
     })
 
     await page.goto('/')
+
+    // Defensive landing-nav guard: prod `/` may render a marketing
+    // landing page with a "Try a (free) search (first)" CTA instead of
+    // the search form directly. Click through when present; otherwise
+    // fall through to the form.
+    const tryASearchCta = page
+      .getByRole('button', {
+        name: /try a (free )?search( first)?/i,
+      })
+      .first()
+    if (
+      await tryASearchCta.isVisible({ timeout: 5_000 }).catch(() => false)
+    ) {
+      await tryASearchCta.click()
+    }
 
     const inputs = page.getByPlaceholder('City or airport')
     await inputs.first().fill('JFK')
