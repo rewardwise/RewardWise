@@ -550,11 +550,20 @@ export default function VerdictCard({
 
   if (recommendation === "wait") {
     switch (verdict.data_quality) {
-      case "missing_both":
+      case "missing_both_horizon":
         return (
           <ErrorStateCard
             headline="We could not pull data for this date"
             message="Cash and award pricing are both unavailable for this trip. Try a closer date — most providers don't publish data more than 10–11 months out."
+            ctaText="Try a different date"
+            onCta={onTryDifferentDate}
+          />
+        );
+      case "missing_both_upstream":
+        return (
+          <ErrorStateCard
+            headline="We couldn't reach pricing for this date right now"
+            message="Cash and award pricing both came back empty. Try again, a nearby date, or a different cabin."
             ctaText="Try a different date"
             onCta={onTryDifferentDate}
           />

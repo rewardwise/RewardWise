@@ -359,9 +359,10 @@ def test_is_past_cash_horizon_invalid_returns_false():
         (None, True, 60, "missing_cash_upstream"),
         # awards only, past horizon -> horizon (provider has no data this far out)
         (None, True, CASH_HORIZON_DAYS + 5, "missing_cash_horizon"),
-        # neither -> missing_both (not split this PR; queued)
-        (None, False, 60, "missing_both"),
-        (None, False, CASH_HORIZON_DAYS + 5, "missing_both"),
+        # neither, within horizon -> upstream (both providers failed near-date)
+        (None, False, 60, "missing_both_upstream"),
+        # neither, past horizon -> horizon (legitimate provider gap)
+        (None, False, CASH_HORIZON_DAYS + 5, "missing_both_horizon"),
     ],
 )
 def test_data_quality_cause_aware_assignment(
@@ -372,6 +373,8 @@ def test_data_quality_cause_aware_assignment(
     The Trip B audit bug surfaces here as row 4 (None, True, 60): pre-fix this
     bucketed into legacy "missing_cash" and rendered the horizon copy. Post-fix
     it must produce "missing_cash_upstream" so the UI can render honest copy.
+    The BAY→SIN +6d audit (2026-05-30) extends the same split to missing_both:
+    a near-date double-failure must NOT misattribute to the 10–11mo horizon.
     """
     awards = [_award(cpp=1.6)] if has_awards else []
     result = _run(
@@ -407,6 +410,33 @@ def test_missing_cash_upstream_passes_into_response_payload():
     )
     assert result["data_quality"] == "missing_cash_upstream"
     assert result["missing_sources"] == ["cash_price"]
+
+
+def test_missing_both_upstream_for_near_date():
+    """BAY→SIN +6d audit (2026-05-30): both-empty within horizon = upstream.
+
+    Pre-fix this bucketed into legacy "missing_both" and the UI rendered the
+    horizon copy on a 6-day-out date. The split lets the UI render an
+    honest try-again message instead of blaming the user's date.
+    """
+    result = _run(
+        cash_price=None,
+        award_options=[],
+        date=_date_offset(6),
+    )
+    assert result["data_quality"] == "missing_both_upstream"
+    assert result["missing_sources"] == ["cash_price", "award_space"]
+
+
+def test_missing_both_horizon_for_past_horizon_date():
+    """Both empty past horizon = horizon (the only legitimate horizon claim)."""
+    result = _run(
+        cash_price=None,
+        award_options=[],
+        date=_date_offset(CASH_HORIZON_DAYS + 30),
+    )
+    assert result["data_quality"] == "missing_both_horizon"
+    assert result["missing_sources"] == ["cash_price", "award_space"]
 
 
 # ---- Verdict tier badge + explanation (ticket 86b9v4aft) --------------------
