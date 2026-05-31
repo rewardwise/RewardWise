@@ -267,27 +267,38 @@ type SavingsExample = {
 };
 
 // Three real one-way use_points verdicts, sourced 2026-05-31 from prod
-// Supabase (verdicts.recommendation = "use_points"). One-way only so the
-// displayed pointsCost matches the actual single-leg redemption — the
-// backend's stored points_cost_used double-undercounts on roundtrip today,
-// so RT verdicts are unsafe to surface here until the matched-scope BE fix
-// lands. Diversity: 3 distinct programs (Qatar Avios, Flying Blue, United
-// MileagePlus), 3 distinct routes (TATL, TPAC, US→India), and 2 Business +
-// 1 Economy to balance the Premium Economy hero. Refresh quarterly or when
-// a prod verdict shifts these by >20%.
+// Supabase (verdicts.recommendation = "use_points"). Every card here must
+// clear the matched-scope use_points strong threshold — cpp ≥ 1.8, where
+// cpp = (cashPrice − taxes) / pointsCost × 100. Pre-this-edit two of the
+// three cards sat at 1.36 cpp (JFK→LHR Biz Qatar Avios; SFO→BLR Eco
+// United MileagePlus), which is BELOW the threshold and falsely framed
+// pay-cash redemptions as "use your points" wins. Replaced with two
+// genuine premium verdicts whose matched-scope cpp clears the gate.
+//
+// Constraints honored:
+//   - One-way only. Backend stored points_cost_used double-undercounts on
+//     roundtrip today (matched-scope BE fix tracked separately), so RT
+//     verdicts are unsafe to surface here until that lands.
+//   - passengers = 1 in each source verdict, so the displayed cash and
+//     points are honest per-traveler numbers (no division required).
+//   - Departure date in the future (≥ 2026-05-31) so the month label
+//     reads as upcoming travel rather than historical pricing.
+//   - Single-airport origin (no metro CSV like "SFO,OAK,SJC") so the
+//     route label is clean.
+//
+// Diversity tradeoff: the 1-pax future-date premium pool against prod is
+// narrow today — all three honest options are TPAC. We accept program
+// repeat (Flying Blue 2×) and region repeat (TPAC 3×) over diluting the
+// cpp gate. Refresh when the verdicts pool yields a wider premium set
+// (e.g., a TATL or US→India 1-pax future-date verdict clears 1.8 cpp).
+//
+// Per-card cpp (matched-scope):
+//   SEA → PVG Business  flyingblue  cpp = (2513−142)/112000 × 100 = 2.12
+//   JFK → HND Economy   qatar       cpp = (737−0)/36250    × 100 = 2.03
+//   HND → SEA Economy   flyingblue  cpp = (694−68.13)/30500× 100 = 2.05
 //
 // Empty array gates the entire section — no eyebrow, no header, no skeleton.
 const SAVINGS_EXAMPLES: SavingsExample[] = [
-	{
-		route: "JFK → LHR",
-		cabin: "Business",
-		monthLabel: "Aug 2026",
-		cashPrice: 1349,
-		pointsCost: 99000,
-		pointsProgram: "Qatar Avios",
-		taxes: 0,
-		savings: 1349,
-	},
 	{
 		route: "SEA → PVG",
 		cabin: "Business",
@@ -299,14 +310,24 @@ const SAVINGS_EXAMPLES: SavingsExample[] = [
 		savings: 2371,
 	},
 	{
-		route: "SFO → BLR",
+		route: "JFK → HND",
 		cabin: "Economy",
-		monthLabel: "Jul 2026",
-		cashPrice: 675,
-		pointsCost: 49500,
-		pointsProgram: "United MileagePlus",
-		taxes: 5.6,
-		savings: 669.4,
+		monthLabel: "Nov 2026",
+		cashPrice: 737,
+		pointsCost: 36250,
+		pointsProgram: "Qatar Avios",
+		taxes: 0,
+		savings: 737,
+	},
+	{
+		route: "HND → SEA",
+		cabin: "Economy",
+		monthLabel: "Feb 2027",
+		cashPrice: 694,
+		pointsCost: 30500,
+		pointsProgram: "Air France/KLM Flying Blue",
+		taxes: 68.13,
+		savings: 625.87,
 	},
 ];
 

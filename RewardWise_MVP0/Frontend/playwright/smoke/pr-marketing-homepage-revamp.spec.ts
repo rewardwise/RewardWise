@@ -189,8 +189,12 @@ test.describe('PR marketing-homepage-revamp: hero + empty-state sections + confi
       await expect(cards.nth(i).getByText(/^You save$/i)).toBeVisible()
       await expect(cards.nth(i).getByText(/pts/i).first()).toBeVisible()
     }
-    await expect(cards.nth(0)).toContainText(/JFK\s*→\s*LHR/i)
-    await expect(cards.nth(0)).toContainText(/Qatar Avios/i)
+    // Card 0 reordered to the highest-cpp redemption — SEA → PVG Business
+    // on Air France/KLM Flying Blue. Anchor on the route + the program
+    // display name so a SAVINGS_EXAMPLES regression to empty or to the
+    // pre-fix sub-threshold set fails immediately.
+    await expect(cards.nth(0)).toContainText(/SEA\s*→\s*PVG/i)
+    await expect(cards.nth(0)).toContainText(/Air France\/KLM Flying Blue/i)
   })
 
   test('social-proof renders 3 testimonials × 5 stars + name·city + FTC disclosure; aggregate stats stay hidden', async ({
