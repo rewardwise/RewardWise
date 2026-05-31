@@ -114,7 +114,7 @@ function singleIataOrUndefined(value: string | null | undefined): string | undef
   return /^[A-Z]{3}$/.test(value) ? value : undefined;
 }
 
-// Backfill missing endpoint IATAs on a cash-flight Tier 1 segment list
+// Backfill / override endpoint IATAs on a cash-flight Tier 1 segment list
 // from the search-param IATA. Only the leg's first.origin and
 // last.destination are eligible (those are the booking endpoints by
 // construction — FlightAPI returned a flight FROM searchOrigin TO
@@ -123,9 +123,18 @@ function singleIataOrUndefined(value: string | null | undefined): string | undef
 // Why this exists: Skyscanner sometimes returns place records with no
 // iata/iataCode/displayCode/code field. Pre-PR #174 the normalizer leaked
 // the numeric place id (16216) as the IATA; PR #174 emits null instead.
-// Without this backfill, null surfaces as "—" via FlightSection's
-// {first?.origin || "—"} fallback, producing "— → —" on the leg-route
-// span — graceful but uninformative when we know the search endpoints.
+// Backend commit 027a118 then added a place.name fallback to _get_place_code,
+// so iata-less places now surface as airport NAMES ("London Heathrow")
+// rather than None. The original gate (`!next[0].origin`) only triggered on
+// empty/null, so the name fallback leaked through to the leg-route span
+// producing asymmetric RT cards (outbound "BOS → LHR", return
+// "London Heathrow → Boston Logan International").
+//
+// The gate is widened to `!singleIataOrUndefined(...)` so any non-IATA
+// shape on the booking endpoint — null, name, numeric id, "—" — gets
+// overridden by the search-param IATA when one is available. A clean
+// existing IATA (e.g. multi-segment with an alternate booking endpoint)
+// is preserved.
 function backfillCashEndpoints(
   segments: AwardSegmentLike[],
   legOrigin: string | null | undefined,
@@ -135,11 +144,14 @@ function backfillCashEndpoints(
   const originBackfill = singleIataOrUndefined(legOrigin);
   const destinationBackfill = singleIataOrUndefined(legDestination);
   const next = [...segments];
-  if (!next[0].origin && originBackfill) {
+  if (originBackfill && !singleIataOrUndefined(next[0].origin)) {
     next[0] = { ...next[0], origin: originBackfill };
   }
   const lastIdx = next.length - 1;
-  if (!next[lastIdx].destination && destinationBackfill) {
+  if (
+    destinationBackfill &&
+    !singleIataOrUndefined(next[lastIdx].destination)
+  ) {
     next[lastIdx] = { ...next[lastIdx], destination: destinationBackfill };
   }
   return next;
