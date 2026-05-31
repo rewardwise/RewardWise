@@ -565,7 +565,11 @@ async def generate_verdict(
 
     data_quality = "full"
     if len(missing_sources) == 2:
-        data_quality = "missing_both"
+        data_quality = (
+            "missing_both_horizon"
+            if _is_past_cash_horizon(date)
+            else "missing_both_upstream"
+        )
     elif missing_sources == ["cash_price"]:
         data_quality = (
             "missing_cash_horizon"

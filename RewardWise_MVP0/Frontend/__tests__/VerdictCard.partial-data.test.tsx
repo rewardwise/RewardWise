@@ -173,10 +173,9 @@ describe("VerdictCard — wait-branch routing by data_quality", () => {
     expect(verifyCta, "verify CTA should render").not.toBeNull();
   });
 
-  it("missing_both → ErrorStateCard with 'Try a different date' CTA", () => {
+  it("missing_both_horizon → ErrorStateCard with horizon-aware copy", () => {
     const onTry = vi.fn();
-    renderCard(buildVerdict({ data_quality: "missing_both" }), onTry);
-    // The partial-data card must NOT render on this branch.
+    renderCard(buildVerdict({ data_quality: "missing_both_horizon" }), onTry);
     expect(
       container.querySelector('[data-testid="partial-data-card"]'),
     ).toBeNull();
@@ -184,7 +183,9 @@ describe("VerdictCard — wait-branch routing by data_quality", () => {
     expect(container.textContent).toContain(
       "We could not pull data for this date",
     );
-    // Clicking the CTA invokes the parent handler, not window.reload.
+    expect(container.textContent).toContain(
+      "most providers don't publish data more than 10–11 months out",
+    );
     const button = Array.from(container.querySelectorAll("button")).find((b) =>
       (b.textContent || "").includes("Try a different date"),
     );
@@ -193,6 +194,44 @@ describe("VerdictCard — wait-branch routing by data_quality", () => {
       button?.click();
     });
     expect(onTry).toHaveBeenCalledTimes(1);
+  });
+
+  it("missing_both_upstream → upstream copy, NO horizon claim (BAY→SIN +6d audit)", () => {
+    // BAY→SIN PE +6d (2026-05-30): pre-fix the UI rendered the horizon
+    // sentence on a near-date double-failure, misattributing an upstream
+    // outage to a provider horizon ~329 days out. The split puts honest copy
+    // on the near-date path.
+    const onTry = vi.fn();
+    renderCard(buildVerdict({ data_quality: "missing_both_upstream" }), onTry);
+    expect(
+      container.querySelector('[data-testid="partial-data-card"]'),
+    ).toBeNull();
+    expect(container.textContent).toContain(
+      "We couldn't reach pricing for this date right now",
+    );
+    expect(container.textContent).toContain(
+      "Try again, a nearby date, or a different cabin",
+    );
+    // Falsifying assertion: the horizon sentence must NOT appear here.
+    expect(container.textContent).not.toContain("10–11 months out");
+    const button = Array.from(container.querySelectorAll("button")).find((b) =>
+      (b.textContent || "").includes("Try a different date"),
+    );
+    expect(button).toBeTruthy();
+    act(() => {
+      button?.click();
+    });
+    expect(onTry).toHaveBeenCalledTimes(1);
+  });
+
+  it("legacy 'missing_both' literal → defensive PartialDataCard (rename guard)", () => {
+    // After this PR the bare 'missing_both' string is no longer emitted by the
+    // backend. If any stale client receives it, route to defensive — never the
+    // horizon copy, which was the original lie.
+    renderCard(buildVerdict({ data_quality: "missing_both" }));
+    const card = container.querySelector('[data-testid="partial-data-card"]');
+    expect(card).not.toBeNull();
+    expect(container.textContent).not.toContain("10–11 months out");
   });
 
   it("legacy 'missing_cash' literal → defensive variant (rename guard)", () => {
