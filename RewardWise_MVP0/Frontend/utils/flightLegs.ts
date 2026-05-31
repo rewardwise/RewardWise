@@ -104,6 +104,47 @@ function cashLegsToSegments(legs: CashLegLike[] | undefined): AwardSegmentLike[]
   }));
 }
 
+// Return the input only if it's a single 3-letter IATA. Metro CSVs
+// ("SFO,OAK,SJC") and other non-IATA shapes return undefined so the leg
+// renders the em-dash placeholder rather than dumping CSV / garbage into
+// the airport span. Used for safe search-param backfill on the cash-flight
+// Tier 1 path when the normalizer's place lookup couldn't resolve an IATA.
+function singleIataOrUndefined(value: string | null | undefined): string | undefined {
+  if (!value) return undefined;
+  return /^[A-Z]{3}$/.test(value) ? value : undefined;
+}
+
+// Backfill missing endpoint IATAs on a cash-flight Tier 1 segment list
+// from the search-param IATA. Only the leg's first.origin and
+// last.destination are eligible (those are the booking endpoints by
+// construction — FlightAPI returned a flight FROM searchOrigin TO
+// searchDestination). Intermediate stops are left untouched.
+//
+// Why this exists: Skyscanner sometimes returns place records with no
+// iata/iataCode/displayCode/code field. Pre-PR #174 the normalizer leaked
+// the numeric place id (16216) as the IATA; PR #174 emits null instead.
+// Without this backfill, null surfaces as "—" via FlightSection's
+// {first?.origin || "—"} fallback, producing "— → —" on the leg-route
+// span — graceful but uninformative when we know the search endpoints.
+function backfillCashEndpoints(
+  segments: AwardSegmentLike[],
+  legOrigin: string | null | undefined,
+  legDestination: string | null | undefined
+): AwardSegmentLike[] {
+  if (segments.length === 0) return segments;
+  const originBackfill = singleIataOrUndefined(legOrigin);
+  const destinationBackfill = singleIataOrUndefined(legDestination);
+  const next = [...segments];
+  if (!next[0].origin && originBackfill) {
+    next[0] = { ...next[0], origin: originBackfill };
+  }
+  const lastIdx = next.length - 1;
+  if (!next[lastIdx].destination && destinationBackfill) {
+    next[lastIdx] = { ...next[lastIdx], destination: destinationBackfill };
+  }
+  return next;
+}
+
 // Tier 3 synthesis: build a single summary segment from an award object's
 // top-level fields. Used when seats.aero /trips hydration was skipped and
 // trips[].segments is empty but the award itself still carries
@@ -190,8 +231,9 @@ export function buildOutboundLeg(args: BuildLegArgs): FlightLeg | null {
   if (recommendation === "pay_cash") {
     // Tier 1: detailed segments from bestCashFlight.legs
     if (bestCashFlight) {
-      const segments = cashLegsToSegments(bestCashFlight.legs);
-      if (segments.length > 0) {
+      const rawSegments = cashLegsToSegments(bestCashFlight.legs);
+      if (rawSegments.length > 0) {
+        const segments = backfillCashEndpoints(rawSegments, origin, destination);
         return {
           label: "Outbound",
           segments,
@@ -293,8 +335,11 @@ export function buildInboundLeg(args: BuildLegArgs): FlightLeg | null {
     // Tier 1: detailed segments from bestCashFlight.return_flight.legs
     if (bestCashFlight?.return_flight) {
       const ret = bestCashFlight.return_flight;
-      const segments = cashLegsToSegments(ret.legs);
-      if (segments.length > 0) {
+      const rawSegments = cashLegsToSegments(ret.legs);
+      if (rawSegments.length > 0) {
+        // Return leg flies destination → origin, so the endpoint backfill
+        // swaps the search params (last.destination = searchOrigin).
+        const segments = backfillCashEndpoints(rawSegments, destination, origin);
         return {
           label: "Return",
           segments,
