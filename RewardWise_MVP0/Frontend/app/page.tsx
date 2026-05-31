@@ -266,8 +266,49 @@ type SavingsExample = {
 	savings: number;           // cash_price - taxes
 };
 
-// Empty array → section returns null (no eyebrow, no header, no skeleton).
-const SAVINGS_EXAMPLES: SavingsExample[] = [];
+// Three real one-way use_points verdicts, sourced 2026-05-31 from prod
+// Supabase (verdicts.recommendation = "use_points"). One-way only so the
+// displayed pointsCost matches the actual single-leg redemption — the
+// backend's stored points_cost_used double-undercounts on roundtrip today,
+// so RT verdicts are unsafe to surface here until the matched-scope BE fix
+// lands. Diversity: 3 distinct programs (Qatar Avios, Flying Blue, United
+// MileagePlus), 3 distinct routes (TATL, TPAC, US→India), and 2 Business +
+// 1 Economy to balance the Premium Economy hero. Refresh quarterly or when
+// a prod verdict shifts these by >20%.
+//
+// Empty array gates the entire section — no eyebrow, no header, no skeleton.
+const SAVINGS_EXAMPLES: SavingsExample[] = [
+	{
+		route: "JFK → LHR",
+		cabin: "Business",
+		monthLabel: "Aug 2026",
+		cashPrice: 1349,
+		pointsCost: 99000,
+		pointsProgram: "Qatar Avios",
+		taxes: 0,
+		savings: 1349,
+	},
+	{
+		route: "SEA → PVG",
+		cabin: "Business",
+		monthLabel: "Aug 2026",
+		cashPrice: 2513,
+		pointsCost: 112000,
+		pointsProgram: "Air France/KLM Flying Blue",
+		taxes: 142,
+		savings: 2371,
+	},
+	{
+		route: "SFO → BLR",
+		cabin: "Economy",
+		monthLabel: "Jul 2026",
+		cashPrice: 675,
+		pointsCost: 49500,
+		pointsProgram: "United MileagePlus",
+		taxes: 5.6,
+		savings: 669.4,
+	},
+];
 
 type Testimonial = {
 	stars: number;             // 1–5, rendered as filled Lucide stars
@@ -1038,9 +1079,10 @@ function LandingPageContent() {
 					</section>
 
 					{/* ---------------------------------------------------------------- */}
-					{/* Real verdicts, real savings — empty-state gated.                 */}
-					{/* SAVINGS_EXAMPLES = [] → entire section returns null. No skeleton,*/}
-					{/* no eyebrow, no header. We only advertise savings we can show.    */}
+					{/* Real verdicts, real savings — populated with 3 real one-way      */}
+					{/* use_points verdicts from prod. Gating stays in place so a future */}
+					{/* SAVINGS_EXAMPLES = [] hides the whole section (no skeleton, no   */}
+					{/* eyebrow). We only advertise savings we can show.                 */}
 					{/* ---------------------------------------------------------------- */}
 					{SAVINGS_EXAMPLES.length > 0 ? (
 						<section
