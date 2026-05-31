@@ -19,9 +19,13 @@
  *      "{N} free searches" where N = NEXT_PUBLIC_PUBLIC_SEARCH_FREE_LIMIT.
  *      Default (and prod current) is 3. Test asserts the rendered N matches
  *      the env at build time.
- *   4. Real-verdicts (SAVINGS_EXAMPLES) section is empty-state-gated: when
- *      SAVINGS_EXAMPLES = [], the entire section is absent from the DOM (no
- *      eyebrow, no header, no skeleton). At ship the array is empty.
+ *   4. Real-verdicts (SAVINGS_EXAMPLES) section ships populated with three
+ *      real one-way use_points verdicts (sourced 2026-05-31 from prod
+ *      Supabase). The section renders, the eyebrow + header are visible,
+ *      and three cards render — each with a route, cabin badge, month label,
+ *      cash price, points cost + program, and a "You save" line. Empty-state
+ *      gating remains in the component (length > 0 check) but the populated
+ *      contract is what ships.
  *   5. Social-proof section: testimonials sub-block ships populated with 3
  *      beta entries (5 stars + name·city attribution each) plus an FTC
  *      "individual results vary" disclosure. Aggregate sub-blocks (rating,
@@ -160,17 +164,33 @@ test.describe('PR marketing-homepage-revamp: hero + empty-state sections + confi
     ).toBeVisible()
   })
 
-  test('SAVINGS_EXAMPLES empty → savings-examples section absent from DOM', async ({
+  test('SAVINGS_EXAMPLES populated → section + eyebrow + 3 cards render with cash/points/savings lines', async ({
     page,
   }) => {
     await page.goto('/')
 
+    const section = page.locator('[data-testid="savings-examples-section"]')
+    await expect(section).toBeVisible()
+    await expect(section.getByText(/real verdicts/i)).toBeVisible()
     await expect(
-      page.locator('[data-testid="savings-examples-section"]'),
-    ).toHaveCount(0)
-    await expect(
-      page.locator('[data-testid="savings-example-card"]'),
-    ).toHaveCount(0)
+      section.getByRole('heading', { name: /real searches, real savings/i }),
+    ).toBeVisible()
+
+    const cards = page.locator('[data-testid="savings-example-card"]')
+    await expect(cards).toHaveCount(3)
+
+    // Each card surfaces route, cabin badge, month label, cash, points,
+    // program, and a "You save" line. Asserting the structural form rather
+    // than the exact dollar values so a verdict refresh doesn't break the
+    // smoke — but we sanity-check the first card's route + program against
+    // the seeded values to catch silent SAVINGS_EXAMPLES = [] regressions.
+    for (let i = 0; i < 3; i++) {
+      await expect(cards.nth(i).getByText(/→/)).toBeVisible()
+      await expect(cards.nth(i).getByText(/^You save$/i)).toBeVisible()
+      await expect(cards.nth(i).getByText(/pts/i).first()).toBeVisible()
+    }
+    await expect(cards.nth(0)).toContainText(/JFK\s*→\s*LHR/i)
+    await expect(cards.nth(0)).toContainText(/Qatar Avios/i)
   })
 
   test('social-proof renders 3 testimonials × 5 stars + name·city + FTC disclosure; aggregate stats stay hidden', async ({
