@@ -465,7 +465,25 @@ export default function VerdictCard({
         bookingUrl: bestCashFlight.booking_url ?? bookingUrl,
       }
     : null;
-  const routeLabel = isRoundtrip ? `${origin} ⇄ ${destination}` : `${origin} → ${destination}`;
+  // Raw origin/destination are the user's metro CSV ("SFO,OAK,SJC"); the
+  // booking section needs the single IATA the verdict actually picked.
+  const firstCsv = (csv: string | undefined | null) =>
+    (csv || "").split(",")[0]?.trim() || "";
+  const displayOrigin =
+    recommendation === "pay_cash"
+      ? bestCashFlight?.legs?.[0]?.departure_iata || firstCsv(origin) || origin
+      : bestOutbound?.origin_airport || firstCsv(origin) || origin;
+  const displayDestination =
+    recommendation === "pay_cash"
+      ? bestCashFlight?.legs?.[bestCashFlight.legs.length - 1]?.arrival_iata ||
+        firstCsv(destination) ||
+        destination
+      : bestOutbound?.destination_airport ||
+        firstCsv(destination) ||
+        destination;
+  const routeLabel = isRoundtrip
+    ? `${displayOrigin} ⇄ ${displayDestination}`
+    : `${displayOrigin} → ${displayDestination}`;
   const travelersLabel = `${travelers} traveler${travelers !== 1 ? "s" : ""}, ${cabinLabel(cabin || "economy").toLowerCase()}`;
 
   const reasoningCopy = verdict.confidence_reason || (
