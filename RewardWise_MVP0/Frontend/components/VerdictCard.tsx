@@ -108,6 +108,9 @@ interface AwardOption {
   remaining_seats: number;
   airlines?: string;
   trips?: TripDetail[];
+  origin_airport?: string;
+  destination_airport?: string;
+  date?: string;
 }
 
 interface VerdictCardProps {
