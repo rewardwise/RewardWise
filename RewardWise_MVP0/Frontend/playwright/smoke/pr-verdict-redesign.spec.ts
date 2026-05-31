@@ -331,8 +331,8 @@ test.describe('PR VERDICT-REDESIGN: post-Phase-3 results screen honors coherence
       await expect(travelersDisclosure).toContainText(/3 travelers/i)
     }
 
-    // CONTRACT 8 assertions remain in the dedicated test.fixme() below
-    // pending the metro-CSV → IATA backend resolution follow-up.
+    // CONTRACT 8 assertions live in the two dedicated tests below
+    // (single-origin strict + metro readable).
   })
 
   // CONTRACT 8: Return-leg airport pair must render a readable label per
@@ -345,18 +345,124 @@ test.describe('PR VERDICT-REDESIGN: post-Phase-3 results screen honors coherence
   //      CSV to a single IATA from trips[0].segments[0/-1] post-hydration.
   //   2. Skyscanner numeric entity ID ("16292 → 16216") — FlightAPI pay_cash
   //      Tier 1 normalizer fell through to place.id when iata/iataCode/
-  //      displayCode/code were absent. Fixed in PR #174 + this PR:
-  //      _get_place_code drops "id" from the chain, gates IATA fields on
-  //      ^[A-Z]{3}$, then falls back to place.name, then to the caller-
-  //      provided search-param IATA. NEVER returns a numeric id.
+  //      displayCode/code were absent. Fixed in PR #174 + the place.name
+  //      fallback in 027a118: _get_place_code drops "id" from the chain,
+  //      gates IATA fields on ^[A-Z]{3}$, then falls back to place.name,
+  //      then to the caller-provided search-param IATA. NEVER returns a
+  //      numeric id.
   //   3. Em-dash placeholder ("— → —") — FlightSection renders "—" when the
-  //      first/last segment origin/destination is null. The name fallback in
-  //      this PR closes the prior gap where dropping "id" left id-only place
-  //      dicts producing None.
+  //      first/last segment origin/destination is null. The name fallback
+  //      (027a118) closes the prior gap where dropping "id" left id-only
+  //      place dicts producing None.
   //
-  // At +180d SFO→SIN PE × 3, the verdict commonly lands on pay_cash, so this
-  // smoke exercises the FlightAPI path in production by default. The seats
-  // metro-CSV regression is guarded by the seats_service test from PR #172.
+  // Two variants cover both edges of the resolution chain:
+  //   - Single-origin BOS→LHR (strict): both endpoints are single airports
+  //     so the FE backfill via singleIataOrUndefined always yields a clean
+  //     3-letter pair. Strict ^[A-Z]{3} → [A-Z]{3}$ regex.
+  //   - Metro SFO→SIN (readable): origin is a BAY metro CSV that the FE
+  //     backfill refuses to inject; resolution relies on the backend
+  //     place.name fallback. Relaxed "IATA or readable label" assertion.
+
+  // CONTRACT 8 (single-origin): non-metro origin → single-airport destination
+  // is the case where PR #174's FE + BE chain fully resolves the airport
+  // pair. The strict positive IATA assertion belongs here. Route is BOS→LHR
+  // PE long-haul ×3 +180d: both endpoints are single airports (no metro
+  // fan-out), the route reliably surfaces pay_cash (BA/AA/Delta cash
+  // dominates over partner award space at this scope), and the FE
+  // backfill resolves any normalizer-dropped endpoint to "BOS" / "LHR"
+  // via singleIataOrUndefined.
+  test('CONTRACT 8 (single-origin): return-leg renders single IATA pair', async ({
+    page,
+  }) => {
+    test.setTimeout(180_000)
+
+    await page.goto('/home')
+
+    const tryASearchCta = page
+      .getByRole('button', { name: /try a (free )?search( first)?/i })
+      .first()
+    if (
+      await tryASearchCta.isVisible({ timeout: 5_000 }).catch(() => false)
+    ) {
+      await tryASearchCta.click()
+    }
+
+    const inputs = page.getByPlaceholder('City or airport')
+    await inputs.first().fill('BOS')
+    await inputs.first().press('Enter')
+    await inputs.nth(1).fill('LHR')
+    await inputs.nth(1).press('Enter')
+
+    const dateInputs = page.locator('input[type="date"]')
+    await dateInputs.first().fill(isoDaysFromToday(DEPART_DAYS))
+    await dateInputs.nth(1).fill(isoDaysFromToday(RETURN_DAYS))
+
+    const selects = page.getByRole('combobox')
+    await selects.first().selectOption('3')
+    await selects.nth(2).selectOption('premium_economy')
+
+    const searchResponsePromise = page.waitForResponse(
+      (res) =>
+        /\/api\/search(\?|$)/.test(res.url()) &&
+        res.request().method() === 'POST',
+      { timeout: 120_000 },
+    )
+
+    await page.getByRole('button', { name: /Search Flights/i }).click()
+    await searchResponsePromise
+
+    // CONTRACT 8 (single-origin): Return leg's airport-pair element reads
+    // "{origin} → {destination}" with a single 3-letter IATA on each side.
+    // Four rejection modes, layered so the failure message immediately
+    // fingers which upstream regression is live:
+    //   - CSV ("SFO,OAK,SJC → SIN"): seats_service metro resolution
+    //     (PR #172) regressed.
+    //   - Digits ("16292 → 16216"): _get_place_code numeric-ID fallback
+    //     (PR #174) regressed.
+    //   - Em-dash ("— → LHR" / "BOS → —"): FE backfill regressed — null
+    //     normalizer IATA fell through to FlightSection's "—" placeholder
+    //     instead of getting backfilled from the single-IATA search param.
+    //   - Catchall: positive ^[A-Z]{3} → [A-Z]{3}$ pair, so a blank
+    //     element ("" passes all negative checks) still fails this.
+    const returnRoute = page.locator('[data-testid="leg-route-return"]')
+    const returnRouteText = await returnRoute.first().innerText()
+    expect(
+      returnRouteText,
+      `Return leg airport pair rendered "${returnRouteText}" — must not ` +
+        'contain a CSV airport list. The seats.aero metro CSV resolution ' +
+        '(PR #172, seats_service.py) has regressed if this fires.',
+    ).not.toMatch(/[A-Z]{3},[A-Z]{3}/)
+    expect(
+      returnRouteText,
+      `Return leg airport pair rendered "${returnRouteText}" — must not ` +
+        'contain digits. The FlightAPI normalizer numeric-ID fallback ' +
+        '(PR #174, _get_place_code) has regressed if this fires; ' +
+        'Skyscanner place.id (e.g. 16216) is leaking through as the IATA.',
+    ).not.toMatch(/\d/)
+    expect(
+      returnRouteText,
+      `Return leg airport pair rendered "${returnRouteText}" — must not ` +
+        'contain an em-dash. Single-origin search params are valid IATAs, ' +
+        'so the FE backfill (PR #174, flightLegs.ts backfillCashEndpoints) ' +
+        'should have rendered "BOS" / "LHR" when the normalizer dropped ' +
+        'an endpoint. Em-dash here means the backfill regressed.',
+    ).not.toContain('—')
+    expect(
+      returnRouteText,
+      `Return route "${returnRouteText}" must match "AAA → BBB" with ` +
+        'single 3-letter IATA codes on each side. A blank element passes ' +
+        'every negative check above — this positive assertion is what ' +
+        'falsifies a silent-blank regression.',
+    ).toMatch(/^[A-Z]{3}\s*→\s*[A-Z]{3}$/)
+  })
+
+  // CONTRACT 8 (metro pay_cash): origin is a BAY metro CSV (SFO·OAK·SJC)
+  // that the FE backfill refuses to inject (singleIataOrUndefined gates on
+  // ^[A-Z]{3}$). Resolution depends on the backend place.name fallback
+  // (027a118) — when Skyscanner returns a place dict with no iata/iataCode/
+  // displayCode/code, _get_place_code emits the place.name (e.g. "Singapore
+  // Changi") rather than null. Assertion is relaxed to "readable label",
+  // since the rendered text is a place name, not an IATA.
   test(
     'CONTRACT 8: return-leg renders readable airport (IATA or name)',
     async ({ page }) => {
@@ -404,10 +510,10 @@ test.describe('PR VERDICT-REDESIGN: post-Phase-3 results screen honors coherence
       //   - CSV ("SFO,OAK,SJC → SIN"): seats_service metro resolution
       //     (PR #172) regressed.
       //   - Entity-ID digits ("16292 → 16216"): _get_place_code chain
-      //     fell through to numeric place.id (PR #174 + this PR) regressed.
+      //     fell through to numeric place.id (PR #174 + 027a118) regressed.
       //   - Em-dash placeholder ("— → —"): both IATA fields AND place.name
-      //     AND caller fallback all returned empty — name fallback in this
-      //     PR is the safety net.
+      //     AND caller fallback all returned empty — place.name fallback
+      //     (027a118) is the safety net.
       const returnRoute = page.locator('[data-testid="leg-route-return"]')
       const returnRouteText = await returnRoute.first().innerText()
       expect(
@@ -420,7 +526,7 @@ test.describe('PR VERDICT-REDESIGN: post-Phase-3 results screen honors coherence
         returnRouteText,
         `Return leg airport pair rendered "${returnRouteText}" — must not ` +
           'contain a 4+ digit run. The FlightAPI normalizer numeric-ID ' +
-          'fallback (PR #174 + this PR, _get_place_code) has regressed if ' +
+          'fallback (PR #174 + 027a118, _get_place_code) has regressed if ' +
           'this fires; Skyscanner place.id (e.g. 16216) is leaking through.',
       ).not.toMatch(/\d{4,}/)
       expect(
@@ -431,14 +537,14 @@ test.describe('PR VERDICT-REDESIGN: post-Phase-3 results screen honors coherence
         returnRouteText,
         `Return route "${returnRouteText}" must have non-blank content on ` +
           'the origin side. An em-dash placeholder means _get_place_code ' +
-          'returned None — the name fallback in this PR has regressed.',
+          'returned None — the place.name fallback (027a118) has regressed.',
       ).not.toMatch(/^[—\s]*→/)
       expect(
         returnRouteText,
         `Return route "${returnRouteText}" must have non-blank content on ` +
           'the destination side. An em-dash placeholder means ' +
-          '_get_place_code returned None — the name fallback in this PR has ' +
-          'regressed.',
+          '_get_place_code returned None — the place.name fallback ' +
+          '(027a118) has regressed.',
       ).not.toMatch(/→[—\s]*$/)
     },
   )
