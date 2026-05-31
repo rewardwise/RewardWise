@@ -77,15 +77,29 @@ def _get_place_name(place: dict[str, Any] | None, fallback_code: str | None = No
 
 
 def _get_place_code(place: dict[str, Any] | None, fallback_code: str | None = None) -> str | None:
-    # "id" is intentionally NOT in the chain: Skyscanner's place.id is the
-    # numeric internal ID (e.g. 16216), not an IATA. Falling through to it
-    # rendered "16292 → 16216" on prod return legs (CONTRACT 8 smoke).
+    # Readable fallback chain for the leg-route span (CONTRACT 8 contract):
+    #   1. Real IATA from iata/iataCode/displayCode/code, gated on ^[A-Z]{3}$.
+    #      The gate keeps numeric Skyscanner place IDs (e.g. 16216) from
+    #      ever surfacing as IATAs — that was the prod regression.
+    #   2. The place's readable "name" (e.g. "Singapore Changi"). Skyscanner
+    #      place dicts almost always carry "name" even when IATA fields are
+    #      missing, so this turns the unrenderable id-only case into a
+    #      legible city/airport label instead of None.
+    #   3. A caller-provided IATA fallback (segment.origin in the FlightAPI
+    #      shape, or the user-typed search-param IATA). Gated on ^[A-Z]{3}$
+    #      so a metro CSV like "SFO,OAK,SJC" never leaks through.
+    # "id" is intentionally NOT in the chain — it is the bug source.
     fallback = _normalize_iata(fallback_code)
     if not place:
         return fallback
     candidate = _first_present(place, ["iata", "iataCode", "displayCode", "code"])
     normalized = _normalize_iata(candidate)
-    return normalized if normalized is not None else fallback
+    if normalized is not None:
+        return normalized
+    name = _first_present(place, ["name"])
+    if name:
+        return str(name).strip()
+    return fallback
 
 
 def _carrier_name(carrier: dict[str, Any] | None, fallback: str | None = None) -> str | None:

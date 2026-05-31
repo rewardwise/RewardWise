@@ -1,6 +1,9 @@
 import re
 
-from app.services.flight_pricing.normalizer import normalize_flightapi_response
+from app.services.flight_pricing.normalizer import (
+    _get_place_code,
+    normalize_flightapi_response,
+)
 
 
 def test_flightapi_parser_handles_docs_style_oneway_payload_with_fare_metadata():
@@ -143,18 +146,22 @@ def test_flightapi_parser_sorts_multiple_pricing_options_by_lowest_price():
     assert result["flights"][1]["price"] == 99.0
 
 
-def test_flightapi_parser_never_renders_numeric_place_id_as_iata_on_return_leg():
-    """Regression: prod return leg rendered "16292 → 16216" instead of an IATA pair.
+def test_flightapi_parser_falls_back_to_place_name_when_iata_missing_on_return_leg():
+    """Regression: prod return leg rendered "16292 → 16216" instead of a
+    readable airport label.
 
     Skyscanner's place lookup is sometimes incomplete — the segment references
     the place by numeric id (e.g. 16292 for SIN, 16216 for SFO) but the
     placeMap entry for that id is missing displayCode/iata/iataCode/code and
     only carries the numeric "id". The pre-fix _get_place_code fell through to
-    that "id" and emitted the numeric place ID as the IATA, which the FE then
-    rendered verbatim on the leg-route span.
+    that "id" and emitted the numeric place ID as the IATA. The fix gates the
+    IATA slot on ^[A-Z]{3}$ and falls back to the place's readable "name"
+    before returning None — so the FE renders "Singapore Changi" rather than
+    "16292" or "—".
 
     Contract: every leg's departure_iata / arrival_iata is either a real
-    3-letter IATA (^[A-Z]{3}$) or None — never a numeric place ID.
+    3-letter IATA, a readable name string, or None — but NEVER a numeric
+    place ID like "16216".
     """
     raw = {
         "itineraries": [
@@ -191,8 +198,8 @@ def test_flightapi_parser_never_renders_numeric_place_id_as_iata_on_return_leg()
             },
         ],
         # The bug-shape: places exist but lack any of iata/iataCode/
-        # displayCode/code — only the numeric "id". The pre-fix chain
-        # fell through to "id" and leaked 16216 / 16292 to the FE.
+        # displayCode/code — only the numeric "id" and a "name". The fix
+        # falls back to "name" instead of leaking the numeric id.
         "places": [
             {"id": 16216, "name": "San Francisco International"},
             {"id": 16292, "name": "Singapore Changi"},
@@ -204,19 +211,55 @@ def test_flightapi_parser_never_renders_numeric_place_id_as_iata_on_return_leg()
     result = normalize_flightapi_response(raw, is_roundtrip=True, currency="USD")
     flight = result["flights"][0]
 
-    iata_pattern = r"^[A-Z]{3}$"
-    for leg_label, iata in (
+    assert flight["departure_iata"] == "San Francisco International"
+    assert flight["arrival_iata"] == "Singapore Changi"
+    assert flight["return_flight"]["departure_iata"] == "Singapore Changi"
+    assert flight["return_flight"]["arrival_iata"] == "San Francisco International"
+
+    # And the falsifying check: no field should contain the numeric place ID.
+    for leg_label, value in (
         ("outbound departure", flight["departure_iata"]),
         ("outbound arrival", flight["arrival_iata"]),
         ("return departure", flight["return_flight"]["departure_iata"]),
         ("return arrival", flight["return_flight"]["arrival_iata"]),
     ):
-        # Either a real IATA or None — never a numeric place ID.
-        assert iata is None or re.match(iata_pattern, iata), (
-            f"{leg_label} iata = {iata!r}; expected None or /^[A-Z]{{3}}$/. "
-            "Numeric Skyscanner place IDs (e.g. 16216) must not leak through "
-            "as IATAs — that is the bug CONTRACT 8 caught on prod."
+        assert not re.search(r"\d{4,}", str(value)), (
+            f"{leg_label} = {value!r}; numeric Skyscanner place IDs "
+            "(e.g. 16216) must never leak through as departure_iata / "
+            "arrival_iata — that is the bug CONTRACT 8 caught on prod."
         )
+
+
+def test_get_place_code_id_only_with_name_falls_back_to_name():
+    """Step 2 of the fallback chain: place has only id + name (no IATA
+    fields) → return the readable name. Skyscanner places almost always
+    carry "name" even when the IATA fields are missing, so the FE renders
+    "Singapore Changi" instead of "—" or a numeric ID."""
+    place = {"id": 16292, "name": "Singapore Changi"}
+    assert _get_place_code(place) == "Singapore Changi"
+    # Whitespace in the upstream name is trimmed.
+    assert _get_place_code({"id": 16292, "name": "  Singapore Changi  "}) == "Singapore Changi"
+    # Caller fallback is ignored when name is present (name wins over
+    # fallback_code because it is more specific to this place).
+    assert _get_place_code(place, fallback_code="SIN") == "Singapore Changi"
+
+
+def test_get_place_code_id_only_no_name_falls_back_to_caller_iata():
+    """Step 3 of the fallback chain: place has only id (no IATA fields, no
+    name) → return the caller-supplied search-param IATA. The fallback is
+    itself gated on ^[A-Z]{3}$ so a metro CSV like "SFO,OAK,SJC" never
+    leaks through."""
+    place = {"id": 16216}
+    # Valid 3-letter caller fallback flows through.
+    assert _get_place_code(place, fallback_code="SFO") == "SFO"
+    # Lowercased fallback is normalized to upper.
+    assert _get_place_code(place, fallback_code="sfo") == "SFO"
+    # Metro CSV fallback is rejected by the gate — returns None rather than
+    # leaking the CSV. The FE's em-dash placeholder is the safer surface
+    # than dumping "SFO,OAK,SJC" into the leg-route span.
+    assert _get_place_code(place, fallback_code="SFO,OAK,SJC") is None
+    # No fallback at all — still None, never the numeric id.
+    assert _get_place_code(place) is None
 
 
 def test_flightapi_parser_resolves_iata_from_displaycode_when_id_is_numeric():
