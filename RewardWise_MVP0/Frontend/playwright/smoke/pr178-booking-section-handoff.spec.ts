@@ -78,6 +78,16 @@ test.describe('PR #178: booking-section handoff displays cleanly', () => {
       await tryASearchCta.click()
     }
 
+    // Search form defaults to Round Trip on prod, which renders two date
+    // inputs (depart + return). For this smoke we only need a one-way to
+    // exercise the booking section, so flip to One Way first — that hides
+    // the return-date input so `dateInputs.first()` unambiguously matches
+    // depart.
+    const oneWayTab = page.getByRole('button', { name: /^One Way$/i })
+    if (await oneWayTab.isVisible({ timeout: 5_000 }).catch(() => false)) {
+      await oneWayTab.click()
+    }
+
     // Metro CSV on the origin is the trigger for Bug B — the leak only
     // surfaces when the search input expands to multiple airports.
     const inputs = page.getByPlaceholder('City or airport')
