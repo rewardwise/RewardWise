@@ -238,6 +238,70 @@ describe("pay_cash endpoint backfill (PR #174 — readable fallback for null nor
     expect(result!.segments[0].destination).toBe("SFO");
   });
 
+  // Regression for the BOS→LHR PE +180d ×3 prod red caught by
+  // pr-verdict-redesign CONTRACT 8 (single-origin): backend commit 027a118
+  // added a place.name fallback to _get_place_code, so Skyscanner places
+  // without iata/iataCode/displayCode/code now surface as the airport NAME
+  // ("London Heathrow") rather than None. The original backfill gate
+  // (`!next[0].origin`) only triggered on empty/null, so the name leaked
+  // through to the leg-route span — outbound rendered "BOS → LHR" but
+  // return rendered "London Heathrow → Boston Logan International". The
+  // widened gate falsifies this: any non-IATA shape on the booking
+  // endpoint is overridden by the single-IATA search param.
+  it("OVERRIDES a backend name-fallback (e.g. 'London Heathrow') with the single-IATA search param on outbound", () => {
+    const result = buildOutboundLeg({
+      recommendation: "pay_cash",
+      bestCashFlight: cashFlight({
+        legs: [cashLeg({ departure_iata: "Boston Logan International" })],
+      }),
+      origin: "BOS",
+      destination: "LHR",
+    });
+    expect(result).not.toBeNull();
+    expect(result!.segments[0].origin).toBe("BOS");
+  });
+
+  it("OVERRIDES a backend name-fallback on the return leg (RT cards must be symmetric)", () => {
+    const result = buildInboundLeg({
+      recommendation: "pay_cash",
+      isRoundtrip: true,
+      bestCashFlight: cashFlight({
+        legs: [cashLeg()],
+        return_flight: {
+          total_duration: 990,
+          legs: [
+            cashLeg({
+              departure_iata: "London Heathrow",
+              arrival_iata: "Boston Logan International",
+              departure_time: "2026-12-02T22:00:00",
+              arrival_time: "2026-12-03T22:00:00",
+            }),
+          ],
+        },
+      }),
+      origin: "BOS",
+      destination: "LHR",
+    });
+    expect(result).not.toBeNull();
+    expect(result!.label).toBe("Return");
+    expect(result!.segments[0].origin).toBe("LHR");
+    expect(result!.segments[0].destination).toBe("BOS");
+  });
+
+  it("OVERRIDES a leaked numeric Skyscanner place id with the single-IATA search param", () => {
+    const result = buildOutboundLeg({
+      recommendation: "pay_cash",
+      bestCashFlight: cashFlight({
+        legs: [cashLeg({ departure_iata: "16216", arrival_iata: "16292" })],
+      }),
+      origin: "BOS",
+      destination: "LHR",
+    });
+    expect(result).not.toBeNull();
+    expect(result!.segments[0].origin).toBe("BOS");
+    expect(result!.segments[0].destination).toBe("LHR");
+  });
+
   it("falls through to Tier 4 search-param synthesis when bestCashFlight has no legs at all", () => {
     const result = buildOutboundLeg({
       recommendation: "pay_cash",
