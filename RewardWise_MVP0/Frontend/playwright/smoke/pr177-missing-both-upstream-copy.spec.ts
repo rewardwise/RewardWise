@@ -59,6 +59,13 @@ test.describe('PR #177: missing_both near-date does not lie about horizon', () =
     await page.locator('[data-testid="hero-primary-cta"]').click()
 
     const inputs = page.getByPlaceholder('City or airport')
+    await expect(inputs.first()).toBeVisible({ timeout: 15_000 })
+
+    // Trip type must flip to One Way before fill — form defaults to
+    // roundtrip and the Search Flights button stays disabled until
+    // returnDate is set. One-way clears the returnDate requirement.
+    await page.getByRole('button', { name: /^one way$/i }).click()
+
     await inputs.first().fill('SFO')
     await inputs.first().press('Enter')
     await inputs.nth(1).fill('SIN')
@@ -68,7 +75,9 @@ test.describe('PR #177: missing_both near-date does not lie about horizon', () =
     await dateInputs.first().fill(isoDaysFromToday(DEPART_DAYS))
 
     const selects = page.getByRole('combobox')
-    await selects.nth(2).selectOption('premium_economy')
+    // One Way mode: form renders 3 selects (travelers, stops, cabin).
+    // Cabin is the LAST select (index 2).
+    await selects.last().selectOption('premium_economy')
 
     const searchResponsePromise = page.waitForResponse(
       (res) =>
