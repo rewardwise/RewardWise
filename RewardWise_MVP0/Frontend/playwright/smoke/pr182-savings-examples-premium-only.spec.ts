@@ -82,7 +82,10 @@ test.describe('PR #182: every SAVINGS_EXAMPLES card clears matched-scope cpp ≥
       // dollar token under "Points" is the taxes value, prefixed by
       // " + $T tax".
       const cashMatch = cardText.match(/Cash[\s\S]*?\$([\d,]+(?:\.\d+)?)/)
-      const pointsMatch = cardText.match(/([\d,]+)\s*pts/i)
+      // Card markup shortens five-figure point amounts via a k-suffix
+      // ("112k pts" for 112,000) — capture the optional "k" so the
+      // derivation still works on the rendered abbreviation.
+      const pointsMatch = cardText.match(/([\d,]+(?:\.\d+)?)(k)?\s*pts/i)
       const taxMatch = cardText.match(/\+\s*\$([\d,]+(?:\.\d+)?)\s*tax/i)
 
       expect(cashMatch, `card ${i}: no "Cash $X" in card text\n${cardText}`).not.toBeNull()
@@ -90,7 +93,8 @@ test.describe('PR #182: every SAVINGS_EXAMPLES card clears matched-scope cpp ≥
       expect(taxMatch, `card ${i}: no "+ $T tax" in card text\n${cardText}`).not.toBeNull()
 
       const cash = Number(cashMatch![1].replace(/,/g, ''))
-      const points = Number(pointsMatch![1].replace(/,/g, ''))
+      const pointsRaw = Number(pointsMatch![1].replace(/,/g, ''))
+      const points = pointsMatch![2] ? pointsRaw * 1000 : pointsRaw
       const taxes = Number(taxMatch![1].replace(/,/g, ''))
 
       expect(Number.isFinite(cash), `card ${i}: cash parse failure`).toBe(true)
