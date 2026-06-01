@@ -52,16 +52,11 @@ test.describe('PR #177: missing_both near-date does not lie about horizon', () =
 
     await page.goto('/')
 
-    const tryASearchCta = page
-      .getByRole('button', {
-        name: /try a (free )?search( first)?/i,
-      })
-      .first()
-    if (
-      await tryASearchCta.isVisible({ timeout: 5_000 }).catch(() => false)
-    ) {
-      await tryASearchCta.click()
-    }
+    // Deterministic CTA — the regex-name lookup raced the marketing hydration
+    // and silently passed-through when not yet visible, leaving the search
+    // panel un-mounted. data-testid="hero-primary-cta" is the same anchor
+    // pr-marketing-homepage-revamp uses and is stable.
+    await page.locator('[data-testid="hero-primary-cta"]').click()
 
     const inputs = page.getByPlaceholder('City or airport')
     await inputs.first().fill('SFO')
