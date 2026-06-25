@@ -1,32 +1,32 @@
 """
 app/services/zoe_service.py
 ────────────────────────────
-Main Zoe entry point — simplified pipeline (v2).
+Main Zoe entry point — Xpectrum-only pipeline (v3).
 
-ARCHITECTURE CHANGE (v2):
-  Slot machine and form-filling logic REMOVED.
-  Zoe is now a travel intelligence layer, not a form assistant.
+ARCHITECTURE (v3 — clean break from NVIDIA):
+  Zoe is powered end-to-end by the Xpectrum Toolkit "TravelAgent". The agent
+  owns intent understanding, the system prompt, the model, the knowledge base,
+  and the searchFlight tool (cash + award + verdict + deep link). The backend's
+  only job is to forward the user's message + per-user context and stream the
+  answer back, persisting the upstream conversation id for multi-turn continuity.
+
+  Removed in v3: local regex intent routing, RAG retrieval, grounded prompt
+  building, per-intent handlers, the NVIDIA NIM completion path, and the
+  provider switch. All of that now lives inside the Xpectrum agent.
 
 Steps every request takes:
   1. Load session from Redis
-  2. Classify intent via router (regex, no LLM call needed for routing)
-  3. Fetch wallet from DB
-  4. RAG retrieval — 3-layer, all intents
-  5. Dispatch to handler with full context packet
-  6. Save session + log interaction
+  2. Fetch wallet from DB (passed to the agent as context)
+  3. Forward to the Xpectrum TravelAgent + stream the answer
+  4. Save session (incl. Xpectrum conversation id) + log interaction
 
-Response shape (frontend-compatible):
+Response shape (frontend-compatible, unchanged):
   {
     "type":           "followup",
     "message":        str,
     "intent":         str,
     "interaction_id": str | None,
   }
-
-Key invariants:
-  - Zoe NEVER returns prefill — the search form is autonomous
-  - Every factual claim is grounded via grounding.py + RAG
-  - verdict_context injected on "Ask Zoe" button click
 """
 
 from __future__ import annotations
@@ -35,18 +35,48 @@ from typing import Any, Dict, Optional
 
 from app.db.client import get_db_client
 from app.services.zoe import session as session_store
-from app.services.zoe.router import classify
-from app.services.rag_service import retrieve_for_intent
 from app.services.zoe.interaction_logger import log as log_interaction
-from app.services.zoe.handlers import (
-    trip_search,
-    verdict_strategy,
-    alt_dates,
-    destination,
-    wallet_support,
-    off_topic,
-    small_talk,
-)
+from app.services.zoe.xpectrum_caller import call_xpectrum
+
+
+# ── Context helpers ───────────────────────────────────────────────────────────
+
+def _wallet_inputs(wallet: list[dict]) -> str:
+    """Compact, model-friendly summary of the user's points wallet."""
+    if not wallet:
+        return "No reward programs on file."
+    parts = []
+    for w in wallet:
+        program = w.get("program") or "Unknown"
+        pts = w.get("points") or 0
+        parts.append(f"{program}: {pts:,}")
+    return "; ".join(parts)
+
+
+def _compose_xpectrum_query(
+    text: str, wallet_summary: str, verdict_context: Optional[str]
+) -> str:
+    """
+    Fold per-user context into the query for the Xpectrum agent.
+
+    Until the Xpectrum "TravelAgent" template declares {{wallet}} /
+    {{verdict_context}} input variables, passing context only via `inputs` would
+    be silently dropped. So we prepend a compact, clearly-delimited context block
+    so the model reliably sees the user's wallet and the result they clicked
+    "Ask Zoe" on. Once the template consumes the `inputs` variables, this
+    preamble can be removed in favor of pure `inputs`.
+    """
+    preamble: list[str] = []
+    if verdict_context:
+        preamble.append(
+            "[Context — the user is asking about this search result]\n"
+            f"{verdict_context}"
+        )
+    if wallet_summary and wallet_summary != "No reward programs on file.":
+        preamble.append(f"[User's points wallet] {wallet_summary}")
+    if not preamble:
+        return text
+    return "\n\n".join(preamble) + "\n\n[User] " + text
 
 
 # ── Wallet fetcher ────────────────────────────────────────────────────────────
@@ -93,7 +123,7 @@ def _session_id(payload: Dict[str, Any]) -> str:
 def _reply(
     message: str,
     *,
-    intent: str = "trip_search",
+    intent: str = "xpectrum",
     interaction_id: str | None = None,
 ) -> dict[str, Any]:
     r: dict[str, Any] = {
@@ -122,11 +152,11 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
     """
 
     # ── Unpack ────────────────────────────────────────────────────────────────
-    text:            str          = (payload.get("message") or "").strip()
+    text:            str           = (payload.get("message") or "").strip()
     user_id:         Optional[str] = payload.get("user_id")
     verdict_context: Optional[str] = payload.get("verdict_context") or None
     is_voice:        bool          = bool(payload.get("is_voice", False))
-    frontend_history: list[dict]  = payload.get("history") or []
+    frontend_history: list[dict]   = payload.get("history") or []
     conversation_id: Optional[str] = payload.get("conversation_id")
 
     if not user_id:
@@ -135,17 +165,9 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
     if not text:
         return _reply(
             "Hey! Ask me anything about flights, routes, or how to use your points.",
-            intent="trip_search",
         )
 
-    # ── Small talk fast path (before session load) ────────────────────────────
-    if small_talk.is_small_talk(text):
-        result = await small_talk.handle(text, frontend_history, is_voice=is_voice)
-        return _reply(result["message"], intent="small_talk")
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # STEP 1: Load session
-    # ─────────────────────────────────────────────────────────────────────────
+    # ── STEP 1: Load session ──────────────────────────────────────────────────
     sess_id = _session_id(payload)
     session = await session_store.load(sess_id)
 
@@ -160,120 +182,45 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
     if is_voice:
         session.conversation_mode = "voice"
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # STEP 2: Classify intent (regex router — no LLM call needed)
-    # ─────────────────────────────────────────────────────────────────────────
-
-    # When verdict_context is present, the user clicked "Ask Zoe" on a
-    # search result. Run the router with has_verdict_context=True so the
-    # alt_dates intent can preempt verdict_strategy on phrases like
-    # "any cheaper dates around this?" — otherwise it still falls through
-    # to verdict_strategy as the default for the Ask-Zoe flow.
-    route_result = classify(
-        text,
-        has_verdict_context=bool(verdict_context),
-        is_voice=is_voice,
-    )
-    intent = route_result.intent
-    if verdict_context and intent not in ("alt_dates", "verdict_strategy", "off_topic"):
-        intent = "verdict_strategy"
-
-    print(f"🧭 ZOE INTENT: {intent}")
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # STEP 3: Fetch wallet
-    # ─────────────────────────────────────────────────────────────────────────
+    # ── STEP 2: Fetch wallet (passed to the agent as context) ─────────────────
     wallet = await _fetch_wallet(user_id)
+    wallet_summary = _wallet_inputs(wallet)
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # STEP 4: RAG retrieval — all intents
-    # ─────────────────────────────────────────────────────────────────────────
-    rag = await retrieve_for_intent(intent, text, top_k=4)
+    # ── STEP 3: Forward to the Xpectrum TravelAgent ───────────────────────────
+    # The agent owns intent + prompt + model + knowledge + the searchFlight tool.
+    # Context is passed both inline (guaranteed delivery today) and as `inputs`
+    # (forward-compatible once the agent template declares the variables).
+    inputs: dict[str, Any] = {"wallet": wallet_summary}
+    if verdict_context:
+        inputs["verdict_context"] = verdict_context
 
-    # ─────────────────────────────────────────────────────────────────────────
-    # STEP 5: Dispatch to handler
-    # ─────────────────────────────────────────────────────────────────────────
-    result: dict[str, Any] = {}
+    reply = await call_xpectrum(
+        _compose_xpectrum_query(text, wallet_summary, verdict_context),
+        user=user_id,
+        conversation_id=session.xpectrum_conversation_id,
+        inputs=inputs,
+    )
 
-    if intent == "verdict_strategy":
-        result = await verdict_strategy.handle(
-            text,
-            session.history,
-            wallet,
-            verdict_context=verdict_context,
-            rag_chunks=rag.kb_chunks,
-            rag_examples=rag.examples,
-            rag_corrections=rag.corrections,
-            is_voice=is_voice,
-        )
+    # Persist the upstream conversation id ONLY on success, so the next turn
+    # resumes context. On an upstream "conversation not found" (TTL expiry),
+    # clear the stale id so the next turn self-heals with a fresh conversation
+    # instead of wedging on the dead id forever.
+    if reply.ok and reply.conversation_id:
+        session.xpectrum_conversation_id = reply.conversation_id
+    elif not reply.ok and "conversation" in (reply.error or "").lower():
+        session.xpectrum_conversation_id = None
 
-    elif intent == "alt_dates":
-        result = await alt_dates.handle(
-            text,
-            session.history,
-            wallet,
-            verdict_context=verdict_context,
-            rag_chunks=rag.kb_chunks,
-            rag_examples=rag.examples,
-            rag_corrections=rag.corrections,
-            is_voice=is_voice,
-        )
+    message_text = reply.answer or "Something went wrong — give me a second."
 
-    elif intent in ("destination", "exploring"):
-        result = await destination.handle(
-            text,
-            session.history,
-            wallet,
-            rag_chunks=rag.kb_chunks,
-            rag_examples=rag.examples,
-            rag_corrections=rag.corrections,
-            is_voice=is_voice,
-        )
-
-    elif intent == "wallet_support":
-        result = await wallet_support.handle(
-            text,
-            session.history,
-            wallet,
-            rag_chunks=rag.kb_chunks,
-            rag_examples=rag.examples,
-            rag_corrections=rag.corrections,
-            is_voice=is_voice,
-        )
-
-    elif intent == "off_topic":
-        result = await off_topic.handle(text, session.history, is_voice=is_voice)
-
-    else:
-        # trip_search (default) — travel intelligence
-        result = await trip_search.handle(
-            text,
-            session.history,
-            wallet,
-            verdict_context=verdict_context,
-            rag_chunks=rag.kb_chunks,
-            rag_examples=rag.examples,
-            rag_corrections=rag.corrections,
-            is_voice=is_voice,
-        )
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # STEP 6: Finalize, save session, log
-    # ─────────────────────────────────────────────────────────────────────────
-    message_text: str = result.get("message") or "Something went wrong — give me a second."
-
-    # Append to session history
+    # ── STEP 4: Save session + log interaction ────────────────────────────────
     session.add_turn("user", text)
     session.add_turn("assistant", message_text)
-
-    # Save session (non-blocking failure)
     await session_store.save(sess_id, session)
 
-    # Log interaction
     interaction_id = await log_interaction(
         sess_id,
         user_id,
-        intent,
+        "xpectrum",
         text,
         message_text,
         conversation_id=conversation_id,
@@ -281,4 +228,4 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
         feedback_signal=None,
     )
 
-    return _reply(message_text, intent=intent, interaction_id=interaction_id)
+    return _reply(message_text, interaction_id=interaction_id)
