@@ -66,10 +66,13 @@ class ZoeSession(BaseModel):
 
     history         — conversation turns, capped at MAX_HISTORY
     conversation_mode — "standard" | "voice"
+    xpectrum_conversation_id — upstream Xpectrum conversation id for multi-turn
+                      continuity when ZOE_LLM_PROVIDER=xpectrum (None = new convo)
     """
 
     history: list[dict] = Field(default_factory=list)
     conversation_mode: Literal["standard", "voice"] = "standard"
+    xpectrum_conversation_id: str | None = None
 
     MAX_HISTORY: int = 20
 
