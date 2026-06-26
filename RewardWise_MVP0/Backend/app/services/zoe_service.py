@@ -79,6 +79,51 @@ def _compose_xpectrum_query(
     return "\n\n".join(preamble) + "\n\n[User] " + text
 
 
+# ── Xpectrum conversation continuity (durable, Supabase-backed) ───────────────
+# The upstream Xpectrum conversation id is stored on the zoe_conversations row
+# (keyed by the frontend conversation_id) instead of Redis. Redis sessions were
+# wiping every turn in prod (suspended instance), which started a fresh Xpectrum
+# conversation on each message → no memory → re-asking. Postgres is durable and
+# already holds a row per conversation. Both helpers degrade to None/no-op on any
+# error so a transient DB issue never breaks the chat.
+
+async def _get_xpectrum_conversation(conversation_id: Optional[str]) -> Optional[str]:
+    """Read the stored upstream Xpectrum conversation id for this conversation."""
+    if not conversation_id:
+        return None
+    try:
+        db = get_db_client()
+        res = (
+            db.table("zoe_conversations")
+            .select("xpectrum_conversation_id")
+            .eq("id", conversation_id)
+            .single()
+            .execute()
+        )
+        return (res.data or {}).get("xpectrum_conversation_id")
+    except Exception as exc:
+        print("⚠️ Zoe xpectrum-conv read error:", exc)
+        return None
+
+
+async def _set_xpectrum_conversation(
+    conversation_id: Optional[str], xpectrum_conv_id: Optional[str]
+) -> None:
+    """Persist (or clear) the upstream Xpectrum conversation id for this conversation."""
+    if not conversation_id:
+        return
+    try:
+        db = get_db_client()
+        (
+            db.table("zoe_conversations")
+            .update({"xpectrum_conversation_id": xpectrum_conv_id})
+            .eq("id", conversation_id)
+            .execute()
+        )
+    except Exception as exc:
+        print("⚠️ Zoe xpectrum-conv write error:", exc)
+
+
 # ── Wallet fetcher ────────────────────────────────────────────────────────────
 
 async def _fetch_wallet(user_id: str) -> list[dict]:
@@ -188,12 +233,17 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
 
     # ── STEP 3: Forward to the Xpectrum TravelAgent ───────────────────────────
     # The agent owns intent + prompt + model + knowledge + the searchFlight tool.
+    # Continuity: source the upstream Xpectrum conversation id from Postgres
+    # (durable), keyed by the frontend conversation_id. Fall back to the in-session
+    # value only when there's no conversation_id (e.g. the voice path).
+    xpectrum_conv = await _get_xpectrum_conversation(conversation_id)
+    if xpectrum_conv is None:
+        xpectrum_conv = session.xpectrum_conversation_id
     # Inject wallet context ONLY on the first turn of a conversation. Repeating
     # it every turn makes the agent comment on the wallet ("you've got quite the
     # collection!") and lose the user's actual thread — it retains the wallet via
-    # conversation memory after turn 1. verdict_context (Ask-Zoe) is per-turn, so
-    # it's passed whenever present.
-    first_turn = session.xpectrum_conversation_id is None
+    # conversation memory after turn 1. verdict_context (Ask-Zoe) is per-turn.
+    first_turn = xpectrum_conv is None
     inputs: dict[str, Any] = {"wallet": wallet_summary}
     if verdict_context:
         inputs["verdict_context"] = verdict_context
@@ -203,17 +253,20 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
             text, wallet_summary if first_turn else "", verdict_context
         ),
         user=user_id,
-        conversation_id=session.xpectrum_conversation_id,
+        conversation_id=xpectrum_conv,
         inputs=inputs,
     )
 
-    # Persist the upstream conversation id ONLY on success, so the next turn
-    # resumes context. On an upstream "conversation not found" (TTL expiry),
-    # clear the stale id so the next turn self-heals with a fresh conversation
-    # instead of wedging on the dead id forever.
+    # Persist the upstream conversation id durably ONLY on success, so the next
+    # turn resumes context. On an upstream "conversation not found" (TTL expiry),
+    # clear it so the next turn self-heals with a fresh conversation instead of
+    # wedging on the dead id forever. Keep the session copy in sync for the
+    # no-conversation_id (voice) path.
     if reply.ok and reply.conversation_id:
+        await _set_xpectrum_conversation(conversation_id, reply.conversation_id)
         session.xpectrum_conversation_id = reply.conversation_id
     elif not reply.ok and "conversation" in (reply.error or "").lower():
+        await _set_xpectrum_conversation(conversation_id, None)
         session.xpectrum_conversation_id = None
 
     message_text = reply.answer or "Something went wrong — give me a second."
