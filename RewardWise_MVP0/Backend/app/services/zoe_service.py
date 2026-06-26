@@ -188,14 +188,20 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
 
     # ── STEP 3: Forward to the Xpectrum TravelAgent ───────────────────────────
     # The agent owns intent + prompt + model + knowledge + the searchFlight tool.
-    # Context is passed both inline (guaranteed delivery today) and as `inputs`
-    # (forward-compatible once the agent template declares the variables).
+    # Inject wallet context ONLY on the first turn of a conversation. Repeating
+    # it every turn makes the agent comment on the wallet ("you've got quite the
+    # collection!") and lose the user's actual thread — it retains the wallet via
+    # conversation memory after turn 1. verdict_context (Ask-Zoe) is per-turn, so
+    # it's passed whenever present.
+    first_turn = session.xpectrum_conversation_id is None
     inputs: dict[str, Any] = {"wallet": wallet_summary}
     if verdict_context:
         inputs["verdict_context"] = verdict_context
 
     reply = await call_xpectrum(
-        _compose_xpectrum_query(text, wallet_summary, verdict_context),
+        _compose_xpectrum_query(
+            text, wallet_summary if first_turn else "", verdict_context
+        ),
         user=user_id,
         conversation_id=session.xpectrum_conversation_id,
         inputs=inputs,
