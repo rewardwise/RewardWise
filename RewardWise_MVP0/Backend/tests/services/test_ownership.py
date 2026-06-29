@@ -102,14 +102,27 @@ def test_b3_short_and_cpp_below_buy_rate_forks_to_pay_cash():
     assert own["fork_reason"] == "short_buy_not_worth_it"
 
 
-def test_b3_short_nonbuyable_program_forks_to_pay_cash_no_fabricated_cost():
-    # A program with no buy rate must never get a fabricated cost.
-    v = _use_points_verdict(program="korean", points_cost=30000, cpp=2.5)
+def test_b3_short_nonbuyable_hotel_forks_to_pay_cash_no_fabricated_cost():
+    # Hotels are genuinely non-buyable -> no fabricated cost, "can't buy" copy.
+    v = _use_points_verdict(program="hyatt", points_cost=30000, cpp=2.5)
     own = compute_ownership(v, {})
     assert own["buyable"] is False
     assert own["buy_gap_cost"] is None
     assert own["fork_recommendation"] == "pay_cash"
     assert own["fork_reason"] == "short_cant_buy"
+
+
+def test_unlisted_airline_defaults_to_buyable_not_cant_buy():
+    # An airline NOT in the override table must default to buyable at ~3.0¢ —
+    # never the false "you can't buy these" statement (korean/ana/smiles/azul).
+    for program in ("korean", "ana", "smiles", "azul", "saudia"):
+        v = _use_points_verdict(program=program, points_cost=30000, cpp=1.6, savings=400.0)
+        own = compute_ownership(v, {})
+        assert own["buyable"] is True, f"{program} should be buyable"
+        assert own["buy_rate_cpp"] == 3.0
+        assert own["buy_gap_cost"] == round(30000 * 3.0 / 100, 2)  # no shortfall fabrication, real rate
+        # cpp 1.6 < 3.0 buy rate -> still pay cash, but for the right reason
+        assert own["fork_reason"] == "short_buy_not_worth_it"
 
 
 # ---- conservative bias: worth_it only when cpp beats the buy rate -------------
