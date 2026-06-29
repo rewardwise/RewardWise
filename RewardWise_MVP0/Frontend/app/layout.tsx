@@ -4,7 +4,7 @@ import { WalletProvider } from "@/context/WalletContext";
 import { AlertProvider } from "@/context/AlertContext";
 import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Inter } from "next/font/google";
 import { AuthProvider } from "@/context/AuthProvider";
 import { SearchFillProvider } from "@/context/SearchFillContext";
 import { ABTestProvider } from "@/context/ABTestContext";
@@ -21,6 +21,16 @@ const geistSans = Geist({
 
 const geistMono = Geist_Mono({
 	variable: "--font-geist-mono",
+	subsets: ["latin"],
+});
+
+// Inter — the redesign typeface (prototype spec). Self-hosted by next/font at
+// build time, exactly like Geist (no runtime fetch, no FOUT). Exposed as the
+// --font-inter CSS var so the redesign tokens (globals.css @theme --font-mtw)
+// and new components can opt in WITHOUT changing the app-wide font yet; the
+// global Geist→Inter swap lands in the layout PR.
+const inter = Inter({
+	variable: "--font-inter",
 	subsets: ["latin"],
 });
 
@@ -46,7 +56,7 @@ export default function RootLayout({
 	return (
 		<html lang="en">
 			<body
-				className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+				className={`${geistSans.variable} ${geistMono.variable} ${inter.variable} antialiased`}
 				suppressHydrationWarning
 			>
 				<AuthProvider>
