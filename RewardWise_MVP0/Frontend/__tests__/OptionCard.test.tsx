@@ -7,6 +7,9 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import OptionCard from "../components/verdict/OptionCard";
 
+// Match repo convention so act() flushes effects instead of no-op'ing + warning.
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
 let container: HTMLDivElement;
 let root: Root;
 
