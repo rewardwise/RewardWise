@@ -1,5 +1,54 @@
 @import "tailwindcss";
 
+/* ─────────────────────────────────────────────────────────────────────────
+   MyTravelWallet redesign tokens — the prototype's "Ethereal Travel" system
+   IS the spec. Light-only (dark mode is being dropped). These generate Tailwind
+   v4 utilities (bg-mtw-*, text-mtw-*, font-mtw, rounded-mtw*, shadow-mtw-*,
+   text-mtw-headline…). PR 2 only ADDS them — nothing existing consumes them yet,
+   so there is no visual change. The redesign surfaces (OptionCard first) read
+   from here; existing components are re-skinned in the layout PRs, where the
+   dark @media block below is also removed and Geist is swapped for Inter.
+   ───────────────────────────────────────────────────────────────────────── */
+@theme {
+  /* Color — emerald is reserved for CTA / best-highlight / Zoe trigger */
+  --color-mtw-bg: #ffffff;
+  --color-mtw-surface: #fafafa;
+  --color-mtw-ink: #1f2937;
+  --color-mtw-ink-strong: #161d19;
+  --color-mtw-muted: #6b7280;
+  --color-mtw-border: #f3f4f6;
+  --color-mtw-emerald: #10b981;
+  --color-mtw-emerald-hover: #0ea271;
+  --color-mtw-on-emerald: #ffffff;
+
+  /* Typeface — Inter, self-hosted via next/font (see app/layout.tsx) */
+  --font-mtw: var(--font-inter), "Inter", ui-sans-serif, system-ui, sans-serif;
+
+  /* Type scale */
+  --text-mtw-headline: 1.5rem;        /* 24px */
+  --text-mtw-headline--line-height: 2rem;
+  --text-mtw-headline--font-weight: 600;
+  --text-mtw-headline--letter-spacing: -0.02em;
+  --text-mtw-title: 1.125rem;         /* 18px */
+  --text-mtw-title--line-height: 1.5rem;
+  --text-mtw-title--font-weight: 600;
+  --text-mtw-title--letter-spacing: -0.01em;
+  --text-mtw-body: 1rem;              /* 16px */
+  --text-mtw-body--line-height: 1.5rem;
+  --text-mtw-small: 0.875rem;         /* 14px */
+  --text-mtw-small--line-height: 1.25rem;
+  --text-mtw-label: 0.75rem;          /* 12px caps */
+  --text-mtw-label--line-height: 1rem;
+  --text-mtw-label--font-weight: 600;
+  --text-mtw-label--letter-spacing: 0.05em;
+
+  /* Radius + ambient shadow */
+  --radius-mtw: 0.75rem;              /* 12px cards */
+  --radius-mtw-lg: 1rem;              /* 16px */
+  --radius-mtw-pill: 9999px;
+  --shadow-mtw-ambient: 0 4px 32px rgba(16, 24, 40, 0.05);
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
