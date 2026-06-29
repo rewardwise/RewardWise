@@ -102,9 +102,22 @@ def test_b3_short_and_cpp_below_buy_rate_forks_to_pay_cash():
     assert own["fork_reason"] == "short_buy_not_worth_it"
 
 
-def test_b3_short_nonbuyable_hotel_forks_to_pay_cash_no_fabricated_cost():
-    # Hotels are genuinely non-buyable -> no fabricated cost, "can't buy" copy.
-    v = _use_points_verdict(program="hyatt", points_cost=30000, cpp=2.5)
+def test_b3_short_hotel_forks_to_pay_cash_via_cpp_rule_not_cant_buy():
+    # Hotels DO sell points -> buyable. A weak hotel redemption (cpp below the
+    # buy rate) routes to pay_cash with the TRUTHFUL "not worth it" reason,
+    # never the false "you can't buy these" (short_cant_buy).
+    v = _use_points_verdict(program="hyatt", points_cost=30000, cpp=1.6, savings=300.0)
+    own = compute_ownership(v, {})
+    assert own["buyable"] is True
+    assert own["buy_rate_cpp"] == 2.4
+    assert own["fork_recommendation"] == "pay_cash"
+    assert own["fork_reason"] == "short_buy_not_worth_it"
+    assert own["fork_reason"] != "short_cant_buy"
+
+
+def test_short_cant_buy_only_fires_for_flexible_currency():
+    # The one genuinely-can't-buy category: flexible bank currencies.
+    v = _use_points_verdict(program="amex_mr", points_cost=30000, cpp=2.5)
     own = compute_ownership(v, {})
     assert own["buyable"] is False
     assert own["buy_gap_cost"] is None
