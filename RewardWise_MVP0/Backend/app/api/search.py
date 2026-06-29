@@ -10,7 +10,7 @@ from app.services.cash_sampler import sample_cash_prices_by_date
 from app.services.pair_ranker import rank_pairs
 from app.services.pricing_service import get_cash_price
 from app.services.seats_service import search_award_availability
-from app.services.verdict_service import generate_verdict  # RW-VerdictGenerator
+from app.services.verdict_service import compute_ownership, generate_verdict  # RW-VerdictGenerator
 from app.utils.math_utils import calculate_cpp
 from app.program_aliases import PROGRAM_ALIASES
 import os
@@ -50,41 +50,52 @@ class UserWallet(TypedDict):
     programs: list[str]
     # raw reward_programs.name brands (e.g. ["Chase Ultimate Rewards"])
     cards: list[str]
+    # brand -> summed points balance (e.g. {"Chase Ultimate Rewards": 80000}).
+    # Feeds the per-request ownership fork (verdict_service.compute_ownership);
+    # never cached with the verdict since it is per-user.
+    balances: dict[str, int]
 
 
 def _get_user_programs(supabase, user_id: str) -> UserWallet:
     """
-    Fetch the user's wallet from Supabase and return both representations:
+    Fetch the user's wallet from Supabase and return three representations:
     - `programs`: seats.aero source slugs the user can redeem via PROGRAM_ALIASES
       reverse-lookup (e.g. ["united", "aeroplan", "delta"])
     - `cards`: raw reward_programs.name brands (e.g. ["Chase Ultimate Rewards",
       "Amex Membership Rewards"])
-    Both are needed downstream: `programs` for award-source filtering, `cards`
+    - `balances`: brand -> summed points balance, for the ownership fork's
+      transfer-reachability + shortfall math (compute_ownership).
+    All are needed downstream: `programs` for award-source filtering, `cards`
     for wallet-reachability checks against TRANSFER_PARTNERS[slug].sourceCard
-    which is a brand string, not a slug.
+    which is a brand string, not a slug, and `balances` for "do you actually
+    hold enough points to book this" / "are you short".
     Returns empty wallet on any error so the search never hard-fails.
     """
     try:
         resp = (
             supabase
             .from_("cards")
-            .select("reward_programs(name)")
+            .select("points_balance, reward_programs(name)")
             .eq("user_id", user_id)
             .execute()
         )
-        owned_program_names = [
-            row["reward_programs"]["name"]
-            for row in (resp.data or [])
-            if row.get("reward_programs")
-        ]
+        owned_program_names: list[str] = []
+        balances: dict[str, int] = {}
+        for row in (resp.data or []):
+            program = row.get("reward_programs")
+            if not program:
+                continue
+            name = program["name"]
+            owned_program_names.append(name)
+            balances[name] = balances.get(name, 0) + int(row.get("points_balance") or 0)
         programs = [
             source
             for source, aliases in PROGRAM_ALIASES.items()
             if any(alias in owned_program_names for alias in aliases)
         ]
-        return {"programs": programs, "cards": owned_program_names}
+        return {"programs": programs, "cards": owned_program_names, "balances": balances}
     except Exception:
-        return {"programs": [], "cards": []}
+        return {"programs": [], "cards": [], "balances": {}}
 
 
 def _build_award_options_with_per_date_cash(
@@ -186,6 +197,7 @@ async def search(
     wallet = _get_user_programs(supabase, user_id)
     user_programs = wallet["programs"]
     user_cards = wallet["cards"]
+    user_balances = wallet.get("balances", {})
 
     # --- L1 memory + L2 Supabase cache lookup ---
     cache_params: CacheSearchParams = {
@@ -368,6 +380,18 @@ async def search(
             detail=f"Supabase insert error (searches/verdicts): {getattr(e, 'details', str(e))}",
         )
 
+    # Per-request ownership fork. Computed from the LIVE wallet and attached to
+    # the RESPONSE only — never to verdict_details (which is persisted + shared
+    # via memory_cache across users; ownership is per-user). compute_ownership
+    # returns None unless this is a use_points verdict the user could (or can't)
+    # actually afford.
+    verdict_response = verdict_details
+    if isinstance(verdict_details, dict):
+        verdict_response = {
+            **verdict_details,
+            "ownership": compute_ownership(verdict_details, user_balances),
+        }
+
     return {
         "search_id": search_id if "search_id" in locals() else None,
         "verdict_id": verdict_id if "verdict_id" in locals() else None,
@@ -389,7 +413,7 @@ async def search(
         "flights": cash_data.get("flights", []),
         "award_options": award_options,
         "return_award_options": return_award_options,
-        "verdict": verdict_details,
+        "verdict": verdict_response,
         "user_programs": user_programs,
         "user_cards": user_cards,
     }
