@@ -17,9 +17,11 @@ export interface OptionCardProps {
 	taxes?: number | null;
 	/**
 	 * Matched-scope cents-per-point straight from the verdict's `metrics.cpp`
-	 * (_matched_cpp on the backend). DISPLAY ONLY — the card renders this number
-	 * verbatim and NEVER recomputes cpp from cash/points. Recomputing would drift
-	 * from the engine and break the reuse mandate; the vitest guard locks this.
+	 * (_matched_cpp on the backend). DISPLAY ONLY — the card formats this value
+	 * (1 decimal) and NEVER recomputes cpp from cash/points. Formatting is a
+	 * display choice; recomputing would drift from the engine and break the reuse
+	 * mandate. The vitest guard locks that the engine value is shown, not a derived
+	 * one. (When mounted in PR 3, match the verdict card's cpp precision.)
 	 */
 	cpp?: number | null;
 	/** Highlight as the recommended option (emerald border + tag). */
@@ -111,10 +113,11 @@ export default function OptionCard({
 					href={url}
 					target="_blank"
 					rel="noopener noreferrer"
+					aria-label={`Open ${linkDomain || displayName} (opens in new tab)`}
 					className="bg-mtw-emerald text-mtw-on-emerald text-mtw-small hover:bg-mtw-emerald-hover mt-4 inline-flex items-center gap-2 rounded-mtw px-4 py-2 font-semibold"
 				>
 					Open {linkDomain || displayName}
-					<ExternalLink className="h-4 w-4" />
+					<ExternalLink className="h-4 w-4" aria-hidden="true" />
 				</a>
 			) : null}
 		</div>
