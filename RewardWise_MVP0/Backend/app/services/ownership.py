@@ -45,10 +45,11 @@ from app.program_aliases import PROGRAM_ALIASES
 DEFAULT_BUY_RATE_CPP = float(os.environ.get("BUY_RATE_CPP_DEFAULT", "3.0"))
 _D = DEFAULT_BUY_RATE_CPP
 
-# Per-program purchase rate (cents per point). Programs ABSENT here are treated
-# as NOT buyable — we never invent a price for a currency you can't actually buy
-# (e.g. transferable bank points, or airlines that don't sell miles). Entries set
-# to _D track the env-tunable default; the rest are program-specific overrides.
+# Per-program purchase rate (cents per point) for AIRLINE programs. Airlines not
+# listed here fall back to DEFAULT_BUY_RATE_CPP (they sell miles too — saying
+# "you can't buy these" would be a false statement / credibility leak). Only
+# hotels + flexible currencies are non-buyable (see NON_BUYABLE_SLUGS). Entries
+# set to _D track the env-tunable default; the rest are program-specific.
 BUY_RATE_CPP: dict[str, float] = {
     "united": 3.85,
     "aeroplan": _D,
@@ -195,9 +196,25 @@ def transferable_balance(slug: str, wallet_balances: dict) -> tuple[int, list]:
     return total, reachable
 
 
+# Non-buyable: hotels and flexible bank currencies. Airlines are ALWAYS buyable
+# (table override or the ~3.0 default) — asserting "you can't buy" an airline
+# that does sell miles is a false statement. Flexible currencies (Amex MR /
+# Chase UR / Cap One) aren't seats.aero award sources so they don't appear as a
+# winner slug, but they're listed for correctness if ever surfaced directly.
+NON_BUYABLE_SLUGS = {
+    "hyatt", "marriott",
+    "amex_mr", "chase_ur", "capital_one", "citi_typ", "bilt", "wells_fargo",
+}
+
+
 def buy_rate_for(slug: str) -> Optional[float]:
-    """Cents-per-point to buy `slug` miles, or None when the program isn't sold."""
-    return BUY_RATE_CPP.get((slug or "").lower())
+    """Cents-per-point to buy `slug` miles, or None for non-buyable programs
+    (hotels + flexible currencies). Unlisted AIRLINE programs default to
+    DEFAULT_BUY_RATE_CPP rather than being mislabeled "can't buy"."""
+    slug = (slug or "").lower()
+    if slug in NON_BUYABLE_SLUGS:
+        return None
+    return BUY_RATE_CPP.get(slug, DEFAULT_BUY_RATE_CPP)
 
 
 def compute_ownership(verdict: dict, wallet_balances: Optional[dict]) -> Optional[dict]:
