@@ -45,15 +45,15 @@ from app.program_aliases import PROGRAM_ALIASES
 DEFAULT_BUY_RATE_CPP = float(os.environ.get("BUY_RATE_CPP_DEFAULT", "3.0"))
 _D = DEFAULT_BUY_RATE_CPP
 
-# Per-program purchase rate (cents per point). Airlines AND hotels sell points
-# directly, so both are buyable — claiming "you can't buy these" for a program
-# that does sell points is a false-capability flag. Airlines not listed fall
-# back to DEFAULT_BUY_RATE_CPP. Only flexible bank currencies are non-buyable
-# (see NON_BUYABLE_SLUGS). Entries set to _D track the env-tunable default; the
-# rest are program-specific. For weak redemptions the cpp rule routes to
-# pay-cash with a truthful "not worth it" reason — never "can't buy".
+# Per-program purchase rate (cents per point) for AIRLINE programs only.
+# SCOPE: the search pipeline is flight-only today (search.py has no hotel path,
+# seats_service queries flight awards) — so a verdict winner is ALWAYS an airline
+# slug, and compute_ownership never sees a hotel. Hotels are roadmap (the
+# prototype "stay" screen), NOT current capability; when hotel search is actually
+# built, add real hotel buy rates here then. Until then we don't carry buy rates
+# for programs we can't search. Airlines not listed fall back to
+# DEFAULT_BUY_RATE_CPP. Entries set to _D track the env-tunable default.
 BUY_RATE_CPP: dict[str, float] = {
-    # ── Airlines ──────────────────────────────────────────────────────
     "united": 3.85,
     "aeroplan": _D,
     "delta": 3.5,
@@ -73,12 +73,6 @@ BUY_RATE_CPP: dict[str, float] = {
     "turkish": _D,
     "qantas": _D,
     "cathay": _D,
-    # ── Hotels ────────────────────────────────────────────────────────
-    # Conservative direct-purchase rates (Hyatt sells ~2.4¢, Marriott ~1.25¢).
-    # Hotel award cpp is typically low, so the cpp rule sends most short hotel
-    # cases to pay-cash via short_buy_not_worth_it, not short_cant_buy.
-    "hyatt": 2.4,
-    "marriott": 1.25,
 }
 
 # Margin (USD) the cash savings must clear the buy cost by before buying is
@@ -205,21 +199,22 @@ def transferable_balance(slug: str, wallet_balances: dict) -> tuple[int, list]:
     return total, reachable
 
 
-# Non-buyable: flexible bank currencies ONLY. Airlines and hotels sell points
-# directly (buyable above), so "you can't buy these" would be a false statement
-# for them. Flexible currencies (Amex MR / Chase UR / Cap One) aren't seats.aero
-# award sources so they don't appear as a winner slug, but they're listed for
-# correctness if ever surfaced directly — they're the one genuinely-can't-buy
-# category, so short_cant_buy only ever fires here.
+# Non-buyable: flexible bank currencies. Airlines sell miles directly, so "you
+# can't buy these" would be a false statement for an airline. Flexible currencies
+# (Amex MR / Chase UR / Cap One) aren't seats.aero award sources so they don't
+# appear as a winner slug, but they're listed for correctness if ever surfaced
+# directly — they're the genuinely-can't-buy category, so short_cant_buy only
+# ever fires here. (Hotels are out of scope: no hotel search path exists yet.)
 NON_BUYABLE_SLUGS = {
     "amex_mr", "chase_ur", "capital_one", "citi_typ", "bilt", "wells_fargo",
 }
 
 
 def buy_rate_for(slug: str) -> Optional[float]:
-    """Cents-per-point to buy `slug` points, or None for non-buyable programs
-    (flexible bank currencies). Airlines + hotels are buyable; unlisted airlines
-    default to DEFAULT_BUY_RATE_CPP rather than being mislabeled "can't buy"."""
+    """Cents-per-point to buy `slug` miles, or None for non-buyable programs
+    (flexible bank currencies). Airlines are buyable; unlisted airlines default
+    to DEFAULT_BUY_RATE_CPP rather than being mislabeled "can't buy". Hotels are
+    not in scope (flight-only pipeline) so they never reach this."""
     slug = (slug or "").lower()
     if slug in NON_BUYABLE_SLUGS:
         return None
