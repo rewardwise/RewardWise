@@ -15,6 +15,31 @@ class SearchParams(TypedDict, total=False):
     cabin: str | None
 
 
+class OwnershipBlock(TypedDict, total=False):
+    """Per-request ownership fork attached to a use_points verdict's response.
+
+    Computed by app.services.ownership.compute_ownership from the caller's live
+    wallet. NOT cached/persisted with the verdict (it is per-user). `fork_reason`
+    is one of: owned_sufficient | short_buy_worth_it | short_cant_buy |
+    short_buy_not_worth_it.
+    """
+    applicable: bool
+    program: str
+    program_label: str | None
+    points_needed: int
+    owned_balance: int
+    shortfall: int
+    can_afford: bool
+    reachable_partners: list[dict[str, Any]]
+    buyable: bool
+    buy_rate_cpp: float | None
+    redemption_cpp: float | None
+    buy_gap_cost: float | None
+    buy_gap_worth_it: bool
+    fork_recommendation: Literal["use_points", "pay_cash"]
+    fork_reason: str
+
+
 class VerdictRow(TypedDict, total=False):
     id: str
     search_id: str
