@@ -4,6 +4,11 @@ from datetime import date as date_cls, timedelta
 from typing import Optional
 from urllib.parse import urlencode
 
+# Re-exported so callers/tests can reach the deterministic ownership fork via the
+# verdict engine module. Implementation lives in ownership.py (it must run
+# per-request outside the shared verdict cache — see that module's docstring).
+from app.services.ownership import compute_ownership  # noqa: F401
+
 logger = logging.getLogger(__name__)
 
 CPP_PAY_CASH_THRESHOLD = 1.25
