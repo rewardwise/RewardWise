@@ -49,6 +49,33 @@ def test_wallet_returns_both_keys_for_chase_ur():
     assert "united" not in wallet["programs"]
 
 
+def test_wallet_sums_points_balance_by_brand():
+    """`balances` carries summed points per brand for the ownership fork."""
+    mock_supabase = _supabase_returning([
+        {"points_balance": 80000, "reward_programs": {"name": "Chase Ultimate Rewards"}},
+        {"points_balance": 5000, "reward_programs": {"name": "Chase Ultimate Rewards"}},
+        {"points_balance": 45000, "reward_programs": {"name": "Amex Membership Rewards"}},
+    ])
+
+    wallet = _get_user_programs(mock_supabase, "user-123")
+
+    assert wallet["balances"] == {
+        "Chase Ultimate Rewards": 85000,  # two cards summed
+        "Amex Membership Rewards": 45000,
+    }
+
+
+def test_wallet_balance_missing_defaults_to_zero():
+    """A card row without points_balance contributes 0, never crashes."""
+    mock_supabase = _supabase_returning([
+        {"reward_programs": {"name": "United MileagePlus"}},
+    ])
+
+    wallet = _get_user_programs(mock_supabase, "user-123")
+
+    assert wallet["balances"] == {"United MileagePlus": 0}
+
+
 def test_wallet_returns_united_native_holder():
     """United MileagePlus is a direct-loyalty program (no transferable alias)."""
     mock_supabase = _supabase_returning([
@@ -83,12 +110,12 @@ def test_wallet_returns_multiple_cards_dedup_brand_list():
 
 
 def test_wallet_returns_empty_on_no_cards():
-    """User with no cards yet gets an empty wallet (both keys, empty lists)."""
+    """User with no cards yet gets an empty wallet (all keys empty)."""
     mock_supabase = _supabase_returning([])
 
     wallet = _get_user_programs(mock_supabase, "user-123")
 
-    assert wallet == {"programs": [], "cards": []}
+    assert wallet == {"programs": [], "cards": [], "balances": {}}
 
 
 def test_wallet_returns_empty_on_supabase_error():
@@ -98,7 +125,7 @@ def test_wallet_returns_empty_on_supabase_error():
 
     wallet = _get_user_programs(mock_supabase, "user-123")
 
-    assert wallet == {"programs": [], "cards": []}
+    assert wallet == {"programs": [], "cards": [], "balances": {}}
 
 
 def test_wallet_skips_rows_without_reward_program():
