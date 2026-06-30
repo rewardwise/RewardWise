@@ -158,6 +158,13 @@ def test_worth_it_fails_closed_when_savings_unknown():
 
 # ---- not applicable ----------------------------------------------------------
 
+def test_ownership_includes_transfers_as_of():
+    # The UI drives a freshness TTL off this date; it must be on every block.
+    v = _use_points_verdict(program="united", points_cost=30000, cpp=2.0)
+    own = compute_ownership(v, {"Chase Ultimate Rewards": 40000})
+    assert own["transfers_as_of"] == "2026-05-14"
+
+
 def test_pay_cash_verdict_has_no_ownership_fork():
     assert compute_ownership({"recommendation": "pay_cash"}, {"Chase Ultimate Rewards": 99999}) is None
 

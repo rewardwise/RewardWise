@@ -297,4 +297,8 @@ def compute_ownership(verdict: dict, wallet_balances: Optional[dict]) -> Optiona
         "buy_gap_worth_it": buy_gap_worth_it,
         "fork_recommendation": fork_recommendation,
         "fork_reason": fork_reason,
+        # as-of date of the transfer-ratio data (flexible_transfers.json). The UI
+        # drives a freshness TTL off this so a silently-stale JSON surfaces a
+        # passive in-product warning instead of lying about ratios.
+        "transfers_as_of": _flex_data().get("as_of"),
     }
