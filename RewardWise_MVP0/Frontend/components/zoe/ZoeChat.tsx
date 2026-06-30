@@ -27,6 +27,8 @@ import {
 } from "lucide-react";
 import { createClient } from "@/utils/supabase/client";
 import { useZoeVoice, VoiceState } from "@/hooks/useZoeVoice";
+import { trackAnalyticsEvent } from "@/utils/analytics/client";
+import type { ZoeNarration, ZoeChip } from "@/utils/zoeNarration";
 
 const supabase = createClient();
 
@@ -66,6 +68,8 @@ interface ZoeChatProps {
 	 * panel keeps its existing styling; a light restyle is a later PR.
 	 */
 	variant?: "floating" | "docked";
+	/** Deterministic verdict narration (lead + chips) for the docked pane. */
+	narration?: ZoeNarration | null;
 }
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
@@ -109,11 +113,47 @@ export default function ZoeChat({
 	onAutoSearch,
 	verdictContext,
 	variant = "floating",
+	narration = null,
 }: ZoeChatProps) {
 	const { user } = useAuth();
 	const { cards } = useWallet();
 
 	const [expanded, setExpanded] = useState(false);
+	// Client-only narration replies (chip Q&A). NOT sent to the LLM / persisted —
+	// keeps the free-form chat clean and the deterministic narration drift-free.
+	const [forkMsgs, setForkMsgs] = useState<Message[]>([]);
+
+	useEffect(() => {
+		setForkMsgs([]); // reset chip replies when the verdict changes
+		if (variant === "docked" && narration) {
+			trackAnalyticsEvent("zoe_lead_message_shown", {
+				event_type: "zoe",
+				metadata: {
+					recommendation: narration.recommendation,
+					fork_reason: narration.forkReason,
+					chips: narration.chips.map((c) => c.id),
+				},
+			});
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [narration?.lead, variant]);
+
+	const onChipClick = (chip: ZoeChip) => {
+		setForkMsgs((prev) => [
+			...prev,
+			{ role: "user", content: chip.label },
+			{ role: "assistant", content: chip.reply },
+		]);
+		trackAnalyticsEvent("zoe_chip_click", {
+			event_type: "zoe",
+			metadata: {
+				chip: chip.id,
+				label: chip.label,
+				fork_reason: narration?.forkReason ?? null,
+				recommendation: narration?.recommendation ?? null,
+			},
+		});
+	};
 	const [messages, setMessages] = useState<Message[]>([]);
 	const [input, setInput] = useState("");
 	const [typing, setTyping] = useState(false);
@@ -742,18 +782,61 @@ className={`flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rou
 		return (
 			<div
 				data-testid="zoe-docked"
-				className="relative flex h-full min-h-[560px] w-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0f1117] shadow-xl"
+				className="zoe-light relative flex h-full min-h-[560px] w-full flex-col overflow-hidden rounded-2xl border border-mtw-border bg-mtw-surface shadow-sm"
 			>
-				{renderHeader(true)}
+				{/* Custom light header — no Expand/Close in docked mode (persistent pane). */}
+				<div className="flex items-center gap-2 border-b border-mtw-border bg-white px-4 py-3">
+					<span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500 text-white">
+						<Sparkles className="h-4 w-4" />
+					</span>
+					<span className="font-mtw text-mtw-small font-semibold text-mtw-ink">Zoe</span>
+					<span className="ml-auto inline-flex items-center gap-1 text-xs text-mtw-muted">
+						<span className="h-2 w-2 rounded-full bg-emerald-500" /> always on
+					</span>
+				</div>
 				{voiceMode ? (
 					renderVoiceOrb()
 				) : (
-					<div className="flex-1 space-y-3 overflow-y-auto p-4 text-sm">
+					<div className="font-mtw flex-1 space-y-3 overflow-y-auto p-4 text-sm">
+						{narration ? (
+							<div
+								data-testid="zoe-lead"
+								className="w-fit max-w-[92%] rounded-2xl rounded-tl-sm border border-mtw-border bg-white p-3 text-mtw-ink shadow-sm"
+							>
+								{narration.lead}
+							</div>
+						) : null}
+						{forkMsgs.map((m, i) => (
+							<div
+								key={`fork-${i}`}
+								className={
+									m.role === "user"
+										? "ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-sm bg-emerald-50 px-3 py-2 text-mtw-ink"
+										: "w-fit max-w-[90%] rounded-2xl rounded-tl-sm border border-mtw-border bg-white px-3 py-2 text-mtw-ink shadow-sm"
+								}
+							>
+								{m.content}
+							</div>
+						))}
 						{messages.map((msg, i) => renderMessage(msg, i, true))}
 						{typing && renderTypingDots(false)}
 						<div ref={endRef} />
 					</div>
 				)}
+				{narration && !voiceMode ? (
+					<div className="flex flex-wrap gap-2 border-t border-mtw-border bg-white px-4 py-2">
+						{narration.chips.map((chip) => (
+							<button
+								key={chip.id}
+								data-testid={`zoe-chip-${chip.id}`}
+								onClick={() => onChipClick(chip)}
+								className="font-mtw text-mtw-ink hover:bg-mtw-emerald/10 rounded-mtw-pill border border-mtw-border bg-mtw-surface px-3 py-1.5 text-xs font-medium"
+							>
+								{chip.label}
+							</button>
+						))}
+					</div>
+				) : null}
 				{renderInput(true)}
 			</div>
 		);

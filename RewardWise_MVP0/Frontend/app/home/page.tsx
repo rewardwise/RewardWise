@@ -5,6 +5,8 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthProvider";
 import { useWallet } from "@/context/WalletContext";
+import { zoeNarration } from "@/utils/zoeNarration";
+import type { Verdict as CanonicalVerdict, Ownership } from "@/types/verdict";
 import { useSearchFill } from "@/context/SearchFillContext";
 import { useABTest } from "@/context/ABTestContext";
 import VerdictCard from "@/components/VerdictCard";
@@ -824,6 +826,14 @@ export default function HomePage() {
 							onAutoSearch={handleTriggerSearch}
 							verdictContext={verdictContext}
 							variant="docked"
+							narration={
+								results?.verdict
+									? zoeNarration(
+											results.verdict as unknown as CanonicalVerdict,
+											(results.verdict as { ownership?: Ownership | null }).ownership ?? null,
+										)
+									: null
+							}
 						/>
 					</div>
 				</main>
