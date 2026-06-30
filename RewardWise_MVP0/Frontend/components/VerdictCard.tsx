@@ -15,6 +15,7 @@ import EmptyWalletCTA from "@/components/verdict/EmptyWalletCTA";
 import ErrorStateCard from "@/components/verdict/ErrorStateCard";
 import FlightSection, { FlightLeg } from "@/components/verdict/FlightSection";
 import MultiHandoffGrid, { MultiHandoffProgram, MultiHandoffCashAirline } from "@/components/verdict/MultiHandoffGrid";
+import CuratedOptions from "@/components/verdict/CuratedOptions";
 import WalletFramingPreview from "@/components/verdict/WalletFramingPreview";
 import PartialDataCard from "@/components/verdict/PartialDataCard";
 import { selectTopProgram } from "@/utils/topProgramSelection";
@@ -633,6 +634,18 @@ export default function VerdictCard({
               onListenToggle={speak}
               verdictId={verdictId}
               publicPreview={publicPreview}
+            />
+
+            {/* Curated 3-option list (redesign) — reuses the deterministic
+                selection above; one card highlighted matching the recommendation,
+                matched cpp shown only on the winner. */}
+            <CuratedOptions
+              recommendation={recommendation}
+              awardOptions={awardOptions}
+              winnerProgram={winner?.program ?? null}
+              cashPrice={displayCashPrice}
+              matchedCpp={metrics.cpp ?? null}
+              savings={metrics.estimated_savings ?? null}
             />
 
             <div
