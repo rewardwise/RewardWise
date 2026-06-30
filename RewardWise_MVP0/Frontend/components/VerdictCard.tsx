@@ -134,6 +134,7 @@ interface VerdictCardProps {
   userPrograms?: string[];
   userCards?: string[];
   verdictId?: string | null;
+  searchId?: string | null;
   onAskZoe?: (context: string) => void;
   publicPreview?: boolean;
   onPublicPreviewSignup?: () => void;
@@ -294,6 +295,7 @@ export default function VerdictCard({
   onPublicPreviewSignin,
   onTryDifferentDate,
   theme = "dark",
+  searchId,
 }: VerdictCardProps) {
   // Metro + flex searches return multiple award_options per program (different
   // airport pairs / dates). Pin to winning_date first so flex multi-date noise
@@ -654,6 +656,9 @@ export default function VerdictCard({
               cashPrice={displayCashPrice}
               matchedCpp={metrics.cpp ?? null}
               savings={metrics.estimated_savings ?? null}
+              ownership={verdict.ownership ?? null}
+              searchId={searchId ?? null}
+              verdictId={verdictId ?? null}
             />
 
             <div
