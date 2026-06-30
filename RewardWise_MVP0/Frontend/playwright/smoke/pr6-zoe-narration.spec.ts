@@ -28,6 +28,7 @@ async function search(page: Page) {
 	const d = page.locator('input[type="date"]');
 	await d.first().fill(iso(180));
 	await d.nth(1).fill(iso(194));
+	await page.locator('[data-testid="more-options-toggle"]').click();
 	const s = page.getByRole("combobox");
 	await s.first().selectOption("3");
 	await s.nth(2).selectOption("premium_economy");

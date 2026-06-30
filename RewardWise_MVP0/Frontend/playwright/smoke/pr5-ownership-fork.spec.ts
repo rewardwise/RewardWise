@@ -34,6 +34,7 @@ async function runSearch(page: import("@playwright/test").Page) {
 	const dates = page.locator('input[type="date"]');
 	await dates.first().fill(iso(180));
 	await dates.nth(1).fill(iso(194));
+	await page.locator('[data-testid="more-options-toggle"]').click();
 	const selects = page.getByRole("combobox");
 	await selects.first().selectOption("3");
 	await selects.nth(2).selectOption("premium_economy");
