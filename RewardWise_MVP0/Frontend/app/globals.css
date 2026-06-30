@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+/* Redesign foundation — see the redesign PR chain. */
+
 /* ─────────────────────────────────────────────────────────────────────────
    MyTravelWallet redesign tokens — the prototype's "Ethereal Travel" system
    IS the spec. Light-only (dark mode is being dropped). These generate Tailwind
