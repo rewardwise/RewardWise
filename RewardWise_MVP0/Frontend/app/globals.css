@@ -91,3 +91,38 @@ body {
 .animate-zoe-pulse {
   animation: zoe-pulse 3s ease-out infinite;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Verdict-route LIGHT theme — a COMPONENT-SCOPED color remap of VerdictCard's
+   hardcoded dark utilities. Set via VerdictCard theme="light" (adds .mtw-light
+   on its root), so it's contained to that subtree — NOT a route-global
+   override. Unlayered, so it wins over Tailwind's layered utilities without
+   !important, and cascades to children (VerdictTopRow / FlightSection / etc.)
+   without editing each. Tradeoff: a full token refactor of VerdictCard is the
+   ideal; this is the contained interim, and the 1440/375 visual diff catches
+   any straggler dark utility this list misses.
+   ───────────────────────────────────────────────────────────────────────── */
+.mtw-light { background-color: #ffffff; color: #1f2937; }
+.mtw-light .bg-slate-950\/95,
+.mtw-light .bg-slate-950 { background-color: #ffffff; }
+.mtw-light .bg-slate-900 { background-color: #f3f4f6; }
+.mtw-light .text-white { color: #1f2937; }
+.mtw-light .text-slate-200 { color: #1f2937; }
+.mtw-light .text-slate-300 { color: #374151; }
+.mtw-light .text-slate-400 { color: #4b5563; }
+.mtw-light .text-slate-500 { color: #6b7280; }
+.mtw-light .border-white\/10,
+.mtw-light .border-white\/8,
+.mtw-light .border-white\/5 { border-color: #e5e7eb; }
+.mtw-light .bg-white\/\[0\.04\],
+.mtw-light .bg-white\/\[0\.045\],
+.mtw-light .bg-white\/\[0\.05\] { background-color: #fafafa; }
+.mtw-light .bg-gray-800\/60 { background-color: #f3f4f6; }
+/* Search-form fields (bg-gray-800/700) → light-gray inputs, visible on white. */
+.mtw-light .bg-gray-800 { background-color: #f3f4f6; }
+.mtw-light .bg-gray-700 { background-color: #e5e7eb; }
+.mtw-light .text-gray-300 { color: #374151; }
+.mtw-light .text-gray-400 { color: #6b7280; }
+.mtw-light .border-gray-700,
+.mtw-light .border-gray-600 { border-color: #e5e7eb; }
+.mtw-light .shadow-2xl { box-shadow: 0 4px 32px rgba(16, 24, 40, 0.06); }

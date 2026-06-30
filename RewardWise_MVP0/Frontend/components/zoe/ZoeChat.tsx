@@ -59,6 +59,13 @@ interface ZoeChatProps {
 	}) => void;
 	/** Called when Zoe fills the form AND is ready to search — auto-triggers search */
 	onAutoSearch?: () => void;
+	/**
+	 * Rendering location, NOT a restyle. "floating" (default) = the existing
+	 * fixed FAB + drawer/modal. "docked" = rendered in-flow to fill a parent
+	 * pane (verdict-route right column), always-open. Positioning only — the
+	 * panel keeps its existing styling; a light restyle is a later PR.
+	 */
+	variant?: "floating" | "docked";
 }
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
@@ -101,6 +108,7 @@ export default function ZoeChat({
 	onFillSearch,
 	onAutoSearch,
 	verdictContext,
+	variant = "floating",
 }: ZoeChatProps) {
 	const { user } = useAuth();
 	const { cards } = useWallet();
@@ -458,7 +466,8 @@ if (prefillRaw && onFillSearch) {
 	};
 
 	// ── Closed FAB ────────────────────────────────────────────────────────────
-	if (!isOpen) {
+	// Docked mode never shows the FAB — it's always-open in its pane.
+	if (!isOpen && variant !== "docked") {
 		return (
 			<button
 				onClick={() => setIsOpen(true)}
@@ -725,6 +734,30 @@ className={`flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rou
 			</div>
 		</div>
 	);
+
+	// ── Docked panel (verdict-route right pane) ───────────────────────────────
+	// Reparent, not a restyle: in-flow + always-open, fills the parent pane.
+	// Keeps the existing dark panel styling (a light restyle is a later PR).
+	if (variant === "docked") {
+		return (
+			<div
+				data-testid="zoe-docked"
+				className="relative flex h-full min-h-[560px] w-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0f1117] shadow-xl"
+			>
+				{renderHeader(true)}
+				{voiceMode ? (
+					renderVoiceOrb()
+				) : (
+					<div className="flex-1 space-y-3 overflow-y-auto p-4 text-sm">
+						{messages.map((msg, i) => renderMessage(msg, i, true))}
+						{typing && renderTypingDots(false)}
+						<div ref={endRef} />
+					</div>
+				)}
+				{renderInput(true)}
+			</div>
+		);
+	}
 
 	// ── Compact panel ─────────────────────────────────────────────────────────
 	if (!expanded) {
