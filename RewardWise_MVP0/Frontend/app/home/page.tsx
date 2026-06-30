@@ -647,6 +647,7 @@ export default function HomePage() {
 							data-testid="more-options-toggle"
 							onClick={() => setShowMore((v) => !v)}
 							aria-expanded={showMore}
+							aria-controls="search-more-options"
 							className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-mtw-muted hover:text-mtw-ink"
 						>
 							More options
@@ -654,7 +655,7 @@ export default function HomePage() {
 						</button>
 
 						{showMore && (
-							<div data-testid="more-options" className="mt-3 space-y-3 border-t border-mtw-border pt-3">
+							<div id="search-more-options" role="region" aria-label="More search options" data-testid="more-options" className="mt-3 space-y-3 border-t border-mtw-border pt-3">
 								<div className="flex gap-2">
 									{(["roundtrip", "oneway"] as const).map((type) => (
 										<button
