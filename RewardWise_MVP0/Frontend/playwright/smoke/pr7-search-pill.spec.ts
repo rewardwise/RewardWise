@@ -50,8 +50,8 @@ test.describe("PR 7: slim search pill (prod)", () => {
 		await page.locator('[data-testid="more-options-toggle"]').click();
 		await expect(page.locator('[data-testid="more-options"]')).toBeVisible();
 		const selects = page.getByRole("combobox");
-		await selects.first().selectOption("2"); // travelers = 2 (hidden)
-		await selects.nth(2).selectOption("business"); // cabin = business (hidden)
+		await selects.first().selectOption("3"); // travelers = 3 (hidden)
+		await selects.nth(2).selectOption("premium_economy"); // cabin (hidden, non-default, has award space)
 
 		const searchResp = page.waitForResponse(
 			(r) => /\/api\/search(\?|$)/.test(r.url()) && r.request().method() === "POST",
@@ -65,8 +65,8 @@ test.describe("PR 7: slim search pill (prod)", () => {
 		// (AirportSearch resolves "SFO" to its metro CSV "SFO,OAK,SJC".)
 		expect(payload.search_origin).toContain("SFO");
 		expect(payload.search_destination).toBe("SIN");
-		expect(payload.search_cabin).toBe("business"); // hidden field flowed through
-		expect(payload.search_travelers).toBe(2); // hidden field flowed through
+		expect(payload.search_cabin).toBe("premium_economy"); // hidden field flowed through
+		expect(payload.search_travelers).toBe(3); // hidden field flowed through
 
 		// The search actually ran with those params and a verdict loaded.
 		expect((await searchResp).status()).toBe(200);
