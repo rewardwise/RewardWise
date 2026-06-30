@@ -26,6 +26,7 @@ import {
 	ArrowRight,
 	ArrowLeftRight,
 	Route,
+	ChevronDown,
 } from "lucide-react";
 
 // ─── INTERFACES ───────────────────────────────────────────────────────────────
@@ -286,6 +287,9 @@ export default function HomePage() {
 	const [maxStops, setMaxStops] = useState<string>("any");
 	const [tripType, setTripType] = useState("roundtrip");
 	const [dateMode, setDateMode] = useState<"exact" | "flexible">("exact");
+	// Slim pill: secondary fields (trip-type, date-mode, travelers, stops, cabin)
+	// collapse here. Defaults unchanged; collapsed by default.
+	const [showMore, setShowMore] = useState(false);
 	const [searching, setSearching] = useState(false);
 	const [searchError, setSearchError] = useState("");
 	const [results, setResults] = useState<SearchResult | null>(null);
@@ -581,180 +585,151 @@ export default function HomePage() {
 						)}
 					</div>
 
-					{/* TRIP TYPE TOGGLE */}
-					<div className="flex gap-2 mb-3">
-						{(["roundtrip", "oneway"] as const).map((type) => (
-							<button
-								key={type}
-								onClick={() => {
-									setTripType(type);
-									if (type === "oneway") setReturnDate("");
-								}}
-								className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-									tripType === type
-										? "bg-emerald-500 text-white"
-										: "bg-gray-800 text-gray-400 hover:bg-gray-700"
-								}`}
-							>
-								{type === "roundtrip" ? "Round Trip" : "One Way"}
-							</button>
-						))}
-					</div>
-
-					{/* DATE MODE TOGGLE */}
-					<div className="flex flex-wrap gap-3 mb-3 text-xs text-gray-300">
-						<label className="inline-flex items-center gap-1.5 cursor-pointer">
-							<input
-								type="radio"
-								name="dateMode"
-								value="exact"
-								checked={dateMode === "exact"}
-								onChange={() => setDateMode("exact")}
-								className="accent-emerald-500"
-							/>
-							Exact date
-						</label>
-						<label className="inline-flex items-center gap-1.5 cursor-pointer">
-							<input
-								type="radio"
-								name="dateMode"
-								value="flexible"
-								checked={dateMode === "flexible"}
-								onChange={() => setDateMode("flexible")}
-								className="accent-emerald-500"
-							/>
-							Flexible (±7 days)
-						</label>
-					</div>
-
-					{/* SEARCH ROW 1 */}
-					<div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr_1fr] gap-3 mb-3">
-						<AirportSearch
-							label="FROM"
-							value={origin}
-							onChange={setOrigin}
-							placeholder="City or airport"
-						/>
-						<div className="flex justify-center sm:contents">
-							<button
-								type="button"
-								aria-label="Swap origin and destination"
-								onClick={swapOriginDestination}
-								className="self-end mb-1 p-2 rounded-lg bg-gray-800 border border-gray-700 hover:bg-gray-700 hover:border-emerald-500 transition focus:outline-none focus:ring-2 focus:ring-emerald-500"
-							>
-								<ArrowLeftRight className="w-4 h-4 text-emerald-400" />
-							</button>
-						</div>
-						<AirportSearch
-							label="TO"
-							value={destination}
-							onChange={setDestination}
-							placeholder="City or airport"
-						/>
-						<div>
-							<label className="block text-emerald-400 text-xs mb-1 flex items-center gap-1">
-								<Calendar className="w-3 h-3" />
-								{dateMode === "flexible" ? "DEPART (anchor)" : "DEPART"}
-							</label>
-							<input
-								ref={departInputRef}
-								type="date"
-								min={new Date().toISOString().split("T")[0]}
-								max={maxSearchDate}
-								value={departDate}
-								onChange={(e) => setDepartDate(clampISODate(e.target.value, departDate))}
-								className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm [color-scheme:dark]"
-							/>
-							<CashHorizonWarning date={departDate} />
-						</div>
-					</div>
-
-					{/* SEARCH ROW 2 */}
+					{/* SLIM SEARCH PILL — From / To / When visible; 5 secondary fields
+					    collapse under "More options". Same inputs/handlers/defaults,
+					    reorganized only. */}
 					<div
-						className={`grid grid-cols-1 ${
-							tripType === "roundtrip" ? "sm:grid-cols-4" : "sm:grid-cols-3"
-						} gap-3 mb-4`}
+						data-testid="search-pill"
+						className="mb-4 rounded-2xl border border-mtw-border bg-white p-3 shadow-mtw-ambient sm:p-4"
 					>
-						{tripType === "roundtrip" && (
+						<div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-end">
+							<AirportSearch label="FROM" value={origin} onChange={setOrigin} placeholder="City or airport" />
+							<div className="flex justify-center sm:contents">
+								<button
+									type="button"
+									aria-label="Swap origin and destination"
+									onClick={swapOriginDestination}
+									className="mb-1 self-end rounded-lg border border-gray-700 bg-gray-800 p-2 transition hover:border-emerald-500 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+								>
+									<ArrowLeftRight className="h-4 w-4 text-emerald-400" />
+								</button>
+							</div>
+							<AirportSearch label="TO" value={destination} onChange={setDestination} placeholder="City or airport" />
+						</div>
+
+						<div className={`mt-3 grid grid-cols-1 gap-3 ${tripType === "roundtrip" ? "sm:grid-cols-2" : ""}`}>
 							<div>
-								<label className="block text-emerald-400 text-xs mb-1 flex items-center gap-1">
-									<Calendar className="w-3 h-3" /> RETURN
+								<label className="mb-1 flex items-center gap-1 text-xs text-mtw-muted">
+									<Calendar className="h-3 w-3" />
+									{dateMode === "flexible" ? "WHEN (±7 days)" : "WHEN"}
 								</label>
 								<input
+									ref={departInputRef}
 									type="date"
-									min={departDate || new Date().toISOString().split("T")[0]}
+									min={new Date().toISOString().split("T")[0]}
 									max={maxSearchDate}
-									value={returnDate}
-									onChange={(e) => setReturnDate(clampISODate(e.target.value, returnDate))}
-									className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm [color-scheme:dark]"
+									value={departDate}
+									onChange={(e) => setDepartDate(clampISODate(e.target.value, departDate))}
+									className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white [color-scheme:dark] focus:outline-none focus:ring-2 focus:ring-emerald-500"
 								/>
-								<CashHorizonWarning date={returnDate} />
+								<CashHorizonWarning date={departDate} />
+							</div>
+							{tripType === "roundtrip" && (
+								<div>
+									<label className="mb-1 flex items-center gap-1 text-xs text-mtw-muted">
+										<Calendar className="h-3 w-3" /> RETURN
+									</label>
+									<input
+										type="date"
+										min={departDate || new Date().toISOString().split("T")[0]}
+										max={maxSearchDate}
+										value={returnDate}
+										onChange={(e) => setReturnDate(clampISODate(e.target.value, returnDate))}
+										className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white [color-scheme:dark] focus:outline-none focus:ring-2 focus:ring-emerald-500"
+									/>
+									<CashHorizonWarning date={returnDate} />
+								</div>
+							)}
+						</div>
+
+						<button
+							type="button"
+							data-testid="more-options-toggle"
+							onClick={() => setShowMore((v) => !v)}
+							aria-expanded={showMore}
+							className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-mtw-muted hover:text-mtw-ink"
+						>
+							More options
+							<ChevronDown className={`h-3.5 w-3.5 transition-transform ${showMore ? "rotate-180" : ""}`} />
+						</button>
+
+						{showMore && (
+							<div data-testid="more-options" className="mt-3 space-y-3 border-t border-mtw-border pt-3">
+								<div className="flex gap-2">
+									{(["roundtrip", "oneway"] as const).map((type) => (
+										<button
+											key={type}
+											onClick={() => {
+												setTripType(type);
+												if (type === "oneway") setReturnDate("");
+											}}
+											className={`rounded-lg px-4 py-1.5 text-xs font-medium transition-colors ${
+												tripType === type ? "bg-emerald-500 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+											}`}
+										>
+											{type === "roundtrip" ? "Round Trip" : "One Way"}
+										</button>
+									))}
+								</div>
+								<div className="flex flex-wrap gap-3 text-xs text-gray-300">
+									<label className="inline-flex cursor-pointer items-center gap-1.5">
+										<input type="radio" name="dateMode" value="exact" checked={dateMode === "exact"} onChange={() => setDateMode("exact")} className="accent-emerald-500" />
+										Exact date
+									</label>
+									<label className="inline-flex cursor-pointer items-center gap-1.5">
+										<input type="radio" name="dateMode" value="flexible" checked={dateMode === "flexible"} onChange={() => setDateMode("flexible")} className="accent-emerald-500" />
+										Flexible (±7 days)
+									</label>
+								</div>
+								<div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+									<div>
+										<label className="mb-1 flex items-center gap-1 text-xs text-mtw-muted"><User className="h-3 w-3" /> TRAVELERS</label>
+										<select value={travelers} onChange={(e) => setTravelers(Number(e.target.value))} className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+											{[1, 2, 3, 4, 5, 6].map((n) => (
+												<option key={n} value={n}>
+													{n} Traveler{n > 1 ? "s" : ""}
+												</option>
+											))}
+										</select>
+									</div>
+									<div>
+										<label className="mb-1 flex items-center gap-1 text-xs text-mtw-muted"><Route className="h-3 w-3" /> STOPS</label>
+										<select value={maxStops} onChange={(e) => setMaxStops(e.target.value)} className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+											<option value="any">Any stops</option>
+											<option value="nonstop">Nonstop only</option>
+											<option value="one_or_fewer">1 stop or fewer</option>
+											<option value="two_or_fewer">2 stops or fewer</option>
+										</select>
+									</div>
+									<div>
+										<label className="mb-1 flex items-center gap-1 text-xs text-mtw-muted"><Plane className="h-3 w-3" /> CABIN</label>
+										<select value={cabin} onChange={(e) => setCabin(e.target.value)} className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+											<option value="economy">Economy</option>
+											<option value="premium_economy">Premium Economy</option>
+											<option value="business">Business</option>
+											<option value="first">First</option>
+										</select>
+									</div>
+								</div>
 							</div>
 						)}
-						<div>
-							<label className="block text-emerald-400 text-xs mb-1 flex items-center gap-1">
-								<User className="w-3 h-3" /> TRAVELERS
-							</label>
-							<select
-								value={travelers}
-								onChange={(e) => setTravelers(Number(e.target.value))}
-								className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
-							>
-								{[1, 2, 3, 4, 5, 6].map((n) => (
-									<option key={n} value={n}>
-										{n} Traveler{n > 1 ? "s" : ""}
-									</option>
-								))}
-							</select>
-						</div>
-						<div>
-							<label className="block text-emerald-400 text-xs mb-1 flex items-center gap-1">
-								<Route className="w-3 h-3" /> STOPS
-							</label>
-							<select
-								value={maxStops}
-								onChange={(e) => setMaxStops(e.target.value)}
-								className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
-							>
-								<option value="any">Any stops</option>
-								<option value="nonstop">Nonstop only</option>
-								<option value="one_or_fewer">1 stop or fewer</option>
-								<option value="two_or_fewer">2 stops or fewer</option>
-							</select>
-						</div>
-						<div>
-							<label className="block text-emerald-400 text-xs mb-1 flex items-center gap-1">
-								<Plane className="w-3 h-3" /> CABIN
-							</label>
-							<select
-								value={cabin}
-								onChange={(e) => setCabin(e.target.value)}
-								className="w-full bg-gray-800 border border-gray-700 rounded-lg py-2.5 px-3 text-white focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
-							>
-								<option value="economy">Economy</option>
-								<option value="premium_economy">Premium Economy</option>
-								<option value="business">Business</option>
-								<option value="first">First</option>
-							</select>
-						</div>
-					</div>
 
-					{/* SEARCH BUTTON */}
-					<button
-						onClick={runSearch}
-						disabled={searching}
-						className="w-full bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-700 text-white font-semibold py-3 rounded-lg flex items-center justify-center gap-2 mb-4 transition-colors"
-					>
-						{searching ? (
-							<>
-								<Loader2 className="w-5 h-5 animate-spin" /> Searching...
-							</>
-						) : (
-							<>
-								<Search className="w-5 h-5" /> Search Flights
-							</>
-						)}
-					</button>
+						<button
+							onClick={runSearch}
+							disabled={searching}
+							className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-500 py-3 font-semibold text-white transition-colors hover:bg-emerald-600 disabled:bg-gray-700"
+						>
+							{searching ? (
+								<>
+									<Loader2 className="h-5 w-5 animate-spin" /> Searching...
+								</>
+							) : (
+								<>
+									<Search className="h-5 w-5" /> Search Flights
+								</>
+							)}
+						</button>
+					</div>
 
 					{searchError && (
 						<p className="text-red-400 text-sm text-center mb-4">
