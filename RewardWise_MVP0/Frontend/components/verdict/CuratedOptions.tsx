@@ -2,6 +2,8 @@
 "use client";
 
 import OptionCard from "@/components/verdict/OptionCard";
+import OwnershipFork from "@/components/verdict/OwnershipFork";
+import type { Ownership } from "@/types/verdict";
 
 interface CuratedAward {
 	program: string;
@@ -24,6 +26,10 @@ interface CuratedOptionsProps {
 	 */
 	matchedCpp: number | null;
 	savings: number | null;
+	/** Per-request ownership fork (b2/b3); null when N/A. */
+	ownership?: Ownership | null;
+	searchId?: string | null;
+	verdictId?: string | null;
 }
 
 const MAX_OPTIONS = 3;
@@ -39,6 +45,9 @@ export default function CuratedOptions({
 	cashPrice,
 	matchedCpp,
 	savings,
+	ownership,
+	searchId,
+	verdictId,
 }: CuratedOptionsProps) {
 	if (!awardOptions || awardOptions.length === 0) return null;
 
@@ -93,6 +102,9 @@ export default function CuratedOptions({
 					/>
 				))}
 			</div>
+			{ownership && ownership.applicable ? (
+				<OwnershipFork ownership={ownership} searchId={searchId} verdictId={verdictId} />
+			) : null}
 		</section>
 	);
 }

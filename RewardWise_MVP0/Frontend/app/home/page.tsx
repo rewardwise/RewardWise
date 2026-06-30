@@ -791,6 +791,7 @@ export default function HomePage() {
 									userPrograms={userPrograms}
 									userCards={results.user_cards ?? []}
 									verdictId={results.verdict_id}
+									searchId={results.search_id}
 									onTryDifferentDate={handleTryDifferentDate}
 								/>
 							) : !hasWallet ? (

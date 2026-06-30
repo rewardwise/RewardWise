@@ -26,6 +26,40 @@ export interface NextStep {
 	prompt: string;
 }
 
+export type ForkReason =
+	| "owned_sufficient"
+	| "short_buy_worth_it"
+	| "short_buy_not_worth_it"
+	| "short_cant_buy";
+
+export interface ReachablePartner {
+	sourceCard: string;
+	short: string;
+	ratio: string;
+	converted: number;
+	native: boolean;
+}
+
+/** Per-request ownership fork from the backend (see ownership.py). */
+export interface Ownership {
+	applicable: boolean;
+	program: string;
+	program_label: string | null;
+	points_needed: number;
+	owned_balance: number;
+	shortfall: number;
+	can_afford: boolean;
+	reachable_partners: ReachablePartner[];
+	buyable: boolean;
+	buy_rate_cpp: number | null;
+	redemption_cpp: number | null;
+	buy_gap_cost: number | null;
+	buy_gap_worth_it: boolean;
+	fork_recommendation: "use_points" | "pay_cash";
+	fork_reason: ForkReason;
+	transfers_as_of: string | null;
+}
+
 export interface Verdict {
 	verdict: string;
 	verdict_label?: string;
@@ -55,4 +89,6 @@ export interface Verdict {
 	next_step?: NextStep | null;
 	verdict_tier?: VerdictTier | null;
 	tier_explanation?: string | null;
+	/** Per-request, wallet-aware. Null when not a use_points verdict. */
+	ownership?: Ownership | null;
 }
