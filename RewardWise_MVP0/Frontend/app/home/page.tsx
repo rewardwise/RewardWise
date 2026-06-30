@@ -3,7 +3,6 @@
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import TropicalBackground from "@/components/TropicalBackground";
 import { useAuth } from "@/context/AuthProvider";
 import { useWallet } from "@/context/WalletContext";
 import { useSearchFill } from "@/context/SearchFillContext";
@@ -132,6 +131,21 @@ interface SearchResult {
 
 const MIN_SEARCH_LOADING_MS = 5000;
 
+// Compact brand label for the wallet pill (e.g. "Amex Membership Rewards" → "Amex").
+function shortProgramName(name?: string): string {
+	const n = (name || "").trim();
+	if (!n) return "";
+	const map: Record<string, string> = {
+		"Amex Membership Rewards": "Amex",
+		"Chase Ultimate Rewards": "Chase",
+		"Capital One Miles": "Cap1",
+		"Citi ThankYou Points": "Citi",
+		"Bilt Rewards": "Bilt",
+		"Wells Fargo Rewards": "Wells Fargo",
+	};
+	return map[n] ?? n.split(" ")[0];
+}
+
 function sleep(ms: number) {
 	return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -241,7 +255,7 @@ function FlightCard({ flight }: { flight: CashFlight }) {
 export default function HomePage() {
 	const router = useRouter();
 	const { searchCount, setSearchCount, session } = useAuth();
-	const { userPrograms, hasWallet } = useWallet();
+	const { userPrograms, hasWallet, cards } = useWallet();
 	const { searchFill } = useSearchFill();
 	useABTest();
 
@@ -533,11 +547,11 @@ export default function HomePage() {
 	}, [results]);
 
 	return (
-		<div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-cyan-950 relative overflow-hidden">
-			<TropicalBackground />
-
+		<div className="min-h-screen bg-mtw-surface relative overflow-hidden">
 			<div className="relative z-10">
-				<main className="max-w-5xl mx-auto px-6 py-6">
+				<main className="max-w-6xl mx-auto px-6 py-6 lg:grid lg:grid-cols-[58fr_42fr] lg:gap-6 lg:items-start">
+					{/* LEFT COLUMN (58%) — search + results, light theme (scoped) */}
+					<div className="mtw-light font-mtw min-w-0">
 					{/* HEADER */}
 					<div className="mb-6">
 						<h1 className="text-2xl font-bold text-white mb-1">
@@ -547,6 +561,19 @@ export default function HomePage() {
 							Search a route or ask Zoe — we'll find the best decision for your
 							rewards.
 						</p>
+						{hasWallet && cards && cards.length > 0 && (
+							<div
+								data-testid="wallet-pill"
+								className="mt-3 inline-flex flex-wrap items-center gap-x-2 gap-y-1 rounded-mtw-pill border border-mtw-border bg-mtw-surface px-3 py-1.5 text-mtw-small"
+							>
+								<span className="font-semibold text-mtw-emerald">Your wallet</span>
+								{cards.slice(0, 3).map((c) => (
+									<span key={c.id} className="text-mtw-muted">
+										{Math.round((c.points_balance || 0) / 1000)}k {shortProgramName(c.program_name)}
+									</span>
+								))}
+							</div>
+						)}
 					</div>
 
 					{/* TRIP TYPE TOGGLE */}
@@ -784,13 +811,19 @@ export default function HomePage() {
 						</div>
 					)}
 
-					<ZoeChat
-						isOpen={isChatOpen}
-						setIsOpen={setIsChatOpen}
-						onFillSearch={handleFillSearch}
-						onAutoSearch={handleTriggerSearch}
-						verdictContext={verdictContext}
-					/>
+					</div>{/* /LEFT COLUMN */}
+
+					{/* RIGHT COLUMN (42%) — Zoe docked (kept dark; light restyle deferred) */}
+					<div className="mt-4 lg:mt-0 lg:sticky lg:top-6 lg:h-[calc(100vh-3rem)]">
+						<ZoeChat
+							isOpen={isChatOpen}
+							setIsOpen={setIsChatOpen}
+							onFillSearch={handleFillSearch}
+							onAutoSearch={handleTriggerSearch}
+							verdictContext={verdictContext}
+							variant="docked"
+						/>
+					</div>
 				</main>
 			</div>
 		</div>
