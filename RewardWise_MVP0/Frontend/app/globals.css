@@ -130,3 +130,27 @@ body {
 .mtw-light .border-gray-700,
 .mtw-light .border-gray-600 { border-color: #e5e7eb; }
 .mtw-light .shadow-2xl { box-shadow: 0 4px 32px rgba(16, 24, 40, 0.06); }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Zoe docked pane — LIGHT (PR 6). Component-scoped remap of Zoe's dark chrome
+   (set via the docked container's .zoe-light class). Emerald buttons KEEP white
+   text (the compound rule wins over the general text-white→ink).
+   ───────────────────────────────────────────────────────────────────────── */
+.zoe-light { background-color: #fafafa; color: #1f2937; }
+.zoe-light .bg-\[\#0f1117\] { background-color: #ffffff; }
+.zoe-light .bg-\[\#1a1d27\] { background-color: #f3f4f6; }
+.zoe-light .text-white { color: #1f2937; }
+.zoe-light .bg-emerald-500.text-white,
+.zoe-light .bg-emerald-600.text-white,
+.zoe-light .bg-emerald-400.text-white { color: #ffffff; }
+.zoe-light .text-slate-200,
+.zoe-light .text-slate-300 { color: #374151; }
+.zoe-light .text-slate-400,
+.zoe-light .text-slate-500,
+.zoe-light .text-slate-600 { color: #6b7280; }
+.zoe-light .border-white\/10 { border-color: #e5e7eb; }
+.zoe-light .bg-white\/5,
+.zoe-light .bg-white\/20 { background-color: #f3f4f6; }
+.zoe-light .bg-slate-700,
+.zoe-light .bg-slate-900 { background-color: #f3f4f6; }
+.zoe-light .bg-slate-400 { background-color: #cbd5e1; }
