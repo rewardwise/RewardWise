@@ -770,6 +770,7 @@ export default function HomePage() {
 								/>
 							) : results?.verdict ? (
 								<VerdictCard
+									theme="light"
 									onAskZoe={handleAskZoeAboutVerdict}
 									verdict={results.verdict}
 									cashPrice={results.cash_price}
