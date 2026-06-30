@@ -139,6 +139,13 @@ interface VerdictCardProps {
   onPublicPreviewSignup?: () => void;
   onPublicPreviewSignin?: () => void;
   onTryDifferentDate?: () => void;
+  /**
+   * Color theme. "dark" (default) keeps the existing styling everywhere it's
+   * used today (incl. the landing page). "light" inverts colors ONLY — adds
+   * `mtw-light` to the root, which remaps the dark utilities to light via a
+   * scoped block in globals.css. No structural/content change.
+   */
+  theme?: "light" | "dark";
 }
 
 function formatDate(d: string) {
@@ -286,6 +293,7 @@ export default function VerdictCard({
   onPublicPreviewSignup,
   onPublicPreviewSignin,
   onTryDifferentDate,
+  theme = "dark",
 }: VerdictCardProps) {
   // Metro + flex searches return multiple award_options per program (different
   // airport pairs / dates). Pin to winning_date first so flex multi-date noise
@@ -624,7 +632,7 @@ export default function VerdictCard({
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="rounded-3xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl md:p-8 flex flex-col">
+      <div className={`${theme === "light" ? "mtw-light font-mtw " : ""}rounded-3xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl md:p-8 flex flex-col`}>
 
             {/* Header */}
             <VerdictTopRow
