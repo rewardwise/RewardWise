@@ -62,7 +62,8 @@ test.describe("PR 7: slim search pill (prod)", () => {
 		const payload = (await submitted).postDataJSON();
 		console.log("[smoke-pr7] search_submitted =", JSON.stringify(payload));
 		// Visible + HIDDEN field values are all in the payload.
-		expect(payload.search_origin).toBe("SFO");
+		// (AirportSearch resolves "SFO" to its metro CSV "SFO,OAK,SJC".)
+		expect(payload.search_origin).toContain("SFO");
 		expect(payload.search_destination).toBe("SIN");
 		expect(payload.search_cabin).toBe("business"); // hidden field flowed through
 		expect(payload.search_travelers).toBe(2); // hidden field flowed through
