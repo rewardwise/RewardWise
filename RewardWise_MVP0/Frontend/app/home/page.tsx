@@ -80,6 +80,9 @@ interface BookingLink {
 interface Verdict {
 	verdict: string;
 	verdict_label?: string;
+	/** Per-request ownership fork (PR 1/5). Typed here so the consistency-critical
+	 *  `ownership.can_afford` path Zoe narrates from is checked, not blind-cast. */
+	ownership?: Ownership | null;
 	recommendation?: "use_points" | "pay_cash" | "wait";
 	headline?: string;
 	explanation?: string;
@@ -830,7 +833,7 @@ export default function HomePage() {
 								results?.verdict
 									? zoeNarration(
 											results.verdict as unknown as CanonicalVerdict,
-											(results.verdict as { ownership?: Ownership | null }).ownership ?? null,
+											results.verdict.ownership ?? null,
 										)
 									: null
 							}

@@ -114,7 +114,8 @@ export function zoeNarration(verdict: Verdict, ownership?: Ownership | null): Zo
  */
 export function assertNarrationConsistent(n: ZoeNarration): void {
 	if (n.recommendation === "pay_cash") {
-		const bad = /\b(use your points|book .* (?:on )?points|use points)\b/i;
+		// Catch both "points" and the "pts" abbreviation the templates can emit.
+		const bad = /\b(use your points|book\b.*\bp(?:oin)?ts\b|use points)\b/i;
 		if (bad.test(n.lead)) {
 			const msg = `Zoe narration drift: pay_cash recommendation but lead says use/book points: "${n.lead}"`;
 			if (process.env.NODE_ENV !== "production") throw new Error(msg);
