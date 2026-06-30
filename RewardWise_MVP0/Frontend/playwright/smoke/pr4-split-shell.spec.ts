@@ -33,6 +33,7 @@ test.describe("PR 4: verdict-route split shell + docked Zoe", () => {
 		const dates = page.locator('input[type="date"]');
 		await dates.first().fill(isoDaysFromToday(180));
 		await dates.nth(1).fill(isoDaysFromToday(194));
+		await page.locator('[data-testid="more-options-toggle"]').click();
 		const selects = page.getByRole("combobox");
 		await selects.first().selectOption("3");
 		await selects.nth(2).selectOption("premium_economy");

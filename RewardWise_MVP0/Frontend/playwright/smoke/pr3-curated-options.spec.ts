@@ -51,6 +51,7 @@ test.describe("PR 3: curated 3-option list is coherent on authed /api/search", (
 		await dateInputs.first().fill(isoDaysFromToday(DEPART_DAYS));
 		await dateInputs.nth(1).fill(isoDaysFromToday(RETURN_DAYS));
 
+		await page.locator('[data-testid="more-options-toggle"]').click();
 		const selects = page.getByRole("combobox");
 		await selects.first().selectOption("3");
 		await selects.nth(2).selectOption("premium_economy");

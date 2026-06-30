@@ -105,9 +105,11 @@ function getDateInputByLabelPrefix(prefix: string): HTMLInputElement {
 }
 
 describe("home calendar pickers — horizon-aware max attribute", () => {
-	it("DEPART input's max attribute equals getMaxSearchDate()", () => {
+	// The slim-pill (PR 7) renames the depart label "DEPART" → "WHEN"; the
+	// horizon-aware max attribute it asserts is unchanged.
+	it("WHEN (depart) input's max attribute equals getMaxSearchDate()", () => {
 		render();
-		const departInput = getDateInputByLabelPrefix("DEPART");
+		const departInput = getDateInputByLabelPrefix("WHEN");
 		expect(departInput.getAttribute("max")).toBe(getMaxSearchDate());
 	});
 
@@ -117,16 +119,56 @@ describe("home calendar pickers — horizon-aware max attribute", () => {
 		expect(returnInput.getAttribute("max")).toBe(getMaxSearchDate());
 	});
 
-	it("DEPART and RETURN share the same max (one source of truth)", () => {
+	it("WHEN (depart) and RETURN share the same max (one source of truth)", () => {
 		render();
-		const departMax = getDateInputByLabelPrefix("DEPART").getAttribute("max");
+		const departMax = getDateInputByLabelPrefix("WHEN").getAttribute("max");
 		const returnMax = getDateInputByLabelPrefix("RETURN").getAttribute("max");
 		expect(departMax).toBe(returnMax);
 	});
 
 	it("max is no longer the year-2099 sentinel", () => {
 		render();
-		const departMax = getDateInputByLabelPrefix("DEPART").getAttribute("max");
+		const departMax = getDateInputByLabelPrefix("WHEN").getAttribute("max");
 		expect(departMax).not.toBe("2099-12-31");
+	});
+});
+
+describe("slim search pill (PR 7) — 3 visible, 5 behind 'More options'", () => {
+	const q = (t: string) => container.querySelector(`[data-testid="${t}"]`);
+
+	it("renders the pill with From/To/When visible and More collapsed by default", () => {
+		render();
+		expect(q("search-pill")).not.toBeNull();
+		// From + To airport inputs + the When date input are visible
+		expect(container.querySelectorAll('input[placeholder="City or airport"]').length).toBe(2);
+		expect(container.querySelector('input[type="date"]')).not.toBeNull();
+		// secondary fields are collapsed
+		expect(q("more-options")).toBeNull();
+		expect(container.querySelector("select")).toBeNull(); // no travelers/stops/cabin selects yet
+	});
+
+	it("clicking 'More options' reveals the 5 secondary fields", () => {
+		render();
+		act(() => {
+			(q("more-options-toggle") as HTMLButtonElement).dispatchEvent(
+				new MouseEvent("click", { bubbles: true }),
+			);
+		});
+		expect(q("more-options")).not.toBeNull();
+		// travelers / stops / cabin selects now present
+		expect(container.querySelectorAll("select").length).toBe(3);
+	});
+
+	it("hidden-field defaults are unchanged (economy / 1 traveler) — no silent change", () => {
+		render();
+		act(() => {
+			(q("more-options-toggle") as HTMLButtonElement).dispatchEvent(
+				new MouseEvent("click", { bubbles: true }),
+			);
+		});
+		const selects = Array.from(container.querySelectorAll("select")) as HTMLSelectElement[];
+		// order in More: travelers, stops, cabin
+		expect(selects[0].value).toBe("1"); // travelers default
+		expect(selects[2].value).toBe("economy"); // cabin default — matches today
 	});
 });
