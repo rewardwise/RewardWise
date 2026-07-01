@@ -5,7 +5,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from "react"
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthProvider";
 import { useWallet } from "@/context/WalletContext";
-import { zoeNarration } from "@/utils/zoeNarration";
+import { zoeNarration, zoeWelcome } from "@/utils/zoeNarration";
 import type { Verdict as CanonicalVerdict, Ownership } from "@/types/verdict";
 import { useSearchFill } from "@/context/SearchFillContext";
 import { useABTest } from "@/context/ABTestContext";
@@ -787,6 +787,7 @@ export default function HomePage() {
 										)
 									: null
 							}
+							welcome={zoeWelcome()}
 						/>
 					</div>
 				</main>

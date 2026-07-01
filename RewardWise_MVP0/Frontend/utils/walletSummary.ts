@@ -20,9 +20,27 @@ export function shortProgramName(name?: string): string {
 	return map[n] ?? n.split(" ")[0];
 }
 
-/** "80k Amex" style label for one wallet card. */
+/**
+ * Compact human balance for a raw points count, scaled by magnitude:
+ * 300,000 → "300k", 1,902,000 → "1.9M", 1,902,000,000 → "1.9B".
+ *
+ * Single source of truth for the "k" suffix — the old per-chip label appended
+ * "k" after only ever dividing by 1000, so a 1.9-billion balance rendered
+ * "1902000k". Here the divisor tracks the magnitude, so there's no double-suffix.
+ */
+export function formatBalance(points?: number | null): string {
+	const n = Math.max(0, Math.round(points || 0));
+	const scale = (value: number, suffix: string) =>
+		`${value >= 100 ? Math.round(value) : parseFloat(value.toFixed(1))}${suffix}`;
+	if (n >= 1_000_000_000) return scale(n / 1_000_000_000, "B");
+	if (n >= 1_000_000) return scale(n / 1_000_000, "M");
+	if (n >= 1_000) return `${Math.round(n / 1_000)}k`;
+	return `${n}`;
+}
+
+/** "1.9M Amex" style label for one wallet card. */
 export function walletPillLabel(card: Pick<WalletCard, "points_balance" | "program_name">): string {
-	return `${Math.round((card.points_balance || 0) / 1000)}k ${shortProgramName(card.program_name)}`.trim();
+	return `${formatBalance(card.points_balance)} ${shortProgramName(card.program_name)}`.trim();
 }
 
 /**
@@ -32,7 +50,7 @@ export function walletPillLabel(card: Pick<WalletCard, "points_balance" | "progr
  */
 export function walletChips(
 	cards: Array<Pick<WalletCard, "points_balance" | "program_name">>,
-	limit = 2,
+	limit = 1,
 ): Array<{ key: string; label: string }> {
 	const byProgram = new Map<string, number>();
 	for (const c of cards) {
@@ -42,5 +60,5 @@ export function walletChips(
 	return [...byProgram.entries()]
 		.sort((a, b) => b[1] - a[1])
 		.slice(0, limit)
-		.map(([key, total]) => ({ key, label: `${Math.round(total / 1000)}k ${key}`.trim() }));
+		.map(([key, total]) => ({ key, label: `${formatBalance(total)} ${key}`.trim() }));
 }
