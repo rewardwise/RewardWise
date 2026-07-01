@@ -47,7 +47,7 @@ export default function PaymentNotificationBanner() {
 	if (notifications.length === 0) return null;
 
 	return (
-		<div className="fixed top-4 right-4 z-50 space-y-2 max-w-[calc(100vw-2rem)] sm:max-w-sm">
+		<div className="fixed top-16 right-4 z-50 space-y-2 max-w-[calc(100vw-2rem)] sm:max-w-sm">
 			{notifications.map((n) => (
 				<div
 					key={n.id}
