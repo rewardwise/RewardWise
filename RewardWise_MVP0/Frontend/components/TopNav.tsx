@@ -4,328 +4,155 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { useAlerts } from "@/context/AlertContext";
-import { createClient } from "@/utils/supabase/client";
+import { useWallet } from "@/context/WalletContext";
+import { useAuth } from "@/context/AuthProvider";
+import { walletChips as computeWalletChips } from "@/utils/walletSummary";
 
-import {
-	Plane,
-	Home,
-	Clock,
-	User,
-	Info,
-	Bell,
-	Gift,
-	TrendingUp,
-	Check,
-	Menu,
-	X,
-} from "lucide-react";
+import { Plane, Clock, User, LogOut } from "lucide-react";
 
+/**
+ * Global nav — the redesign's light contextual bar (03-verdict-loggedin.png):
+ * brand (left) + wallet pill + avatar menu (right). Profile / History / Sign out
+ * live in the avatar dropdown; there are no always-visible page tabs and no Bell.
+ * The same avatar menu serves desktop and mobile, so there's no separate drawer
+ * to drift out of sync with desktop (drawer-mirrors-desktop rule).
+ */
 export default function TopNav() {
 	const router = useRouter();
 	const pathname = usePathname();
-	const { notifications, unreadCount, markNotificationRead, markAllRead } = useAlerts();
-	const supabase = useMemo(() => createClient(), []);
+	const { cards, hasWallet } = useWallet();
+	const { user, signOut } = useAuth();
 
-	const [showAlerts, setShowAlerts] = useState(false);
-	const [drawerOpen, setDrawerOpen] = useState(false);
-	const [dayPassExpiresAt, setDayPassExpiresAt] = useState<number | null>(null);
-	const [timeNow, setTimeNow] = useState(Date.now());
+	const [menuOpen, setMenuOpen] = useState(false);
+	const menuRef = useRef<HTMLDivElement>(null);
+	const triggerRef = useRef<HTMLButtonElement>(null);
+	const firstItemRef = useRef<HTMLButtonElement>(null);
 
-	const hamburgerRef = useRef<HTMLButtonElement>(null);
-	const firstTabRef = useRef<HTMLButtonElement>(null);
-	const drawerHasOpened = useRef(false);
-
+	// Close the avatar menu on route change, outside click, or Escape.
 	useEffect(() => {
-		let cancelled = false;
-		void (async () => {
-			const {
-				data: { user },
-			} = await supabase.auth.getUser();
-			if (!user || cancelled) return;
-			const { data } = await supabase
-				.from("profiles")
-				.select("day_pass_expires_at")
-				.eq("user_id", user.id)
-				.maybeSingle();
-			if (cancelled) return;
-			const expiry = data?.day_pass_expires_at
-				? new Date(data.day_pass_expires_at).getTime()
-				: 0;
-			setDayPassExpiresAt(expiry > 0 ? expiry : null);
-		})();
-		return () => {
-			cancelled = true;
-		};
-	}, [supabase]);
-
-	useEffect(() => {
-		const timer = setInterval(() => setTimeNow(Date.now()), 30_000);
-		return () => clearInterval(timer);
-	}, []);
-
-	useEffect(() => {
-		setDrawerOpen(false);
+		setMenuOpen(false);
 	}, [pathname]);
 
 	useEffect(() => {
-		if (!drawerOpen) {
-			if (drawerHasOpened.current) hamburgerRef.current?.focus();
-			return;
-		}
-		drawerHasOpened.current = true;
-		firstTabRef.current?.focus();
-		const onKey = (e: KeyboardEvent) => {
-			if (e.key === "Escape") setDrawerOpen(false);
+		if (!menuOpen) return;
+		// Move focus into the menu on open; return it to the trigger on close.
+		firstItemRef.current?.focus();
+		const onClick = (e: MouseEvent) => {
+			if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
 		};
+		const onKey = (e: KeyboardEvent) => {
+			if (e.key === "Escape") {
+				setMenuOpen(false);
+				triggerRef.current?.focus();
+			}
+		};
+		document.addEventListener("mousedown", onClick);
 		window.addEventListener("keydown", onKey);
-		return () => window.removeEventListener("keydown", onKey);
-	}, [drawerOpen]);
+		return () => {
+			document.removeEventListener("mousedown", onClick);
+			window.removeEventListener("keydown", onKey);
+		};
+	}, [menuOpen]);
 
-	const dayPassTimeLeft = useMemo(() => {
-		if (!dayPassExpiresAt) return null;
-		const msLeft = dayPassExpiresAt - timeNow;
-		if (msLeft <= 0) return null;
-		const totalMinutes = Math.ceil(msLeft / 60_000);
-		const hours = Math.floor(totalMinutes / 60);
-		const minutes = totalMinutes % 60;
-		return `${hours}h ${minutes}m`;
-	}, [dayPassExpiresAt, timeNow]);
+	const walletChips = useMemo(
+		() => computeWalletChips(hasWallet ? cards : []),
+		[cards, hasWallet],
+	);
 
-	const staticAlerts = [
-		...(dayPassTimeLeft
-			? [
-					{
-						id: "static-day-pass",
-						icon: Gift,
-						title: "Day pass active",
-						desc: `Expires in ${dayPassTimeLeft}.`,
-						page: "/subscribe",
-					},
-				]
-			: []),
-		{
-			id: "static-2",
-			icon: Gift,
-			title: "Feedback helps improve Zoe",
-			desc: "After a verdict, use the History page to rate the answer.",
-			page: "/history",
-		},
-	];
+	const initial = (user?.email?.[0] ?? "?").toUpperCase();
 
-	const totalCount = unreadCount + staticAlerts.length;
-
-	const tabs = [
-		{ id: "home", icon: Home, label: "Home", page: "/home" },
-		{ id: "trips", icon: Plane, label: "Trips", page: "/trips" },
-		{ id: "history", icon: Clock, label: "History", page: "/history" },
-		{ id: "profile", icon: User, label: "Profile", page: "/profile" },
-		{ id: "about", icon: Info, label: "About", page: "/about" },
+	const menuItems = [
+		{ id: "profile", icon: User, label: "Profile", onClick: () => router.push("/profile") },
+		{ id: "history", icon: Clock, label: "History", onClick: () => router.push("/history") },
+		{ id: "signout", icon: LogOut, label: "Sign out", onClick: () => void signOut() },
 	];
 
 	return (
-		<>
-			<nav className="bg-gray-900/95 backdrop-blur border-b border-gray-700 sticky top-0 z-40">
-				<div className="flex items-center justify-between max-w-5xl mx-auto px-4">
-					<div className="flex items-center gap-1">
+		<nav className="sticky top-0 z-40 border-b border-black/5 bg-white/85 backdrop-blur">
+			<div className="mx-auto flex max-w-6xl items-center justify-between px-4 sm:px-6">
+				{/* Brand */}
+				<button
+					type="button"
+					onClick={() => router.push("/home")}
+					className="font-mtw flex items-center gap-2 py-3 text-mtw-ink"
+					aria-label="MyTravelWallet home"
+				>
+					<Plane className="h-5 w-5 text-mtw-emerald" />
+					<span className="font-semibold">MyTravelWallet</span>
+				</button>
+
+				{/* Wallet pill + avatar */}
+				<div className="flex items-center gap-2 sm:gap-3">
+					{walletChips.length > 0 && (
+						<div
+							data-testid="nav-wallet-pill"
+							className="font-mtw hidden items-center gap-x-2 rounded-mtw-pill border border-black/10 bg-white/70 px-3 py-1.5 text-mtw-small sm:inline-flex"
+						>
+							<span className="font-semibold text-mtw-emerald">Your wallet</span>
+							{walletChips.map((c) => (
+								<span key={c.key} className="text-mtw-muted">
+									{c.label}
+								</span>
+							))}
+						</div>
+					)}
+
+					<div className="relative" ref={menuRef}>
 						<button
 							type="button"
-							ref={hamburgerRef}
-							onClick={() => setDrawerOpen(true)}
-							aria-label="Open navigation menu"
-							aria-expanded={drawerOpen}
-							className="sm:hidden inline-flex flex-col items-center justify-center min-h-11 min-w-11 p-2 -ml-2 text-gray-300 hover:text-white rounded-lg"
+							ref={triggerRef}
+							onClick={() => setMenuOpen((v) => !v)}
+							aria-label="Account menu"
+							aria-haspopup="menu"
+							aria-expanded={menuOpen}
+							data-testid="avatar-menu-button"
+							className="flex h-9 w-9 items-center justify-center rounded-full bg-mtw-emerald text-sm font-semibold text-white ring-1 ring-black/5 transition-transform hover:scale-105"
 						>
-							<Menu className="w-5 h-5" />
-							<span className="text-[10px] leading-none mt-0.5">Menu</span>
+							{initial}
 						</button>
 
-						<div
-							className="flex items-center gap-2 py-3 cursor-pointer"
-							onClick={() => router.push("/home")}
-						>
-							<Plane className="w-5 h-5 text-blue-400" />
-							<span className="font-bold text-white">MyTravelWallet</span>
-						</div>
-					</div>
-
-					<div className="flex items-center gap-1">
-						<div className="hidden sm:flex items-center gap-1">
-							{tabs.map((tab) => {
-								const active = pathname.startsWith(tab.page);
-
-								return (
-									<button
-										key={tab.id}
-										onClick={() => router.push(tab.page)}
-										className={`inline-flex items-center justify-center gap-1.5 min-h-11 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-											active
-												? "text-emerald-400 bg-emerald-500/10"
-												: "text-gray-400 hover:text-white hover:bg-gray-800/50"
-										}`}
-									>
-										<tab.icon className="w-4 h-4" />
-										<span className="hidden sm:inline">{tab.label}</span>
-									</button>
-								);
-							})}
-						</div>
-
-						<div className="relative">
-							<button
-								onClick={() => setShowAlerts(!showAlerts)}
-								aria-label="Alerts"
-								className="relative inline-flex flex-col items-center justify-center min-h-11 min-w-11 px-3 py-2.5 text-gray-400 hover:text-white"
+						{menuOpen && (
+							<div
+								role="menu"
+								data-testid="avatar-menu"
+								className="font-mtw absolute right-0 top-full mt-2 w-52 overflow-hidden rounded-mtw border border-black/10 bg-white shadow-mtw-ambient"
 							>
-								<Bell className="w-4 h-4" />
-								<span className="sm:hidden text-[10px] leading-none mt-0.5">Alerts</span>
-
-								{totalCount > 0 && (
-									<span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-[10px] text-white flex items-center justify-center">
-										{totalCount > 9 ? "9+" : totalCount}
-									</span>
-								)}
-							</button>
-
-							{showAlerts && (
-								<div className="absolute right-0 top-full mt-2 w-80 bg-gray-900 border border-gray-700 rounded-xl shadow-2xl max-h-96 overflow-y-auto">
-									<div className="px-4 py-3 border-b border-gray-700 flex items-center justify-between">
-										<span className="text-white font-semibold text-sm">
-											Alerts
-										</span>
-										{unreadCount > 0 && (
-											<button
-												onClick={() => markAllRead()}
-												className="text-xs text-emerald-400 hover:text-emerald-300"
-											>
-												Mark all read
-											</button>
-										)}
+								{user?.email && (
+									<div className="border-b border-black/5 px-4 py-2.5">
+										<p className="truncate text-mtw-small text-mtw-muted">{user.email}</p>
 									</div>
-
-									{notifications.length > 0 && (
-										<>
-											{notifications.map((notif) => (
-												<button
-													key={notif.id}
-													onClick={() => {
-														markNotificationRead(notif.id);
-														setShowAlerts(false);
-														router.push("/trips");
-													}}
-													className={`w-full text-left px-4 py-3 hover:bg-gray-800 border-b border-gray-800 ${
-														!notif.read ? "bg-emerald-500/5" : ""
-													}`}
-												>
-													<div className="flex items-start gap-2">
-														{!notif.read && (
-															<div className="w-2 h-2 rounded-full bg-emerald-400 mt-1.5 flex-shrink-0" />
-														)}
-														{notif.read && (
-															<Check className="w-3 h-3 text-gray-600 mt-1 flex-shrink-0" />
-														)}
-														<div>
-															<p className="text-white text-sm">{notif.title}</p>
-															<p className="text-gray-400 text-xs">{notif.desc}</p>
-														</div>
-													</div>
-												</button>
-											))}
-										</>
-									)}
-
-									{notifications.length > 0 && (
-										<div className="px-4 py-2 border-b border-gray-700">
-											<span className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">System Alerts</span>
-										</div>
-									)}
-
-									{staticAlerts.map((alert) => (
-										<button
-											key={alert.id}
-											onClick={() => {
-												setShowAlerts(false);
-												router.push(alert.page);
-											}}
-											className="w-full text-left px-4 py-3 hover:bg-gray-800 border-b border-gray-800"
-										>
-											<div className="flex items-start gap-2">
-												<alert.icon className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
-												<div>
-													<p className="text-white text-sm">{alert.title}</p>
-													<p className="text-gray-400 text-xs">{alert.desc}</p>
-												</div>
-											</div>
-										</button>
-									))}
-								</div>
-							)}
-						</div>
+								)}
+								{/* Wallet chips also appear here so mobile (pill hidden) still sees them. */}
+								{walletChips.length > 0 && (
+									<div className="flex flex-wrap gap-x-2 gap-y-1 border-b border-black/5 px-4 py-2.5 sm:hidden">
+										<span className="text-mtw-small font-semibold text-mtw-emerald">Wallet</span>
+										{walletChips.map((c) => (
+											<span key={c.key} className="text-mtw-small text-mtw-muted">
+												{c.label}
+											</span>
+										))}
+									</div>
+								)}
+								{menuItems.map((item, idx) => (
+									<button
+										key={item.id}
+										ref={idx === 0 ? firstItemRef : undefined}
+										role="menuitem"
+										onClick={() => {
+											setMenuOpen(false);
+											item.onClick();
+										}}
+										className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-mtw-body text-mtw-ink transition-colors hover:bg-mtw-surface"
+									>
+										<item.icon className="h-4 w-4 text-mtw-muted" />
+										<span>{item.label}</span>
+									</button>
+								))}
+							</div>
+						)}
 					</div>
 				</div>
-			</nav>
-
-			<div
-				className={`sm:hidden fixed inset-0 z-50 ${
-					drawerOpen ? "" : "pointer-events-none"
-				}`}
-				aria-hidden={!drawerOpen}
-			>
-				<div
-					onClick={() => setDrawerOpen(false)}
-					className={`absolute inset-0 bg-black/50 transition-opacity duration-200 ${
-						drawerOpen ? "opacity-100" : "opacity-0"
-					}`}
-				/>
-				<aside
-					role="dialog"
-					aria-modal="true"
-					aria-label="Main navigation"
-					className={`absolute inset-y-0 left-0 w-3/4 max-w-sm bg-gray-900 border-r border-gray-700 shadow-2xl flex flex-col transform transition-transform duration-200 ${
-						drawerOpen ? "translate-x-0" : "-translate-x-full"
-					}`}
-				>
-					<div className="px-4 py-3 border-b border-gray-700 flex items-center justify-between">
-						<div className="flex items-center gap-2">
-							<Plane className="w-5 h-5 text-blue-400" />
-							<span className="font-bold text-white">MyTravelWallet</span>
-						</div>
-						<button
-							type="button"
-							onClick={() => setDrawerOpen(false)}
-							aria-label="Close navigation menu"
-							className="inline-flex items-center justify-center min-h-11 min-w-11 p-2 -mr-2 text-gray-400 hover:text-white rounded-lg"
-						>
-							<X className="w-5 h-5" />
-						</button>
-					</div>
-
-					<nav className="flex-1 overflow-y-auto py-2">
-						{tabs.map((tab, idx) => {
-							const active = pathname.startsWith(tab.page);
-
-							return (
-								<button
-									key={tab.id}
-									ref={idx === 0 ? firstTabRef : undefined}
-									onClick={() => {
-										setDrawerOpen(false);
-										router.push(tab.page);
-									}}
-									className={`w-full flex items-center gap-3 px-4 py-3 text-sm transition-colors ${
-										active
-											? "text-emerald-400 bg-emerald-500/10"
-											: "text-gray-300 hover:text-white hover:bg-gray-800/50"
-									}`}
-								>
-									<tab.icon className="w-5 h-5" />
-									<span>{tab.label}</span>
-								</button>
-							);
-						})}
-					</nav>
-				</aside>
 			</div>
-		</>
+		</nav>
 	);
 }

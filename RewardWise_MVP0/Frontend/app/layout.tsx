@@ -9,6 +9,7 @@ import { AuthProvider } from "@/context/AuthProvider";
 import { SearchFillProvider } from "@/context/SearchFillContext";
 import { ABTestProvider } from "@/context/ABTestContext";
 import NavbarWrapper from "@/components/NavbarWrapper";
+import AppFooter from "@/components/AppFooter";
 import PaymentNotificationBanner from "@/components/PaymentNotificationBanner";
 import DayPassUpgradeReminder from "@/components/DayPassUpgradeReminder";
 import AnalyticsTracker from "@/components/analytics/AnalyticsTracker";
@@ -67,10 +68,16 @@ export default function RootLayout({
 									<Suspense fallback={null}>
 										<AnalyticsTracker />
 									</Suspense>
-									<NavbarWrapper />
-									<PaymentNotificationBanner />
-									<DayPassUpgradeReminder />
-									{children}
+									{/* Light app shell (redesign): white/light-gray behind all
+									    logged-in routes. The island lives only in the logged-out
+									    landing hero (8c), not here. */}
+									<div className="font-mtw flex min-h-screen flex-col bg-mtw-surface">
+										<NavbarWrapper />
+										<PaymentNotificationBanner />
+										<DayPassUpgradeReminder />
+										<div className="flex-1">{children}</div>
+										<AppFooter />
+									</div>
 								</SearchFillProvider>
 							</ABTestProvider>
 						</AlertProvider>

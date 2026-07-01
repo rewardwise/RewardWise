@@ -60,9 +60,11 @@ test.describe("PR 4: verdict-route split shell + docked Zoe", () => {
 		const tag = (await curated.locator('[data-testid="best-tag"]').first().textContent()) ?? "";
 		expect(tag).toContain(recommendation === "use_points" ? "USE POINTS" : "PAY CASH");
 
-		// Shell: Zoe is DOCKED (not the floating FAB) and the wallet pill is present.
+		// Shell: Zoe is DOCKED (not the floating FAB) and the wallet balance is present.
+		// (8a relocated the wallet balance from an inline /home pill to the global
+		// nav pill — same "Your wallet …" content, now in the top bar.)
 		await expect(page.locator('[data-testid="zoe-docked"]')).toBeVisible({ timeout: 30_000 });
 		await expect(page.getByRole("button", { name: "Open Zoe" })).toHaveCount(0); // no FAB
-		await expect(page.locator('[data-testid="wallet-pill"]')).toBeVisible();
+		await expect(page.locator('[data-testid="nav-wallet-pill"]')).toBeVisible();
 	});
 });
