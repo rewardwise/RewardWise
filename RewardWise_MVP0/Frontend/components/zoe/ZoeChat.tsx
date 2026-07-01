@@ -28,7 +28,7 @@ import {
 import { createClient } from "@/utils/supabase/client";
 import { useZoeVoice, VoiceState } from "@/hooks/useZoeVoice";
 import { trackAnalyticsEvent } from "@/utils/analytics/client";
-import type { ZoeNarration, ZoeChip } from "@/utils/zoeNarration";
+import type { ZoeNarration, ZoeChip, ZoeWelcome } from "@/utils/zoeNarration";
 
 const supabase = createClient();
 
@@ -70,6 +70,12 @@ interface ZoeChatProps {
 	variant?: "floating" | "docked";
 	/** Deterministic verdict narration (lead + chips) for the docked pane. */
 	narration?: ZoeNarration | null;
+	/**
+	 * Deterministic empty-state welcome (lead + chips) for the docked pane, shown
+	 * only when there's no `narration` yet. Once a verdict arrives, narration
+	 * replaces it. Ignored by the floating variant.
+	 */
+	welcome?: ZoeWelcome | null;
 }
 
 async function getAuthHeaders(): Promise<Record<string, string>> {
@@ -114,6 +120,7 @@ export default function ZoeChat({
 	verdictContext,
 	variant = "floating",
 	narration = null,
+	welcome = null,
 }: ZoeChatProps) {
 	const { user } = useAuth();
 	const { cards } = useWallet();
@@ -133,6 +140,11 @@ export default function ZoeChat({
 					fork_reason: narration.forkReason,
 					chips: narration.chips.map((c) => c.id),
 				},
+			});
+		} else if (variant === "docked" && !narration && welcome) {
+			trackAnalyticsEvent("zoe_welcome_shown", {
+				event_type: "zoe",
+				metadata: { chips: welcome.chips.map((c) => c.id) },
 			});
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -223,16 +235,34 @@ if (prefillRaw && onFillSearch) {
 	});
 
 	// ── Scroll ────────────────────────────────────────────────────────────────
+	// Scroll the Zoe message list to the bottom WITHOUT touching the window.
+	// `scrollIntoView` bubbles to the nearest scrollable ancestor — on mobile's
+	// stacked layout the list isn't a bounded scroll container, so it scrolled the
+	// whole PAGE (~380px down on load, off the welcome message). Instead walk up to
+	// the nearest bounded scroller and stop before document/body, so the page never
+	// moves; on desktop this still scrolls the fixed-height Zoe pane as before.
 	useEffect(() => {
-		endRef.current?.scrollIntoView({ behavior: "smooth" });
+		let scroller: HTMLElement | null = endRef.current?.parentElement ?? null;
+		while (
+			scroller &&
+			scroller !== document.body &&
+			scroller.scrollHeight <= scroller.clientHeight
+		) {
+			scroller = scroller.parentElement;
+		}
+		if (scroller && scroller !== document.body && scroller !== document.documentElement) {
+			scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
+		}
 	}, [messages, typing]);
 
-	// ── Welcome message ───────────────────────────────────────────────────────
+	// ── Welcome message (floating variant only) ───────────────────────────────
+	// The docked pane uses the deterministic `welcome` prop (lead + chips), so
+	// skip this message-injecting welcome there to avoid a duplicate.
 	useEffect(() => {
-		if (isOpen && messages.length === 0 && !conversationId && !verdictContext) {
+		if (variant !== "docked" && isOpen && messages.length === 0 && !conversationId && !verdictContext) {
 			setMessages([{ role: "assistant", content: WELCOME_MESSAGE }]);
 		}
-	}, [isOpen, messages.length, conversationId, verdictContext]);
+	}, [isOpen, messages.length, conversationId, verdictContext, variant]);
 
 	// ── Verdict context injection ─────────────────────────────────────────────
 	useEffect(() => {
@@ -805,6 +835,13 @@ className={`flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rou
 							>
 								{narration.lead}
 							</div>
+						) : welcome ? (
+							<div
+								data-testid="zoe-welcome"
+								className="w-fit max-w-[92%] rounded-2xl rounded-tl-sm border border-mtw-border bg-white p-3 text-mtw-ink shadow-sm"
+							>
+								{welcome.lead}
+							</div>
 						) : null}
 						{forkMsgs.map((m, i) => (
 							<div
@@ -823,9 +860,9 @@ className={`flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rou
 						<div ref={endRef} />
 					</div>
 				)}
-				{narration && !voiceMode ? (
+				{!voiceMode && (narration || welcome) ? (
 					<div className="flex flex-wrap gap-2 border-t border-mtw-border bg-white px-4 py-2">
-						{narration.chips.map((chip) => (
+						{(narration ? narration.chips : welcome!.chips).map((chip) => (
 							<button
 								key={chip.id}
 								data-testid={`zoe-chip-${chip.id}`}

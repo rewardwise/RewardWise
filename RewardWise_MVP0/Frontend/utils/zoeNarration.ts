@@ -14,10 +14,16 @@ import type { Verdict, Ownership } from "@/types/verdict";
 export type NarrationRec = "use_points" | "pay_cash" | "wait";
 
 export interface ZoeChip {
-	id: "why" | "points_anyway" | "cheaper_dates";
+	id: "why" | "points_anyway" | "cheaper_dates" | "welcome_how" | "welcome_ask";
 	label: string;
 	/** Deterministic templated reply appended on click (no LLM). */
 	reply: string;
+}
+
+/** Empty-state welcome for the docked Zoe pane (no verdict yet). */
+export interface ZoeWelcome {
+	lead: string;
+	chips: ZoeChip[];
 }
 
 export interface ZoeNarration {
@@ -120,5 +126,46 @@ export function assertNarrationConsistent(n: ZoeNarration): void {
 			const msg = `Zoe narration drift: pay_cash recommendation but lead says use/book points: "${n.lead}"`;
 			if (process.env.NODE_ENV !== "production") throw new Error(msg);
 		}
+	}
+}
+
+/**
+ * Deterministic empty-state welcome for the docked Zoe pane — NOT LLM output.
+ * Shown before the user has an active verdict; once a verdict arrives, the
+ * verdict narration replaces it (the welcome does not persist above the thread).
+ */
+export function zoeWelcome(): ZoeWelcome {
+	const welcome: ZoeWelcome = {
+		lead:
+			"👋 Hey, I'm Zoe. Run a search above and I'll show you whether cash or points wins for that trip. You can also ask me about a specific program in your wallet.",
+		chips: [
+			{
+				id: "welcome_how",
+				label: "How does this work?",
+				reply:
+					"Tell me where and when you want to fly (or use the search above). I compare the cash fare against what your points would cost, then tell you which is the smarter play — and I won't tell you to burn points on a weak redemption.",
+			},
+			{
+				id: "welcome_ask",
+				label: "What can I ask?",
+				reply:
+					'Try things like "is it worth using my Amex points for this?" or "which of my programs is best for this route?" — I ground the answer in your wallet and the live prices.',
+			},
+		],
+	};
+	assertWelcomeConsistent(welcome);
+	return welcome;
+}
+
+/**
+ * Hard guarantee: the welcome must stay in the "no verdict yet" state. It must
+ * never assert a concrete verdict — a recommendation ("use your points" / "pay
+ * cash"), a price, or a cpp. Throws in dev/test if it drifts.
+ */
+export function assertWelcomeConsistent(w: ZoeWelcome): void {
+	const bad = /\b(use your points|pay cash|use points)\b|\$\d|¢\/pt/i;
+	if (bad.test(w.lead)) {
+		const msg = `Zoe welcome drift: welcome lead asserts a verdict: "${w.lead}"`;
+		if (process.env.NODE_ENV !== "production") throw new Error(msg);
 	}
 }

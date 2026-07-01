@@ -1,7 +1,7 @@
 /** @format */
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/context/AuthProvider";
 import { createClient } from "@/utils/supabase/client";
 import { AlertTriangle, CheckCircle, X } from "lucide-react";
@@ -15,15 +15,22 @@ type PaymentNotification = {
 	created_at: string;
 };
 
+const AUTO_DISMISS_MS = 8000;
+
 export default function PaymentNotificationBanner() {
 	const { user } = useAuth();
 	const [notifications, setNotifications] = useState<PaymentNotification[]>([]);
-	const supabase = createClient();
+	// Memoized so it's a stable dep: createClient() returns a NEW browser client
+	// each call, and an unstable dep here made the fetch effect re-run (and
+	// re-fetch) on every render — part of why the toast appeared to re-fire.
+	const supabase = useMemo(() => createClient(), []);
 
 	useEffect(() => {
 		if (!user) return;
-
+		let cancelled = false;
 		(async () => {
+			// `is_read = false` filters SERVER-SIDE, so a notification already marked
+			// seen never comes back over the wire — no client-side flash on reload.
 			const { data } = await supabase
 				.from("payment_notifications")
 				.select("*")
@@ -31,18 +38,50 @@ export default function PaymentNotificationBanner() {
 				.eq("is_read", false)
 				.order("created_at", { ascending: false })
 				.limit(3);
-
-			if (data) setNotifications(data as PaymentNotification[]);
+			if (!cancelled && data) setNotifications(data as PaymentNotification[]);
 		})();
+		return () => {
+			cancelled = true;
+		};
 	}, [user, supabase]);
 
-	const dismiss = async (id: string) => {
-		setNotifications((prev) => prev.filter((n) => n.id !== id));
-		await supabase
-			.from("payment_notifications")
-			.update({ is_read: true })
-			.eq("id", id);
-	};
+	// Pending auto-dismiss timers, keyed by notification id. A ref so an unrelated
+	// re-render doesn't cancel them; cleared on unmount.
+	const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+	const dismiss = useCallback(
+		async (id: string) => {
+			// Cancel + forget any pending auto-dismiss timer for this id (so a manual
+			// dismiss doesn't leave a timer that later re-fires dismiss redundantly).
+			const timer = timersRef.current.get(id);
+			if (timer) clearTimeout(timer);
+			timersRef.current.delete(id);
+			setNotifications((prev) => prev.filter((n) => n.id !== id));
+			// Persist "seen" in the backend (payment_notifications.is_read) so the
+			// server-side filter excludes it on the next load. Idempotent.
+			await supabase.from("payment_notifications").update({ is_read: true }).eq("id", id);
+		},
+		[supabase],
+	);
+
+	// Auto-dismiss non-critical notifications 8s after they first render (also
+	// marks them seen). `payment_failed` is EXEMPT: a failed-payment alert must
+	// persist until the user manually dismisses it — auto-hiding + marking it read
+	// would let a critical alert vanish after 8s and never return.
+	useEffect(() => {
+		notifications.forEach((n) => {
+			if (n.type === "payment_failed") return;
+			if (timersRef.current.has(n.id)) return;
+			timersRef.current.set(
+				n.id,
+				setTimeout(() => void dismiss(n.id), AUTO_DISMISS_MS),
+			);
+		});
+	}, [notifications, dismiss]);
+	useEffect(() => {
+		const timers = timersRef.current;
+		return () => timers.forEach((t) => clearTimeout(t));
+	}, []);
 
 	if (notifications.length === 0) return null;
 
@@ -51,6 +90,7 @@ export default function PaymentNotificationBanner() {
 			{notifications.map((n) => (
 				<div
 					key={n.id}
+					data-testid="payment-notification"
 					className={`rounded-lg p-4 shadow-lg border backdrop-blur flex items-start gap-3 ${
 						n.type === "payment_failed"
 							? "bg-red-950/90 border-red-500/30"
@@ -68,6 +108,7 @@ export default function PaymentNotificationBanner() {
 					</div>
 					<button
 						onClick={() => dismiss(n.id)}
+						aria-label="Dismiss notification"
 						className="text-gray-500 hover:text-white flex-shrink-0"
 					>
 						<X className="w-4 h-4" />
