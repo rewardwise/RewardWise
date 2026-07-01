@@ -75,10 +75,10 @@ describe("4 cabin <select> surfaces render Premium Economy", () => {
 
 // ── 5 cabinLabel rendering surfaces ──────────────────────────────────────────
 
-describe("5 cabinLabel surfaces import from shared @/utils/cabin", () => {
+describe("4 cabinLabel surfaces import from shared @/utils/cabin", () => {
 	it.each([
-		["app/history/page.tsx", "trip history list + filters"],
-		["app/trips/page.tsx", "saved trips list"],
+		// 8b: booked trips folded into /history; /trips is now a 308 redirect.
+		["app/history/page.tsx", "history: searches + booked trips + filters"],
 		["components/WatchlistSection.tsx", "watchlist card chip"],
 		["app/concierge/history/[id]/page.tsx", "concierge request detail"],
 		["components/SearchLoadingExperience.tsx", "search loading footer"],

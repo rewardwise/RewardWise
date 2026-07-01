@@ -6,13 +6,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mockRedirect = vi.fn((url: string) => {
   throw new Error(`REDIRECT:${url}`);
 });
+const mockPermanentRedirect = vi.fn((url: string) => {
+  throw new Error(`PERMANENT_REDIRECT:${url}`);
+});
 
 vi.mock("next/navigation", () => ({
   redirect: mockRedirect,
+  permanentRedirect: mockPermanentRedirect,
 }));
 
 beforeEach(() => {
   mockRedirect.mockClear();
+  mockPermanentRedirect.mockClear();
 });
 
 describe("dead-route redirects", () => {
@@ -38,5 +43,11 @@ describe("dead-route redirects", () => {
     const mod = await import("../app/dashboard/page");
     expect(() => mod.default()).toThrow("REDIRECT:/");
     expect(mockRedirect).toHaveBeenCalledWith("/");
+  });
+
+  it("/trips → /history?tab=booked (permanent, 8b fold)", async () => {
+    const mod = await import("../app/trips/page");
+    expect(() => mod.default()).toThrow("PERMANENT_REDIRECT:/history?tab=booked");
+    expect(mockPermanentRedirect).toHaveBeenCalledWith("/history?tab=booked");
   });
 });
