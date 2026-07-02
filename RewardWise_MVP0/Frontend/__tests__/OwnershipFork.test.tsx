@@ -5,8 +5,9 @@ import React, { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { trackMock } = vi.hoisted(() => ({ trackMock: vi.fn() }));
+const { trackMock, pushMock } = vi.hoisted(() => ({ trackMock: vi.fn(), pushMock: vi.fn() }));
 vi.mock("../utils/analytics/client", () => ({ trackAnalyticsEvent: trackMock }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: pushMock }) }));
 
 import OwnershipFork from "../components/verdict/OwnershipFork";
 import type { Ownership } from "../types/verdict";
@@ -20,6 +21,7 @@ beforeEach(() => {
 	document.body.appendChild(container);
 	root = createRoot(container);
 	trackMock.mockClear();
+	pushMock.mockClear();
 });
 afterEach(() => {
 	act(() => root.unmount());
@@ -122,5 +124,53 @@ describe("OwnershipFork — b3 short", () => {
 		expect(q("ownership-fork")?.textContent).toContain("Amex MR");
 		// 2026-05-14 is well past 30 days → a disclaimer renders (stale or warn).
 		expect(q("freshness")).not.toBeNull();
+	});
+});
+
+describe("OwnershipFork — b1 logged_out (8c guest)", () => {
+	const guest: Ownership = { ...BASE, fork_reason: "logged_out" };
+
+	it("renders the connect-wallet invite + both CTAs", () => {
+		render(guest);
+		const fork = q("ownership-fork");
+		expect(fork?.getAttribute("data-fork")).toBe("logged_out");
+		expect(fork?.textContent).toContain("Connect your wallet to see personalized recommendations.");
+		expect(fork?.textContent).toContain("best value on this trip");
+		expect(q("fork-connect-wallet")).not.toBeNull();
+		expect(q("fork-continue-guest")).not.toBeNull();
+	});
+
+	it("fires ownership_fork_shown with fork_reason=logged_out and logged_in:false", () => {
+		render(guest);
+		expect(trackMock).toHaveBeenCalledWith(
+			"ownership_fork_shown",
+			expect.objectContaining({
+				metadata: expect.objectContaining({ fork_reason: "logged_out", logged_in: false }),
+			}),
+		);
+	});
+
+	it("Connect wallet → cta analytics + routes to /signup?returnTo=", () => {
+		render(guest);
+		act(() => {
+			(q("fork-connect-wallet") as HTMLButtonElement).click();
+		});
+		expect(trackMock).toHaveBeenCalledWith(
+			"ownership_fork_cta_click",
+			expect.objectContaining({ metadata: expect.objectContaining({ cta: "connect_wallet", fork_reason: "logged_out" }) }),
+		);
+		expect(pushMock).toHaveBeenCalledWith(expect.stringContaining("/signup?returnTo="));
+	});
+
+	it("Continue as guest → cta analytics + dismisses the fork", () => {
+		render(guest);
+		act(() => {
+			(q("fork-continue-guest") as HTMLButtonElement).click();
+		});
+		expect(trackMock).toHaveBeenCalledWith(
+			"ownership_fork_cta_click",
+			expect.objectContaining({ metadata: expect.objectContaining({ cta: "continue_guest" }) }),
+		);
+		expect(q("ownership-fork")).toBeNull(); // dismissed
 	});
 });
