@@ -7,31 +7,25 @@ import { useEffect, useState } from "react";
 import {
   ArrowRight,
   BarChart3,
-  CalendarClock,
-  ChevronRight,
-  Clock3,
   Coffee,
   CreditCard,
-  Crown,
   Edit3,
   Loader2,
   LogOut,
-  Mail,
-  PlaneTakeoff,
   Save,
   ShieldCheck,
-  Sparkles,
-  Star,
+  SlidersHorizontal,
   Trash2,
   User,
   Wallet,
   X,
 } from "lucide-react";
 
-import TropicalBackground from "@/components/TropicalBackground";
 import CancelReasonModal, {
   type CancelReasonPayload,
 } from "@/components/billing/CancelReasonModal";
+import WalletManager from "@/components/profile/WalletManager";
+import PreferencesForm from "@/components/profile/PreferencesForm";
 import { useAuth } from "@/context/AuthProvider";
 import { createClient } from "@/utils/supabase/client";
 import {
@@ -48,55 +42,41 @@ type BillingDetails = {
   stripe_subscription_id: string | null;
 };
 
-type ProfileSection = "account" | "subscription" | "actions";
+type ProfileSection = "account" | "billing" | "wallet" | "preferences";
 
 function formatBillingDate(value?: string | null) {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  return new Intl.DateTimeFormat(undefined, {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  }).format(date);
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(date);
 }
-
 function formatMemberSince(value?: string | null) {
   if (!value) return "Recently joined";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Recently joined";
-  return new Intl.DateTimeFormat(undefined, {
-    month: "long",
-    year: "numeric",
-  }).format(date);
+  return new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }).format(date);
 }
-
 function getInitial(name?: string | null, email?: string | null) {
-  const source = name?.trim() || email?.trim() || "User";
-  return source.charAt(0).toUpperCase();
+  return (name?.trim() || email?.trim() || "User").charAt(0).toUpperCase();
 }
-
 function getStoredDisplayName(userMetadata?: Record<string, unknown> | null) {
   const fullName = userMetadata?.full_name;
   const name = userMetadata?.name;
-
   if (typeof fullName === "string" && fullName.trim()) return fullName.trim();
   if (typeof name === "string" && name.trim()) return name.trim();
   return "";
 }
+
+const card = "rounded-2xl border border-mtw-border bg-white shadow-mtw-ambient";
 
 export default function ProfilePage() {
   const router = useRouter();
   const { user, signOut, subscription } = useAuth();
 
   const [dayPassExpiresAt, setDayPassExpiresAt] = useState<number | null>(null);
-  const [billingDetails, setBillingDetails] = useState<BillingDetails | null>(
-    null,
-  );
+  const [billingDetails, setBillingDetails] = useState<BillingDetails | null>(null);
   const [billingError, setBillingError] = useState("");
-  const [billingLoading, setBillingLoading] = useState<
-    "portal" | "cancel" | null
-  >(null);
+  const [billingLoading, setBillingLoading] = useState<"portal" | "cancel" | null>(null);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [timeNow, setTimeNow] = useState(Date.now());
   const [canViewAnalytics, setCanViewAnalytics] = useState(false);
@@ -122,7 +102,6 @@ export default function ProfilePage() {
       setBillingDetails(null);
       return;
     }
-
     let cancelled = false;
 
     void supabase
@@ -132,65 +111,44 @@ export default function ProfilePage() {
       .maybeSingle()
       .then(({ data }) => {
         if (cancelled) return;
-        const expiry = data?.day_pass_expires_at
-          ? new Date(data.day_pass_expires_at).getTime()
-          : 0;
+        const expiry = data?.day_pass_expires_at ? new Date(data.day_pass_expires_at).getTime() : 0;
         setDayPassExpiresAt(expiry > 0 ? expiry : null);
       });
 
     void supabase
       .from("subscriptions")
-      .select(
-        "status, current_period_end, cancel_at_period_end, stripe_subscription_id",
-      )
+      .select("status, current_period_end, cancel_at_period_end, stripe_subscription_id")
       .eq("user_id", user.id)
       .maybeSingle()
       .then(async ({ data, error }) => {
         if (cancelled) return;
         if (error) {
-          console.warn("Could not load billing details", error);
           setBillingDetails(null);
           return;
         }
-        const nextBillingDetails = (data as BillingDetails | null) ?? null;
-        setBillingDetails(nextBillingDetails);
-
-        if (
-          nextBillingDetails?.stripe_subscription_id &&
-          nextBillingDetails.status === "active" &&
-          !nextBillingDetails.current_period_end
-        ) {
+        const next = (data as BillingDetails | null) ?? null;
+        setBillingDetails(next);
+        if (next?.stripe_subscription_id && next.status === "active" && !next.current_period_end) {
           try {
             const syncRes = await fetch("/api/payments/sync-subscription", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               cache: "no-store",
             });
-            const syncData = (await syncRes.json()) as {
-              billing?: BillingDetails;
-            };
-
-            if (!cancelled && syncRes.ok && syncData.billing) {
-              setBillingDetails(syncData.billing);
-            }
-          } catch (syncError) {
-            console.warn("Could not sync billing date", syncError);
+            const syncData = (await syncRes.json()) as { billing?: BillingDetails };
+            if (!cancelled && syncRes.ok && syncData.billing) setBillingDetails(syncData.billing);
+          } catch {
+            /* non-fatal */
           }
         }
       });
 
     (async () => {
       try {
-        const res = await fetch("/api/admin/analytics/access", {
-          cache: "no-store",
-        });
+        const res = await fetch("/api/admin/analytics/access", { cache: "no-store" });
         const data = (await res.json()) as { canViewAnalytics?: boolean };
-
-        if (!cancelled) {
-          setCanViewAnalytics(Boolean(data.canViewAnalytics));
-        }
-      } catch (error) {
-        console.warn("Could not check analytics admin access", error);
+        if (!cancelled) setCanViewAnalytics(Boolean(data.canViewAnalytics));
+      } catch {
         if (!cancelled) setCanViewAnalytics(false);
       }
     })();
@@ -210,34 +168,18 @@ export default function ProfilePage() {
     const msLeft = dayPassExpiresAt - timeNow;
     if (msLeft <= 0) return null;
     const totalMinutes = Math.ceil(msLeft / 60_000);
-    const hours = Math.floor(totalMinutes / 60);
-    const minutes = totalMinutes % 60;
-    return `${hours}h ${minutes}m`;
+    return `${Math.floor(totalMinutes / 60)}h ${totalMinutes % 60}m`;
   })();
 
   const hasActiveDayPass = Boolean(dayPassTimeLeft);
-  const planLabel =
-    subscription === "pro"
-      ? "Monthly Plan"
-      : hasActiveDayPass
-        ? "Day Pass"
-        : "Free Plan";
+  const planLabel = subscription === "pro" ? "Monthly Plan" : hasActiveDayPass ? "Day Pass" : "Free Plan";
   const planStatusLabel =
-    subscription === "pro"
-      ? "Pro access"
-      : hasActiveDayPass
-        ? `${dayPassTimeLeft} left`
-        : "Limited access";
+    subscription === "pro" ? "Pro access" : hasActiveDayPass ? `${dayPassTimeLeft} left` : "Limited access";
   const accessEndsLabel = formatBillingDate(billingDetails?.current_period_end);
-  const cancellationScheduled =
-    subscription === "pro" && Boolean(billingDetails?.cancel_at_period_end);
-  const billingDateTitle = cancellationScheduled
-    ? "Access ends"
-    : "Next billing date";
+  const cancellationScheduled = subscription === "pro" && Boolean(billingDetails?.cancel_at_period_end);
+  const billingDateTitle = cancellationScheduled ? "Access ends" : "Next billing date";
   const billingDateValue =
-    subscription === "pro"
-      ? accessEndsLabel || "No monthly billing date yet"
-      : "No recurring billing";
+    subscription === "pro" ? accessEndsLabel || "No monthly billing date yet" : "No recurring billing";
   const displayName = profileName || "Add your name";
   const profileInitial = getInitial(profileName, user?.email);
   const memberSince = formatMemberSince(user?.created_at);
@@ -251,12 +193,10 @@ export default function ProfilePage() {
         headers: { "Content-Type": "application/json" },
       });
       const data = (await res.json()) as { url?: string; error?: string };
-
       if (data.url) {
         window.location.href = data.url;
         return;
       }
-
       setBillingError(data.error || "Could not open billing settings.");
     } catch {
       setBillingError("Could not open billing settings.");
@@ -273,26 +213,17 @@ export default function ProfilePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(reason),
       });
-      const data = (await res.json()) as {
-        ok?: boolean;
-        accessEndsAt?: string | null;
-        error?: string;
-      };
-
+      const data = (await res.json()) as { ok?: boolean; accessEndsAt?: string | null; error?: string };
       if (!res.ok || !data.ok) {
-        setBillingError(
-          data.error || "Could not schedule cancellation. Please try again.",
-        );
+        setBillingError(data.error || "Could not schedule cancellation. Please try again.");
         setBillingLoading(null);
         return;
       }
-
       setBillingDetails((prev) => ({
         status: prev?.status ?? "active",
         stripe_subscription_id: prev?.stripe_subscription_id ?? null,
         cancel_at_period_end: true,
-        current_period_end:
-          data.accessEndsAt ?? prev?.current_period_end ?? null,
+        current_period_end: data.accessEndsAt ?? prev?.current_period_end ?? null,
       }));
       setCancelModalOpen(false);
     } catch {
@@ -304,21 +235,13 @@ export default function ProfilePage() {
   const saveProfileName = async () => {
     setProfileMessage("");
     setProfileSaving(true);
-
     const nextName = profileDraftName.trim();
     try {
-      const { error } = await supabase.auth.updateUser({
-        data: {
-          full_name: nextName,
-          name: nextName,
-        },
-      });
-
+      const { error } = await supabase.auth.updateUser({ data: { full_name: nextName, name: nextName } });
       if (error) {
         setProfileMessage("Could not save profile changes.");
         return;
       }
-
       setProfileName(nextName);
       setProfileDraftName(nextName);
       setIsEditingProfile(false);
@@ -330,569 +253,263 @@ export default function ProfilePage() {
     }
   };
 
-  const tools = [
-    {
-      icon: Wallet,
-      label: "My Wallet",
-      desc: "Cards, balances, and programs",
-      page: "/wallet-setup",
-    },
-    {
-      icon: PlaneTakeoff,
-      label: "New Search",
-      desc: "Compare cash vs points",
-      page: "/home",
-    },
-    {
-      icon: BarChart3,
-      label: "Health Check",
-      desc: "Review your rewards setup",
-      page: "/health-check",
-    },
-    {
-      icon: Coffee,
-      label: "Concierge",
-      desc: "Human help from $19",
-      page: "/concierge",
-    },
-    {
-      icon: Star,
-      label: "Past Searches",
-      desc: "Revisit previous verdicts",
-      page: "/history",
-    },
-  ];
-
-  const sectionNav: Array<{
-    key: ProfileSection;
-    label: string;
-    desc: string;
-    icon: typeof User;
-  }> = [
-    {
-      key: "account",
-      label: "Account",
-      desc: "Personal info",
-      icon: User,
-    },
-    {
-      key: "subscription",
-      label: "Subscription",
-      desc: "Plan & billing",
-      icon: CreditCard,
-    },
-    {
-      key: "actions",
-      label: "Actions",
-      desc: "Travel tools",
-      icon: PlaneTakeoff,
-    },
-  ];
-
-  const planDescription =
-    subscription === "pro"
-      ? cancellationScheduled
-        ? `Your Pro access stays active through ${accessEndsLabel || "the end of your billing period"}.`
-        : "You have monthly access to MyTravelWallet features."
-      : hasActiveDayPass
-        ? `Your day pass is active for ${dayPassTimeLeft}.`
-        : "You can still manage your account and upgrade when ready.";
-
-  const billingDescription =
-    subscription === "pro"
-      ? cancellationScheduled
-        ? `Cancellation is scheduled. Access remains active until ${accessEndsLabel || "your billing period ends"}.`
-        : accessEndsLabel
-          ? `Your next billing date is ${accessEndsLabel}. You can cancel at period end anytime.`
-          : "Manage your monthly subscription or cancel at period end."
-      : "View available plans if you want a day pass, monthly access, or concierge help.";
-
   const handleLogOut = async () => {
     await signOut();
     router.replace("/");
   };
 
   const handleDeleteAccount = async () => {
-    if (!confirm("This will permanently delete your account. Continue?")) {
-      return;
-    }
-
+    if (!window.confirm("This will permanently delete your account. Continue?")) return;
     const {
       data: { session },
     } = await supabase.auth.getSession();
-
     if (!session) {
       alert(DELETE_NOT_SIGNED_IN);
       return;
     }
-
     const delRes = await fetch("/api/delete-account", {
       method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-      },
+      headers: { Authorization: `Bearer ${session.access_token}` },
     });
-    const delData = (await delRes.json().catch(() => ({}))) as {
-      error?: string;
-    };
-
+    const delData = await delRes.json().catch(() => ({}));
     if (!delRes.ok) {
-      alert(delData.error || DELETE_ACCOUNT_FAILED);
+      alert((delData as { error?: string }).error || DELETE_ACCOUNT_FAILED);
       return;
     }
-
     await signOut();
     router.replace("/");
   };
 
+  // Tools fold (from the old Actions launcher): nav-redundant links dropped;
+  // Concierge + Health kept; Admin only when the user is a PM tester.
+  const tools = [
+    { icon: Coffee, label: "Concierge", desc: "Human help from $19", page: "/concierge" },
+    { icon: BarChart3, label: "Health check-in", desc: "Review your rewards setup", page: "/health-check" },
+    ...(canViewAnalytics
+      ? [{ icon: ShieldCheck, label: "Product analytics", desc: "Admin dashboard", page: "/admin/analytics" }]
+      : []),
+  ];
+
+  const sectionNav: Array<{ key: ProfileSection; label: string; icon: typeof User }> = [
+    { key: "account", label: "Account", icon: User },
+    { key: "billing", label: "Billing", icon: CreditCard },
+    { key: "wallet", label: "Wallet", icon: Wallet },
+    { key: "preferences", label: "Preferences", icon: SlidersHorizontal },
+  ];
+
   return (
-    <div className="relative min-h-screen overflow-hidden bg-gradient-to-b from-slate-900 via-slate-800 to-cyan-950 text-white">
-      <TropicalBackground />
-      <div className="relative z-10">
-        <main className="mx-auto w-full max-w-6xl px-4 py-5 sm:px-6 sm:py-8 lg:flex lg:min-h-screen lg:items-center lg:px-8">
-          <section className="w-full overflow-hidden rounded-2xl border border-white/10 bg-slate-950/88 shadow-2xl shadow-slate-950/45 backdrop-blur-xl sm:rounded-[2rem] lg:grid lg:grid-cols-[88px_minmax(0,1fr)]">
-            <aside className="border-b border-white/10 bg-white/[0.035] p-2 sm:p-3 lg:border-b-0 lg:border-r">
-              <div className="grid grid-cols-4 gap-1 lg:flex lg:flex-col lg:items-center lg:gap-2">
-                <div className="hidden h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-emerald-300/25 bg-emerald-300/10 font-black text-emerald-100 lg:flex">
-                  {profileInitial}
-                </div>
+    <main className="font-mtw mx-auto max-w-6xl px-4 py-8 sm:px-6 lg:px-8">
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-mtw-ink">Profile</h1>
+        <p className="mt-1 text-mtw-small text-mtw-muted">Account, billing, wallet, and search preferences.</p>
+      </div>
 
-                <div className="hidden h-px w-10 shrink-0 bg-white/10 lg:block" />
+      <div className="lg:grid lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-6 lg:items-start">
+        {/* Sidebar (horizontal scroll on mobile) */}
+        <nav className="mb-4 flex gap-2 overflow-x-auto lg:mb-0 lg:flex-col" aria-label="Profile sections">
+          {sectionNav.map((item) => {
+            const Icon = item.icon;
+            const active = activeSection === item.key;
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => setActiveSection(item.key)}
+                data-testid={`profile-nav-${item.key}`}
+                aria-current={active ? "page" : undefined}
+                className={`inline-flex shrink-0 items-center gap-2 rounded-mtw px-3 py-2.5 text-mtw-small font-medium transition-colors lg:w-full ${
+                  active
+                    ? "bg-mtw-emerald text-white"
+                    : "border border-mtw-border bg-white text-mtw-muted hover:text-mtw-ink"
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                {item.label}
+              </button>
+            );
+          })}
+        </nav>
 
-                {sectionNav.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = activeSection === item.key;
-
-                  return (
-                    <button
-                      key={item.key}
-                      type="button"
-                      onClick={() => setActiveSection(item.key)}
-                      className={`group flex min-w-0 flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-center transition sm:rounded-2xl lg:min-w-0 lg:px-2 ${
-                        isActive
-                          ? "bg-emerald-400 text-slate-950 shadow-lg shadow-emerald-950/20"
-                          : "text-slate-400 hover:bg-white/[0.06] hover:text-white"
-                      }`}
-                      aria-pressed={isActive}
-                    >
-                      <Icon className="h-4 w-4 shrink-0" />
-                      <span className="truncate text-[10px] font-bold leading-none sm:text-xs lg:hidden">
-                        {item.label}
-                      </span>
-                      <span className="hidden text-[10px] font-bold uppercase tracking-wide lg:block">
-                        {item.label.slice(0, 3)}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </aside>
-
-            <div className="min-h-0 bg-slate-950/35 p-3 sm:p-6 lg:min-h-[660px] lg:p-7">
-              <div className="mb-5 hidden flex-col gap-3 border-b border-white/10 pb-4 sm:mb-6 sm:flex sm:flex-row sm:items-end sm:justify-between sm:pb-5">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-200/75">
-                    Account Settings
-                  </p>
-                  <h1 className="mt-2 text-xl font-bold tracking-tight text-white sm:text-3xl">
-                    {
-                      sectionNav.find((item) => item.key === activeSection)
-                        ?.label
-                    }
-                  </h1>
-                  <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-400">
-                    {activeSection === "account" &&
-                      "Personal details and account controls."}
-                    {activeSection === "subscription" &&
-                      "Your current plan, billing date, and cancellation options."}
-                    {activeSection === "actions" &&
-                      "Fast paths back into the tools you use most."}
-                  </p>
-                </div>
-              </div>
-
-              {activeSection === "account" && (
-                <div className="space-y-3 sm:space-y-5">
-                  <div className="grid gap-3 sm:gap-5 xl:grid-cols-2">
-                    <section className="flex min-h-0 flex-col rounded-[1.25rem] border border-white/10 bg-white/[0.045] p-3 sm:min-h-[220px] sm:rounded-[1.5rem] sm:p-5">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-                        <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-                          <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-emerald-300/25 bg-emerald-300/12 text-lg font-black text-emerald-100 sm:h-16 sm:w-16 sm:text-2xl">
-                            {profileInitial}
-                            <span className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border border-slate-950 bg-emerald-400 text-slate-950">
-                              <ShieldCheck className="h-3.5 w-3.5" />
-                            </span>
-                          </div>
-
-                          <div className="min-w-0">
-                            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500 sm:text-xs">
-                              Profile details
-                            </p>
-                            <h2 className="mt-1 truncate text-lg font-bold text-white sm:text-2xl">
-                              {displayName}
-                            </h2>
-                            <p className="mt-1 flex items-center gap-2 truncate text-xs font-medium text-slate-300 sm:mt-2 sm:text-sm">
-                              <Mail className="h-4 w-4 shrink-0 text-slate-500" />
-                              {user?.email || "Not available"}
-                            </p>
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setProfileDraftName(profileName);
-                            setProfileMessage("");
-                            setIsEditingProfile((value) => !value);
-                          }}
-                          className="inline-flex w-full shrink-0 items-center justify-center gap-2 rounded-xl border border-white/10 bg-slate-950/55 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/10 sm:w-auto"
-                        >
-                          {isEditingProfile ? (
-                            <>
-                              <X className="h-3.5 w-3.5" />
-                              Close
-                            </>
-                          ) : (
-                            <>
-                              <Edit3 className="h-3.5 w-3.5" />
-                              Edit profile
-                            </>
-                          )}
-                        </button>
-                      </div>
-
-                      <div className="mt-auto grid grid-cols-2 gap-2 pt-3 sm:gap-3 sm:pt-5">
-                        <div className="rounded-xl border border-white/10 bg-slate-950/40 p-3 sm:rounded-2xl sm:p-4">
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                            Member since
-                          </p>
-                          <p className="mt-2 text-sm font-semibold text-slate-100">
-                            {memberSince}
-                          </p>
-                        </div>
-                        <div className="rounded-xl border border-white/10 bg-slate-950/40 p-3 sm:rounded-2xl sm:p-4">
-                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
-                            Account status
-                          </p>
-                          <p className="mt-2 text-sm font-semibold text-slate-100">
-                            {planStatusLabel}
-                          </p>
-                        </div>
-                      </div>
-                    </section>
-
-                    <section className="flex min-h-0 flex-col rounded-[1.25rem] border border-emerald-300/20 bg-emerald-300/[0.08] p-3 sm:min-h-[220px] sm:rounded-[1.5rem] sm:p-5">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-                        <div>
-                          <p className="inline-flex items-center gap-2 rounded-full border border-emerald-300/20 bg-emerald-300/10 px-3 py-1 text-xs font-semibold text-emerald-100">
-                            <Sparkles className="h-3.5 w-3.5" />
-                            Current plan
-                          </p>
-                          <h2 className="mt-2 text-lg font-bold text-white sm:mt-3 sm:text-2xl">
-                            {planLabel}
-                          </h2>
-                        </div>
-                        <span className="rounded-full border border-white/10 bg-slate-950/45 px-3 py-1 text-xs font-bold text-emerald-100">
-                          {planStatusLabel}
-                        </span>
-                      </div>
-                      <p className="mt-2 hidden text-sm leading-6 text-emerald-50/75 sm:mt-3 sm:block sm:min-h-[48px]">
-                        {planDescription}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => setActiveSection("subscription")}
-                        className="mt-3 flex w-full items-center justify-between rounded-xl bg-slate-950/45 px-3 py-2.5 text-left text-xs font-bold text-emerald-100 transition hover:bg-slate-950/65 sm:mt-auto sm:rounded-2xl sm:px-4 sm:py-3 sm:text-sm"
-                      >
-                        Open billing settings
-                        <ArrowRight className="h-4 w-4" />
-                      </button>
-                    </section>
+        <section className="min-w-0">
+          {/* ACCOUNT */}
+          {activeSection === "account" && (
+            <div className="space-y-4">
+              <div className={`p-5 ${card}`}>
+                <div className="flex items-start gap-4">
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-mtw-emerald text-lg font-semibold text-white">
+                    {profileInitial}
                   </div>
-
-                  {isEditingProfile && (
-                    <section className="rounded-[1.25rem] border border-emerald-300/15 bg-emerald-300/[0.06] p-4 sm:rounded-[1.5rem] sm:p-5">
-                      <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
-                        <div className="flex-1">
-                          <label className="block text-xs font-semibold uppercase tracking-[0.16em] text-emerald-100/75">
-                            Display name
-                          </label>
-                          <input
-                            value={profileDraftName}
-                            onChange={(event) =>
-                              setProfileDraftName(event.target.value)
-                            }
-                            placeholder="Add your name"
-                            className="mt-2 min-h-11 w-full rounded-xl border border-white/10 bg-slate-950/60 px-4 text-sm text-white outline-none transition placeholder:text-slate-500 focus:border-emerald-300/60 focus:ring-2 focus:ring-emerald-300/15"
-                          />
-                        </div>
-
+                  <div className="min-w-0 flex-1">
+                    {isEditingProfile ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <input
+                          value={profileDraftName}
+                          onChange={(e) => setProfileDraftName(e.target.value)}
+                          placeholder="Your name"
+                          data-testid="profile-name-input"
+                          className="min-w-0 flex-1 rounded-mtw border border-mtw-border bg-white px-3 py-2 text-mtw-small text-mtw-ink outline-none focus:border-mtw-emerald"
+                        />
                         <button
                           type="button"
                           onClick={saveProfileName}
                           disabled={profileSaving}
-                          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-400 px-4 py-3 text-sm font-bold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60 lg:w-auto"
+                          className="inline-flex items-center gap-1 rounded-mtw bg-mtw-emerald px-3 py-2 text-mtw-small font-semibold text-white disabled:opacity-50"
                         >
-                          {profileSaving ? (
-                            <>
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                              Saving
-                            </>
-                          ) : (
-                            <>
-                              <Save className="h-4 w-4" />
-                              Save profile
-                            </>
-                          )}
+                          {profileSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Save
                         </button>
-                      </div>
-                    </section>
-                  )}
-
-                  {profileMessage && (
-                    <p className="rounded-xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm text-slate-200">
-                      {profileMessage}
-                    </p>
-                  )}
-
-                  <section className="rounded-[1.25rem] border border-white/10 bg-white/[0.04] p-3 sm:rounded-[1.5rem] sm:p-5">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          Account controls
-                        </p>
-                        <h2 className="mt-1 text-base font-bold text-white sm:mt-2 sm:text-xl">
-                          Session and account access
-                        </h2>
-                      </div>
-                      <p className="hidden max-w-md text-sm leading-6 text-slate-400 sm:block">
-                        Sign out of this device or permanently delete your
-                        MyTravelWallet account.
-                      </p>
-                    </div>
-
-                    <div className="mt-3 grid gap-2 sm:mt-5 sm:grid-cols-2 sm:gap-3">
-                      <button
-                        type="button"
-                        onClick={handleLogOut}
-                        className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-950/45 px-3 py-2.5 text-left transition hover:bg-white/[0.07] sm:rounded-2xl sm:px-4 sm:py-3"
-                      >
-                        <span className="inline-flex items-center gap-3 text-sm font-semibold text-slate-200">
-                          <LogOut className="h-4 w-4 text-slate-400" />
-                          Log out
-                        </span>
-                        <ChevronRight className="h-4 w-4 text-slate-500" />
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={handleDeleteAccount}
-                        className="flex items-center justify-between rounded-xl border border-red-400/20 bg-red-500/10 px-3 py-2.5 text-left transition hover:bg-red-500/15 sm:rounded-2xl sm:px-4 sm:py-3"
-                      >
-                        <span className="inline-flex items-center gap-3 text-sm font-semibold text-red-100">
-                          <Trash2 className="h-4 w-4 text-red-300" />
-                          Delete account
-                        </span>
-                        <ChevronRight className="h-4 w-4 text-red-300/70" />
-                      </button>
-                    </div>
-                  </section>
-                </div>
-              )}
-
-              {activeSection === "subscription" && (
-                <div className="grid gap-3 sm:gap-5 xl:grid-cols-[0.95fr_1.05fr]">
-                  <section className="rounded-[1.25rem] border border-emerald-300/20 bg-emerald-300/[0.08] p-3 sm:rounded-[1.5rem] sm:p-5">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-100/75">
-                          Current plan
-                        </p>
-                        <h2 className="mt-1 text-xl font-bold text-white sm:mt-2 sm:text-3xl">
-                          {planLabel}
-                        </h2>
-                      </div>
-                      <span className="rounded-full border border-white/10 bg-slate-950/45 px-3 py-1 text-xs font-bold text-emerald-100">
-                        {planStatusLabel}
-                      </span>
-                    </div>
-
-                    <p className="mt-2 text-sm leading-6 text-emerald-50/75 sm:mt-4">
-                      {planDescription}
-                    </p>
-
-                    <div className="mt-3 grid gap-2 sm:mt-5 sm:grid-cols-2 sm:gap-3 xl:grid-cols-1 2xl:grid-cols-2">
-                      <div className="rounded-xl border border-white/10 bg-slate-950/35 p-3 sm:rounded-2xl sm:p-4">
-                        <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
-                          <CalendarClock className="h-4 w-4 text-emerald-300" />
-                          {billingDateTitle}
-                        </div>
-                        <p className="mt-2 text-sm text-slate-300">
-                          {billingDateValue}
-                        </p>
-                      </div>
-                      <div className="rounded-xl border border-white/10 bg-slate-950/35 p-3 sm:rounded-2xl sm:p-4">
-                        <div className="flex items-center gap-2 text-sm font-semibold text-slate-100">
-                          <Clock3 className="h-4 w-4 text-cyan-300" />
-                          Day pass
-                        </div>
-                        <p className="mt-2 text-sm text-slate-300">
-                          {hasActiveDayPass
-                            ? `${dayPassTimeLeft} remaining`
-                            : "Inactive"}
-                        </p>
-                      </div>
-                    </div>
-                  </section>
-
-                  <section className="rounded-[1.25rem] border border-white/10 bg-white/[0.045] p-3 sm:rounded-[1.5rem] sm:p-5">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          Plan & Billing
-                        </p>
-                        <h2 className="mt-1 text-base font-bold text-white sm:mt-2 sm:text-xl">
-                          Billing management
-                        </h2>
-                      </div>
-                      <CreditCard className="h-5 w-5 text-emerald-300" />
-                    </div>
-
-                    <p className="mt-3 text-sm leading-6 text-slate-400">
-                      {billingDescription}
-                    </p>
-
-                    {billingError && (
-                      <p className="mt-4 rounded-xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-sm text-red-100">
-                        {billingError}
-                      </p>
-                    )}
-
-                    <div className="mt-3 space-y-2 sm:mt-5 sm:space-y-3">
-                      {subscription === "pro" ? (
-                        <>
-                          <button
-                            type="button"
-                            onClick={openBillingPortal}
-                            disabled={billingLoading !== null}
-                            className="flex w-full items-center justify-between rounded-xl bg-emerald-400 px-3 py-2.5 text-left text-sm font-bold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-not-allowed disabled:opacity-60 sm:rounded-2xl sm:px-4 sm:py-3"
-                          >
-                            <span className="inline-flex items-center gap-2">
-                              {billingLoading === "portal" ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                <CreditCard className="h-4 w-4" />
-                              )}
-                              Manage billing
-                            </span>
-                            <ArrowRight className="h-4 w-4" />
-                          </button>
-
-                          {cancellationScheduled ? (
-                            <p className="rounded-2xl border border-amber-300/25 bg-amber-300/10 px-4 py-3 text-sm leading-6 text-amber-50">
-                              Your subscription is scheduled to end on{" "}
-                              {accessEndsLabel ||
-                                "the end of your billing period"}
-                              .
-                            </p>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => setCancelModalOpen(true)}
-                              disabled={billingLoading !== null}
-                              data-testid="open-cancel-modal"
-                              className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-slate-950/45 px-3 py-2.5 text-left text-sm font-semibold text-slate-200 transition hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-60 sm:rounded-2xl sm:px-4 sm:py-3"
-                            >
-                              <span className="inline-flex items-center gap-2">
-                                {billingLoading === "cancel" ? (
-                                  <Loader2 className="h-4 w-4 animate-spin" />
-                                ) : (
-                                  <CalendarClock className="h-4 w-4" />
-                                )}
-                                Cancel at period end
-                              </span>
-                              <ChevronRight className="h-4 w-4" />
-                            </button>
-                          )}
-                        </>
-                      ) : (
                         <button
                           type="button"
-                          onClick={() => router.push("/subscribe")}
-                          className="flex w-full items-center justify-between rounded-xl bg-emerald-400 px-3 py-2.5 text-left text-sm font-bold text-slate-950 transition hover:bg-emerald-300 sm:rounded-2xl sm:px-4 sm:py-3"
+                          onClick={() => {
+                            setIsEditingProfile(false);
+                            setProfileDraftName(profileName);
+                          }}
+                          aria-label="Cancel"
+                          className="rounded-mtw border border-mtw-border p-2 text-mtw-muted hover:text-mtw-ink"
                         >
-                          <span className="inline-flex items-center gap-2">
-                            <Crown className="h-4 w-4" />
-                            View plan options
-                          </span>
-                          <ArrowRight className="h-4 w-4" />
+                          <X className="h-4 w-4" />
                         </button>
-                      )}
-                    </div>
-                  </section>
-                </div>
-              )}
-
-              {activeSection === "actions" && (
-                <div className="space-y-4 sm:space-y-5">
-                  <div className="grid gap-2 sm:grid-cols-2 sm:gap-3 xl:grid-cols-3">
-                    {tools.map((tool) => (
-                      <button
-                        key={tool.label}
-                        type="button"
-                        onClick={() => router.push(tool.page)}
-                        className="group rounded-2xl border border-white/10 bg-white/[0.045] p-3 text-left transition hover:-translate-y-0.5 hover:border-emerald-300/25 hover:bg-white/[0.07] sm:rounded-[1.35rem] sm:p-4"
-                      >
-                        <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-900/80 text-emerald-300 ring-1 ring-white/10">
-                          <tool.icon className="h-5 w-5" />
-                        </div>
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-sm font-bold text-white">
-                            {tool.label}
-                          </p>
-                          <ChevronRight className="h-4 w-4 text-slate-500 transition group-hover:translate-x-0.5 group-hover:text-emerald-200" />
-                        </div>
-                        <p className="mt-1 text-xs leading-5 text-slate-400">
-                          {tool.desc}
-                        </p>
-                      </button>
-                    ))}
-                  </div>
-
-                  {canViewAnalytics && (
-                    <section className="rounded-[1.25rem] border border-emerald-300/20 bg-emerald-300/10 p-4 sm:rounded-[1.5rem] sm:p-5">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-100/75">
-                            Admin only
-                          </p>
-                          <h2 className="mt-1 text-xl font-bold text-white">
-                            Product Analytics
-                          </h2>
-                          <p className="mt-2 text-sm leading-6 text-emerald-50/75">
-                            Review tester usage, route demand, Zoe activity, and
-                            app behavior.
-                          </p>
-                        </div>
-                        <BarChart3 className="h-5 w-5 text-emerald-200" />
                       </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <p className="truncate text-mtw-title font-semibold text-mtw-ink">{displayName}</p>
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingProfile(true)}
+                          aria-label="Edit name"
+                          className="text-mtw-muted hover:text-mtw-ink"
+                        >
+                          <Edit3 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    )}
+                    <p className="mt-1 truncate text-mtw-small text-mtw-muted">{user?.email}</p>
+                    <p className="mt-1 text-xs text-mtw-muted">Member since {memberSince}</p>
+                    {profileMessage && <p className="mt-1 text-xs text-mtw-emerald">{profileMessage}</p>}
+                  </div>
+                </div>
+              </div>
 
-                      <button
-                        type="button"
-                        onClick={() => router.push("/admin/analytics")}
-                        className="mt-5 flex w-full items-center justify-between rounded-2xl bg-emerald-300 px-4 py-3 text-left text-sm font-bold text-slate-950 transition hover:bg-emerald-200"
-                      >
-                        Open dashboard
-                        <ArrowRight className="h-4 w-4" />
-                      </button>
-                    </section>
-                  )}
+              {/* Tools */}
+              {tools.length > 0 && (
+                <div className={`overflow-hidden ${card}`}>
+                  <p className="border-b border-mtw-border px-5 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-mtw-muted">
+                    Tools
+                  </p>
+                  <div className="divide-y divide-mtw-border">
+                    {tools.map((t) => {
+                      const Icon = t.icon;
+                      return (
+                        <button
+                          key={t.label}
+                          type="button"
+                          onClick={() => router.push(t.page)}
+                          data-testid={`profile-tool-${t.label.toLowerCase().replace(/\s+/g, "-")}`}
+                          className="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-mtw-surface"
+                        >
+                          <Icon className="h-4 w-4 text-mtw-muted" />
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-mtw-body font-medium text-mtw-ink">{t.label}</span>
+                            <span className="block text-xs text-mtw-muted">{t.desc}</span>
+                          </span>
+                          <ArrowRight className="h-4 w-4 text-mtw-muted" />
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 
+              {/* Session controls */}
+              <div className={`p-5 ${card}`}>
+                <button
+                  type="button"
+                  onClick={handleLogOut}
+                  className="inline-flex items-center gap-2 text-mtw-small font-semibold text-mtw-ink hover:text-mtw-emerald"
+                >
+                  <LogOut className="h-4 w-4 text-mtw-muted" /> Log out
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDeleteAccount}
+                  className="mt-4 flex items-center gap-2 text-mtw-small font-semibold text-red-600 hover:text-red-700"
+                >
+                  <Trash2 className="h-4 w-4" /> Delete account
+                </button>
+              </div>
             </div>
-          </section>
-        </main>
+          )}
+
+          {/* BILLING — canonical home of Pro-access status */}
+          {activeSection === "billing" && (
+            <div className="space-y-4">
+              <div className={`p-5 ${card}`}>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-mtw-title font-semibold text-mtw-ink">{planLabel}</p>
+                    <p className="mt-1 text-mtw-small text-mtw-muted">{billingDateTitle}: {billingDateValue}</p>
+                  </div>
+                  <span
+                    data-testid="billing-plan-status"
+                    className={`rounded-mtw-pill px-3 py-1 text-mtw-small font-semibold ${
+                      subscription === "pro"
+                        ? "bg-emerald-50 text-emerald-700"
+                        : hasActiveDayPass
+                          ? "bg-amber-50 text-amber-700"
+                          : "bg-mtw-surface text-mtw-muted"
+                    }`}
+                  >
+                    {planStatusLabel}
+                  </span>
+                </div>
+                {cancellationScheduled && (
+                  <p className="mt-3 rounded-mtw border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                    Cancellation scheduled — access ends {accessEndsLabel}.
+                  </p>
+                )}
+              </div>
+
+              <div className={`p-5 ${card}`}>
+                <p className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-mtw-muted">Billing management</p>
+                {subscription === "pro" ? (
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={openBillingPortal}
+                      disabled={billingLoading === "portal"}
+                      className="inline-flex items-center gap-1.5 rounded-mtw bg-mtw-emerald px-4 py-2 text-mtw-small font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                    >
+                      {billingLoading === "portal" ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Manage billing
+                    </button>
+                    {!cancellationScheduled && (
+                      <button
+                        type="button"
+                        onClick={() => setCancelModalOpen(true)}
+                        className="rounded-mtw border border-mtw-border px-4 py-2 text-mtw-small text-mtw-muted hover:text-mtw-ink"
+                      >
+                        Cancel at period end
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => router.push("/subscribe")}
+                    className="inline-flex items-center gap-1.5 rounded-mtw bg-mtw-emerald px-4 py-2 text-mtw-small font-semibold text-white transition-opacity hover:opacity-90"
+                  >
+                    View plan options <ArrowRight className="h-4 w-4" />
+                  </button>
+                )}
+                {billingError && <p className="mt-3 text-mtw-small text-red-600">{billingError}</p>}
+              </div>
+            </div>
+          )}
+
+          {/* WALLET */}
+          {activeSection === "wallet" && <WalletManager />}
+
+          {/* PREFERENCES */}
+          {activeSection === "preferences" && <PreferencesForm />}
+        </section>
       </div>
 
       <CancelReasonModal
@@ -903,6 +520,6 @@ export default function ProfilePage() {
           if (billingLoading !== "cancel") setCancelModalOpen(false);
         }}
       />
-    </div>
+    </main>
   );
 }
