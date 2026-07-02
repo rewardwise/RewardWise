@@ -36,9 +36,24 @@ export interface PointsValidationResult {
   reason?: string;
 }
 
+/**
+ * Max plausible per-card points balance. Anything above this is almost certainly
+ * a data-entry mistake (e.g. an accidental ×1000 / extra zeros). Set to 50M:
+ * comfortably above even the highest legitimate holdings (walletSanity.ts notes
+ * Hilton/IHG power users routinely reach the 8-figure / ~10M+ range), yet far
+ * below the ~1.9B inflated-data band this guard exists to prevent recurring.
+ */
+export const MAX_POINTS_BALANCE = 50_000_000;
+
 export function validatePoints(value: number): PointsValidationResult {
   if (Number.isNaN(value)) return { ok: false, reason: "Please enter a number" };
   if (value < 0) return { ok: false, reason: "Cannot be negative" };
+  if (value > MAX_POINTS_BALANCE) {
+    return {
+      ok: false,
+      reason: `That looks too high (over ${MAX_POINTS_BALANCE.toLocaleString()}). Enter total points, e.g. 250000 for 250K.`,
+    };
+  }
   return { ok: true };
 }
 
