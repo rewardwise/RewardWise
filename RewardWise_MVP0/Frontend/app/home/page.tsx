@@ -8,6 +8,7 @@ import { useWallet } from "@/context/WalletContext";
 import { zoeNarration, zoeWelcome } from "@/utils/zoeNarration";
 import type { Verdict as CanonicalVerdict, Ownership } from "@/types/verdict";
 import { useSearchFill } from "@/context/SearchFillContext";
+import { usePreferences } from "@/hooks/usePreferences";
 import { useABTest } from "@/context/ABTestContext";
 import VerdictCard from "@/components/VerdictCard";
 import SearchLoadingExperience from "@/components/SearchLoadingExperience";
@@ -249,6 +250,7 @@ export default function HomePage() {
 	const { searchCount, setSearchCount, session } = useAuth();
 	const { userPrograms, hasWallet } = useWallet();
 	const { searchFill } = useSearchFill();
+	const { searchDefaults: prefsDefaults, loaded: prefsLoaded } = usePreferences();
 	useABTest();
 
 	const [isChatOpen, setIsChatOpen] = useState(false);
@@ -367,6 +369,23 @@ export default function HomePage() {
 		if ("returnDate" in searchFill) setReturnDate(searchFill.returnDate || "");
 		if (searchFill.tripType) setTripType(searchFill.tripType);
 	}, [searchFill]);
+
+	// Seed the pill from saved Preferences ONCE, after they load — but only when
+	// there's no explicit deep-link / Zoe fill (which always wins). Precedence:
+	// searchFill/Zoe > saved prefs > hardcoded defaults.
+	const prefsSeededRef = useRef(false);
+	useEffect(() => {
+		if (!prefsLoaded || prefsSeededRef.current) return;
+		prefsSeededRef.current = true;
+		const hasFill = Boolean(
+			searchFill && (searchFill.cabin || searchFill.travelers || searchFill.tripType),
+		);
+		if (hasFill) return;
+		setCabin(prefsDefaults.cabin);
+		setTravelers(prefsDefaults.travelers);
+		setTripType(prefsDefaults.trip_type);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [prefsLoaded, prefsDefaults, searchFill]);
 
 	const runSearch = async () => {
 		const isZoeTrigger = zoeTriggerRef.current;
