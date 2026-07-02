@@ -344,8 +344,8 @@ describe("wallet input formatting: int4 overflow guard", () => {
 
     const errorText = container.textContent ?? "";
     expect(
-      errorText.includes("2,147,483,647"),
-      "inline error must surface the int4 ceiling so the user knows the limit"
+      errorText.includes("50,000,000"),
+      "inline error must surface the 50M cap so the user knows the limit (8a-hotfix-2: hard cap now rejects before the int4 ceiling is ever reached)"
     ).toBe(true);
   });
 

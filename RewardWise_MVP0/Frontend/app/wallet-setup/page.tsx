@@ -17,10 +17,12 @@ import { createClient } from "@/utils/supabase/client";
 import TropicalBackground from "@/components/TropicalBackground";
 import { useAuth } from "@/context/AuthProvider";
 import { AVAILABLE_CARDS } from "@/data/cards";
+import { trackAnalyticsEvent } from "@/utils/analytics/client";
 import {
   fmtMoney,
   formatNumberInputProps,
   validatePoints,
+  MAX_POINTS_BALANCE,
 } from "@/utils/format";
 import {
   getCeilingFor,
@@ -185,6 +187,15 @@ export default function WalletSetupPage() {
     const validation = validatePoints(newBal);
     if (!validation.ok) {
       setRowErrors((prev) => ({ ...prev, [cardId]: validation.reason || "Invalid value" }));
+      trackAnalyticsEvent("wallet_balance_rejected", {
+        event_type: "wallet",
+        metadata: {
+          attempted_value: newBal,
+          program: savedCards.find((c) => c.id === cardId)?.program ?? null,
+          reason: validation.reason ?? null,
+          surface: "edit",
+        },
+      });
       return;
     }
 
@@ -248,6 +259,15 @@ export default function WalletSetupPage() {
       const validation = validatePoints(newBal);
       if (!validation.ok) {
         validationErrors[cardId] = validation.reason || "Invalid value";
+        trackAnalyticsEvent("wallet_balance_rejected", {
+          event_type: "wallet",
+          metadata: {
+            attempted_value: newBal,
+            program: savedCards.find((c) => c.id === cardId)?.program ?? null,
+            reason: validation.reason ?? null,
+            surface: "save_all",
+          },
+        });
       }
     }
 
@@ -399,23 +419,35 @@ export default function WalletSetupPage() {
       (id) => AVAILABLE_CARDS.find((c) => c.id === id)!
     );
 
-    const overflowNames: string[] = [];
+    const rejectedNames: string[] = [];
     const selectedData = allSelectedData.filter((card) => {
       const raw = newBalances[card.id];
-      if (raw !== undefined && !Number.isNaN(raw) && isOverflowBalance(raw)) {
-        overflowNames.push(card.name);
-        return false;
+      if (raw !== undefined && !Number.isNaN(raw)) {
+        const v = validatePoints(raw);
+        if (!v.ok) {
+          rejectedNames.push(card.name);
+          trackAnalyticsEvent("wallet_balance_rejected", {
+            event_type: "wallet",
+            metadata: {
+              attempted_value: raw,
+              program: card.program,
+              reason: v.reason ?? null,
+              surface: "add",
+            },
+          });
+          return false;
+        }
       }
       return true;
     });
 
-    if (overflowNames.length > 0) {
+    if (rejectedNames.length > 0) {
       flash(
-        `${overflowNames.length} card${
-          overflowNames.length !== 1 ? "s" : ""
-        } exceed the maximum of ${INT4_MAX_BALANCE.toLocaleString()} points and were skipped: ${overflowNames.join(
-          ", "
-        )}`,
+        `${rejectedNames.length} card${
+          rejectedNames.length !== 1 ? "s" : ""
+        } had a balance that looks too high (over ${MAX_POINTS_BALANCE.toLocaleString()} points) and ${
+          rejectedNames.length !== 1 ? "were" : "was"
+        } skipped: ${rejectedNames.join(", ")}. Re-enter total points, e.g. 250000 for 250K.`,
         "error"
       );
     }
@@ -700,7 +732,7 @@ export default function WalletSetupPage() {
                               ? "border-red-500 focus:ring-red-500"
                               : "border-gray-700 focus:ring-emerald-500"
                           }`}
-                          placeholder="Points balance"
+                          placeholder="Total points, e.g. 250000 for 250K"
                         />
                       );
                     })()}
@@ -896,7 +928,7 @@ export default function WalletSetupPage() {
                                   }
                                 }}
                                 onChange={liveOnChange}
-                                placeholder="Points balance"
+                                placeholder="Total points, e.g. 250000 for 250K"
                                 className="min-w-0 flex-1 bg-gray-900 border border-gray-700 rounded py-2 px-3 text-white text-sm placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                               />
                             );

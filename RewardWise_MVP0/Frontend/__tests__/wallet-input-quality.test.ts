@@ -12,6 +12,7 @@ import {
   formatPointsForDisplay,
   parsePointsInput,
   validatePoints,
+  MAX_POINTS_BALANCE,
 } from "../utils/format";
 
 describe("formatPointsForDisplay", () => {
@@ -102,5 +103,17 @@ describe("validatePoints", () => {
   it("returns a human-readable reason on failure", () => {
     expect(validatePoints(-5).reason).toBe("Cannot be negative");
     expect(validatePoints(NaN).reason).toBe("Please enter a number");
+  });
+  it("allows values up to the 10M cap (inclusive)", () => {
+    expect(validatePoints(250_000).ok).toBe(true);
+    expect(validatePoints(MAX_POINTS_BALANCE).ok).toBe(true); // exactly 10M
+  });
+  it("rejects values above 10M (the anti-inflation guard)", () => {
+    expect(validatePoints(MAX_POINTS_BALANCE + 1).ok).toBe(false);
+    expect(validatePoints(999_999_999).ok).toBe(false); // ~1B typo
+    expect(validatePoints(1_902_000_000).ok).toBe(false); // the observed ~1.9B
+    const r = validatePoints(999_999_999);
+    expect(r.reason).toMatch(/too high/i);
+    expect(r.reason).toMatch(/250000/); // guides toward correct entry
   });
 });
