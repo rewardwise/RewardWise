@@ -22,6 +22,11 @@
   --color-mtw-emerald: #10b981;
   --color-mtw-emerald-hover: #0ea271;
   --color-mtw-on-emerald: #ffffff;
+  /* Mint-tinted light surfaces — the logged-out landing (8c). Distinct from the
+     neutral --color-mtw-surface (#fafafa); sampled from the redesign PNGs. */
+  --color-mtw-surface-mint: #eef6ee;       /* page background */
+  --color-mtw-surface-mint-trust: #e8f0e9; /* trust bar */
+  --color-mtw-surface-mint-cta: #e3f2e9;   /* wallet-connect CTA card */
 
   /* Typeface — Inter, self-hosted via next/font (see app/layout.tsx) */
   --font-mtw: var(--font-inter), "Inter", ui-sans-serif, system-ui, sans-serif;
@@ -110,6 +115,10 @@ body {
 .mtw-light .border-white\/12 { border-color: #e5e7eb; }
 .mtw-light .bg-white\/\[0\.02\],
 .mtw-light .bg-white\/\[0\.08\] { background-color: #fafafa; }
+/* CAUTION: this inverts `text-white` at specificity (0,2,0), beating plain
+   `.text-white` (0,1,0). NEVER wrap a page root in `mtw-light` — it turns hero
+   copy on a photo AND every emerald button's white label dark. Scope it to
+   subtrees built from hardcoded dark utilities only (see 8c app/page.tsx). */
 .mtw-light .text-white { color: #1f2937; }
 .mtw-light .text-slate-200 { color: #1f2937; }
 .mtw-light .text-slate-300 { color: #374151; }
