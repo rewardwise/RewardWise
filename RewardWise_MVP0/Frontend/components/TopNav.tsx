@@ -64,7 +64,21 @@ export default function TopNav() {
 	const menuItems = [
 		{ id: "profile", icon: User, label: "Profile", onClick: () => router.push("/profile") },
 		{ id: "history", icon: Clock, label: "History", onClick: () => router.push("/history") },
-		{ id: "signout", icon: LogOut, label: "Sign out", onClick: () => void signOut() },
+		{
+			id: "signout",
+			icon: LogOut,
+			label: "Sign out",
+			// signOut() only clears the Supabase session; it does NOT navigate. Without
+			// an explicit nav the /home client stays mounted (wallet pill vanishes but
+			// the page never leaves) and middleware never re-runs to redirect. Send the
+			// user to the public landing and refresh() so RSC/middleware re-evaluate
+			// auth with the cleared cookies.
+			onClick: async () => {
+				await signOut();
+				router.replace("/");
+				router.refresh();
+			},
+		},
 	];
 
 	return (
