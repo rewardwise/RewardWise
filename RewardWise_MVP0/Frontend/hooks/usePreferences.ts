@@ -25,7 +25,7 @@ export const HARDCODED_SEARCH_DEFAULTS: SearchDefaults = {
 const CABINS: Cabin[] = ["economy", "premium_economy", "business", "first"];
 
 /** Coerce arbitrary stored JSON into a valid SearchDefaults (never throws). */
-function normalizeSearchDefaults(raw: unknown): SearchDefaults {
+export function normalizeSearchDefaults(raw: unknown): SearchDefaults {
 	const sd = (raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}) as Partial<
 		Record<keyof SearchDefaults, unknown>
 	>;

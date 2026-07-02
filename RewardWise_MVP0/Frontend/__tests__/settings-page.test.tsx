@@ -267,6 +267,13 @@ function findButtonByLabel(label: string): HTMLButtonElement {
   return button;
 }
 
+// 8b-profile: sections switch via the sidebar nav (data-testid="profile-nav-<key>").
+async function clickNav(key: "account" | "billing" | "wallet" | "preferences") {
+  const btn = document.querySelector(`[data-testid="profile-nav-${key}"]`);
+  if (!btn) throw new Error(`Could not find profile nav ${key}. Page text: ${pageText()}`);
+  await clickElement(btn);
+}
+
 async function clickElement(element: Element) {
   await act(async () => {
     if (element instanceof HTMLElement) {
@@ -352,31 +359,28 @@ describe("settings page account tab", () => {
   it("renders the account shell with useful account details and no redundant search CTA", async () => {
     await renderUi(<ProfilePage />);
 
-    expectPageToContain("Account Settings");
-    expectPageToContain("Account");
+    expectPageToContain("Profile");
     expectPageToContain("Jay Patel");
     expectPageToContain("jayveera0315@gmail.com");
     expectPageToContain("Member since");
     expectPageToContain("March 2026");
-    expectPageToContain("Account status");
-    expectPageToContain("Pro access");
-    expectPageToContain("Current plan");
-    expectPageToContain("Monthly Plan");
-    expectPageToContain("Account controls");
     expectPageToContain("Log out");
     expectPageToContain("Delete account");
+    // 8b-profile dedup: Pro-access status is canonical in Billing, not Account.
+    expectPageNotToContain("Pro access");
+    expectPageNotToContain("Monthly Plan");
     expectPageNotToContain("Start a search");
   });
 
   it("lets users save their display name through Supabase auth metadata", async () => {
     await renderUi(<ProfilePage />);
 
-    await clickElement(findButtonByText(/edit profile/i));
-    const input = document.querySelector('input[placeholder="Add your name"]') as HTMLInputElement | null;
+    await clickElement(findButtonByLabel("Edit name"));
+    const input = document.querySelector('input[placeholder="Your name"]') as HTMLInputElement | null;
     expect(input).not.toBeNull();
 
     await typeIntoInput(input as HTMLInputElement, "Jay RewardWise");
-    await clickElement(findButtonByText(/save profile/i));
+    await clickElement(findButtonByText(/^\s*save\s*$/i));
 
     expect(mocks.supabaseUpdateUser).toHaveBeenCalledWith({
       data: {
@@ -436,14 +440,12 @@ describe("settings page subscription tab", () => {
     setBillingRow(makeBillingRow({ current_period_end: nextBillingDate }));
 
     await renderUi(<ProfilePage />);
-    await clickElement(findButtonByText(/subscription/i));
+    await clickNav("billing");
 
-    expectPageToContain("Your current plan, billing date, and cancellation options.");
+    expectPageToContain("Pro access"); // canonical status lives in Billing
     expectPageToContain("Monthly Plan");
     expectPageToContain("Next billing date");
     expectPageToContain(formatExpectedDate(nextBillingDate));
-    expectPageToContain("Day pass");
-    expectPageToContain("Inactive");
     expectPageToContain("Manage billing");
     expectPageToContain("Cancel at period end");
   });
@@ -461,7 +463,7 @@ describe("settings page subscription tab", () => {
     mocks.fetchState.syncedBilling = syncedBilling;
 
     await renderUi(<ProfilePage />);
-    await clickElement(findButtonByText(/subscription/i));
+    await clickNav("billing");
 
     expect(mocks.fetchMock).toHaveBeenCalledWith(
       "/api/payments/sync-subscription",
@@ -481,11 +483,11 @@ describe("settings page subscription tab", () => {
     );
 
     await renderUi(<ProfilePage />);
-    await clickElement(findButtonByText(/subscription/i));
+    await clickNav("billing");
 
     expectPageToContain("Access ends");
     expectPageToContain(formatExpectedDate(accessEndsAt));
-    expectPageToContain("Your subscription is scheduled to end on");
+    expectPageToContain("Cancellation scheduled");
     expectPageNotToContain("Cancel at period end");
   });
 
@@ -494,7 +496,7 @@ describe("settings page subscription tab", () => {
     mocks.fetchState.cancelBody = { ok: true, accessEndsAt };
 
     await renderUi(<ProfilePage />);
-    await clickElement(findButtonByText(/subscription/i));
+    await clickNav("billing");
     await clickElement(findButtonByText(/cancel at period end/i));
 
     // The cancel button opens the reason modal; pick a reason then confirm.
@@ -512,7 +514,7 @@ describe("settings page subscription tab", () => {
         body: JSON.stringify({ reason_code: "too_expensive", free_text: null }),
       }),
     );
-    expectPageToContain("Your subscription is scheduled to end on");
+    expectPageToContain("Cancellation scheduled");
     expectPageToContain(formatExpectedDate(accessEndsAt));
     expectPageToContain("Pro access");
   });
@@ -522,7 +524,7 @@ describe("settings page subscription tab", () => {
     setBillingRow(null);
 
     await renderUi(<ProfilePage />);
-    await clickElement(findButtonByText(/subscription/i));
+    await clickNav("billing");
 
     expectPageToContain("Free Plan");
     expectPageToContain("No recurring billing");
@@ -540,42 +542,41 @@ describe("settings page subscription tab", () => {
     setBillingRow(null);
 
     await renderUi(<ProfilePage />);
-    await clickElement(findButtonByText(/subscription/i));
+    await clickNav("billing");
 
     expectPageToContain("Day Pass");
     expectPageToContain("5h 30m left");
-    expectPageToContain("5h 30m remaining");
     expectPageToContain("No recurring billing");
   });
 });
 
-describe("settings page actions tab", () => {
-  it("routes every quick action to the correct app section", async () => {
-    await renderUi(<ProfilePage />);
-    await clickElement(findButtonByText(/actions/i));
+describe("profile Tools fold (in Account)", () => {
+  it("routes the kept tools (Concierge, Health) — nav-redundant launchers dropped", async () => {
+    await renderUi(<ProfilePage />); // Account is the default section; Tools render here
 
-    const expectedRoutes: Array<[RegExp, string]> = [
-      [/my wallet/i, "/wallet-setup"],
-      [/new search/i, "/home"],
-      [/health check/i, "/health-check"],
-      [/concierge/i, "/concierge"],
-      [/past searches/i, "/history"],
-    ];
+    // The old nav-redundant quick actions are gone.
+    expectPageNotToContain("My Wallet");
+    expectPageNotToContain("Past Searches");
 
-    for (const [label, route] of expectedRoutes) {
-      await clickElement(findButtonByText(label));
-      expect(mocks.routerPush).toHaveBeenLastCalledWith(route);
-    }
+    await clickElement(findButtonByText(/concierge/i));
+    expect(mocks.routerPush).toHaveBeenLastCalledWith("/concierge");
+    await clickElement(findButtonByText(/health check-in/i));
+    expect(mocks.routerPush).toHaveBeenLastCalledWith("/health-check");
   });
 
-  it("shows the admin analytics action only for users with analytics access", async () => {
+  it("shows the admin analytics tool only for PM testers (canViewAnalytics)", async () => {
     mocks.fetchState.canViewAnalytics = true;
     await renderUi(<ProfilePage />);
-    await clickElement(findButtonByText(/actions/i));
 
-    expectPageToContain("Product Analytics");
-    await clickElement(findButtonByText(/open dashboard/i));
+    expectPageToContain("Product analytics");
+    await clickElement(findButtonByText(/product analytics/i));
     expect(mocks.routerPush).toHaveBeenCalledWith("/admin/analytics");
+  });
+
+  it("hides the admin tool for non-PM users", async () => {
+    mocks.fetchState.canViewAnalytics = false;
+    await renderUi(<ProfilePage />);
+    expectPageNotToContain("Product analytics");
   });
 });
 

@@ -44,6 +44,15 @@ vi.mock("@/context/ABTestContext", () => ({
 	useABTest: () => ({}),
 }));
 
+vi.mock("@/hooks/usePreferences", () => ({
+	usePreferences: () => ({
+		searchDefaults: { cabin: "economy", travelers: 1, trip_type: "roundtrip" },
+		loading: false,
+		loaded: true,
+		saveSearchDefaults: async () => null,
+	}),
+}));
+
 vi.mock("@/components/TropicalBackground", () => ({
 	default: () => null,
 }));
