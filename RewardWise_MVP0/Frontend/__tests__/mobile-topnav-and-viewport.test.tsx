@@ -9,6 +9,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   routerPush: vi.fn(),
+  routerReplace: vi.fn(),
+  routerRefresh: vi.fn(),
   pathname: "/home",
   alertState: {
     notifications: [] as unknown[],
@@ -39,7 +41,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: mocks.routerPush }),
+  useRouter: () => ({
+    push: mocks.routerPush,
+    replace: mocks.routerReplace,
+    refresh: mocks.routerRefresh,
+  }),
   usePathname: () => mocks.pathname,
 }));
 
@@ -126,6 +132,36 @@ describe("TopNav — redesign nav model (avatar menu, no hamburger/bell)", () =>
     expect(text).toContain("Profile");
     expect(text).toContain("History");
     expect(text).toContain("Sign out");
+  });
+
+  it("Sign out awaits signOut() then navigates to / and refreshes (P0 hotfix)", async () => {
+    mocks.authState.signOut = vi.fn(async () => {});
+    mocks.routerReplace.mockClear();
+    mocks.routerRefresh.mockClear();
+    act(() => {
+      root.render(<TopNav />);
+    });
+    const avatar = container.querySelector('button[data-testid="avatar-menu-button"]') as HTMLButtonElement;
+    act(() => {
+      avatar.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    const signOutBtn = Array.from(
+      container.querySelectorAll('[data-testid="avatar-menu"] button'),
+    ).find((b) => b.textContent?.includes("Sign out")) as HTMLButtonElement;
+    expect(signOutBtn, "Sign out item must be present").toBeTruthy();
+    await act(async () => {
+      signOutBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+    });
+    // signOut clears the session; the fix then leaves /home for the public
+    // landing and refreshes so middleware/RSC re-evaluate the cleared cookies.
+    expect(mocks.authState.signOut).toHaveBeenCalledTimes(1);
+    expect(mocks.routerReplace).toHaveBeenCalledWith("/");
+    expect(mocks.routerRefresh).toHaveBeenCalledTimes(1);
+    // Ordering: signOut resolves BEFORE the navigation fires.
+    expect(
+      (mocks.authState.signOut as any).mock.invocationCallOrder[0],
+    ).toBeLessThan(mocks.routerReplace.mock.invocationCallOrder[0]);
   });
 
   it("wallet pill is desktop-only (hidden until sm) and shows the balance", () => {
