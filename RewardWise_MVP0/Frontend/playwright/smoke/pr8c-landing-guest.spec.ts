@@ -31,11 +31,31 @@
  * Runs guest (empty storageState) at both viewports via the config projects.
  */
 
-import { test, expect, type Route } from "@playwright/test";
+import { test, expect, type Page, type Route } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 import { getVercelBypassHeader } from "../auth/vercel-bypass";
 
 test.use({ storageState: { cookies: [], origins: [] } });
+
+// AirportSearch commits to the parent origin/destination only on a dropdown
+// SELECT (not on raw typing) — so type, then ArrowDown+Enter to pick the top
+// suggestion. Filling alone leaves the search button disabled.
+async function pickAirport(page: Page, index: number, code: string) {
+	const input = page.getByPlaceholder("City or airport").nth(index);
+	await input.click();
+	await input.fill(code);
+	await input.press("ArrowDown");
+	await input.press("Enter");
+}
+
+async function runGuestSearch(page: Page) {
+	await pickAirport(page, 0, "SFO");
+	await pickAirport(page, 1, "JFK");
+	const dates = page.locator('input[type="date"]');
+	await dates.nth(0).fill("2026-10-12");
+	await dates.nth(1).fill("2026-10-20");
+	await page.locator('[data-testid="landing-search-cta"]').click();
+}
 
 // A minimal use_points public-search result matching app/page.tsx SearchResult.
 const VERDICT_FIXTURE = {
@@ -138,13 +158,7 @@ test.describe("PR 8c: light island landing + guest verdict fork + paywall", () =
 		});
 
 		await page.goto("/");
-		await page.getByPlaceholder("City or airport").first().fill("SFO");
-		await page.getByPlaceholder("City or airport").nth(1).fill("SIN");
-		// Fill the two date inputs (depart + return) directly.
-		const dates = page.locator('input[type="date"]');
-		await dates.nth(0).fill("2026-10-12");
-		await dates.nth(1).fill("2026-10-20");
-		await page.locator('[data-testid="landing-search-cta"]').click();
+		await runGuestSearch(page);
 
 		// Guest verdict = CuratedOptions + the logged_out fork (b1).
 		const verdict = page.locator('[data-testid="guest-verdict"]');
@@ -180,12 +194,7 @@ test.describe("PR 8c: light island landing + guest verdict fork + paywall", () =
 		);
 
 		await page.goto("/");
-		await page.getByPlaceholder("City or airport").first().fill("SFO");
-		await page.getByPlaceholder("City or airport").nth(1).fill("SIN");
-		const dates = page.locator('input[type="date"]');
-		await dates.nth(0).fill("2026-10-12");
-		await dates.nth(1).fill("2026-10-20");
-		await page.locator('[data-testid="landing-search-cta"]').click();
+		await runGuestSearch(page);
 
 		const block = page.locator('[data-testid="paywall-block"]');
 		await expect(block).toBeVisible({ timeout: 15000 });
