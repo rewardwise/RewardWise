@@ -679,7 +679,9 @@ export default function HomePage() {
 									<div>
 										<label className="mb-1 flex items-center gap-1 text-xs text-mtw-muted"><User className="h-3 w-3" /> TRAVELERS</label>
 										<select value={travelers} onChange={(e) => setTravelers(Number(e.target.value))} className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
-											{[1, 2, 3, 4, 5, 6].map((n) => (
+											{/* 1-9 to match the backend validator + saved Preferences default
+											    (a saved 7-9 must have a matching option, not render blank). */}
+											{[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
 												<option key={n} value={n}>
 													{n} Traveler{n > 1 ? "s" : ""}
 												</option>

@@ -278,9 +278,14 @@ export default function WalletManager() {
 
 			{/* Delete confirmation modal */}
 			{confirmDelete && (
-				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true">
+				<div
+					className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+					role="dialog"
+					aria-modal="true"
+					aria-labelledby="wallet-delete-title"
+				>
 					<div className={`font-mtw w-full max-w-md p-6 ${card}`} data-testid="wallet-delete-modal">
-						<h3 className="text-mtw-title font-semibold text-mtw-ink">
+						<h3 id="wallet-delete-title" className="text-mtw-title font-semibold text-mtw-ink">
 							Remove {confirmDelete.program_name || "this program"} from wallet?
 						</h3>
 						<p className="mt-2 text-mtw-small leading-6 text-mtw-muted">
