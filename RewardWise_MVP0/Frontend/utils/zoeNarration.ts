@@ -158,6 +158,35 @@ export function zoeWelcome(): ZoeWelcome {
 }
 
 /**
+ * Deterministic welcome for the GUEST (logged-out) verdict's floating Zoe FAB
+ * (8c) — NOT LLM output. References the guest state and points to sign-in for
+ * wallet-specific recs, without promising wallet features the guest doesn't have
+ * or asserting a verdict. No em-dashes (product-copy rule).
+ */
+export function zoeWelcomeGuest(): ZoeWelcome {
+	const welcome: ZoeWelcome = {
+		lead:
+			"👋 Hey, I'm Zoe. Run a search and I'll tell you whether cash or points wins for your trip. Sign in to unlock wallet-specific recs.",
+		chips: [
+			{
+				id: "welcome_how",
+				label: "How does this work?",
+				reply:
+					"Tell me where and when you're flying, or use the search above. I compare the cash fare against what points would cost and tell you which wins. No account needed.",
+			},
+			{
+				id: "welcome_ask",
+				label: "Why sign in?",
+				reply:
+					"Sign in and connect your wallet, and I'll tell you exactly which of your own programs get the best value on a trip. Personalized, not generic.",
+			},
+		],
+	};
+	assertWelcomeConsistent(welcome);
+	return welcome;
+}
+
+/**
  * Hard guarantee: the welcome must stay in the "no verdict yet" state. It must
  * never assert a concrete verdict — a recommendation ("use your points" / "pay
  * cash"), a price, or a cpp. Throws in dev/test if it drifts.

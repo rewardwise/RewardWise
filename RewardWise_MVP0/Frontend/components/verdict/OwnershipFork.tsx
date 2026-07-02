@@ -1,7 +1,8 @@
 /** @format */
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ExternalLink } from "lucide-react";
 import { getProgramHandoffInfo } from "@/utils/airlines";
 import { transferFreshness, type Freshness } from "@/utils/transferFreshness";
@@ -59,6 +60,9 @@ function PartnerList({
 
 export default function OwnershipFork({ ownership, searchId, verdictId }: OwnershipForkProps) {
 	const o = ownership;
+	const router = useRouter();
+	const [dismissed, setDismissed] = useState(false);
+	const isGuest = o.fork_reason === "logged_out";
 
 	useEffect(() => {
 		trackAnalyticsEvent("ownership_fork_shown", {
@@ -74,7 +78,7 @@ export default function OwnershipFork({ ownership, searchId, verdictId }: Owners
 				buy_gap_cost: o.buy_gap_cost,
 				redemption_cpp: o.redemption_cpp,
 				can_afford: o.can_afford,
-				logged_in: true,
+				logged_in: o.fork_reason !== "logged_out",
 				search_id: searchId ?? null,
 				verdict_id: verdictId ?? null,
 			},
@@ -95,6 +99,53 @@ export default function OwnershipFork({ ownership, searchId, verdictId }: Owners
 			},
 		});
 	};
+
+	// ── b1: logged_out (guest) — invite a wallet connect (8c) ────────────────
+	if (isGuest) {
+		if (dismissed) return null;
+		return (
+			<section
+				data-testid="ownership-fork"
+				data-fork="logged_out"
+				className="font-mtw mt-4 rounded-mtw-lg border border-mtw-border bg-mtw-surface p-4"
+			>
+				<p className="text-mtw-small font-semibold text-mtw-ink">
+					Connect your wallet to see personalized recommendations.
+				</p>
+				<p className="mt-1 text-mtw-small text-mtw-muted">
+					See exactly which of your points get the best value on this trip.
+				</p>
+				<div className="mt-4 flex flex-wrap gap-2">
+					<button
+						type="button"
+						data-testid="fork-connect-wallet"
+						onClick={() => {
+							onCta("connect_wallet");
+							const returnTo =
+								typeof window !== "undefined"
+									? window.location.pathname + window.location.search
+									: "/";
+							router.push(`/signup?returnTo=${encodeURIComponent(returnTo)}`);
+						}}
+						className="rounded-mtw bg-mtw-emerald px-4 py-2 text-mtw-small font-semibold text-white transition-opacity hover:opacity-90"
+					>
+						Connect your wallet
+					</button>
+					<button
+						type="button"
+						data-testid="fork-continue-guest"
+						onClick={() => {
+							onCta("continue_guest");
+							setDismissed(true);
+						}}
+						className="rounded-mtw border border-mtw-border px-4 py-2 text-mtw-small text-mtw-muted transition-colors hover:text-mtw-ink"
+					>
+						Continue as guest
+					</button>
+				</div>
+			</section>
+		);
+	}
 
 	const label = o.program_label || o.program;
 	const fresh = transferFreshness(o.transfers_as_of);

@@ -30,7 +30,10 @@ export type ForkReason =
 	| "owned_sufficient"
 	| "short_buy_worth_it"
 	| "short_buy_not_worth_it"
-	| "short_cant_buy";
+	| "short_cant_buy"
+	// 8c: guest (logged-out) verdict — no wallet context; the fork invites a
+	// wallet connect instead of comparing owned balances.
+	| "logged_out";
 
 export interface ReachablePartner {
 	sourceCard: string;
