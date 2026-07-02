@@ -21,6 +21,19 @@ import { LOGIN_GOOGLE_FAIL } from "@/utils/user-messages";
 
 type MessageTone = "success" | "error";
 
+/**
+ * Post-signup destination. Honors a `?returnTo=` deep link (e.g. the guest
+ * verdict's "Connect your wallet" CTA in 8c) so the user lands back where they
+ * were. Guarded to INTERNAL paths only — a single leading "/" and not "//" — so
+ * it can't be turned into an open redirect. Falls back to /home.
+ */
+function safePostSignupDestination(): string {
+	if (typeof window === "undefined") return "/home";
+	const rt = new URLSearchParams(window.location.search).get("returnTo");
+	if (rt && rt.startsWith("/") && !rt.startsWith("//")) return rt;
+	return "/home";
+}
+
 export default function SignupPage() {
 	const router = useRouter();
 	const { signInWithGoogle, signUpWithEmail, user, loading: authLoading } =
@@ -37,7 +50,7 @@ export default function SignupPage() {
 
 	useEffect(() => {
 		if (!authLoading && user) {
-			router.replace("/home");
+			router.replace(safePostSignupDestination());
 		}
 	}, [authLoading, router, user]);
 
