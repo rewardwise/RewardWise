@@ -11,6 +11,7 @@ export interface WalletCard {
   reward_program_id: string;
   points_balance: number;
   program_name?: string; // joined from reward_programs
+  created_at?: string; // used to differentiate duplicate same-program rows in Wallet CRUD
 }
 
 interface WalletContextType {
@@ -38,7 +39,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setLoading(true);
     const { data, error } = await supabase
       .from("cards")
-      .select("id, card_name, reward_program_id, points_balance, reward_programs(name)")
+      .select("id, card_name, reward_program_id, points_balance, created_at, reward_programs(name)")
       .eq("user_id", user.id);
 
     if (!error && data) {
@@ -49,6 +50,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
           reward_program_id: row.reward_program_id,
           points_balance: row.points_balance,
           program_name: row.reward_programs?.name ?? "",
+          created_at: row.created_at,
         }))
       );
     }
