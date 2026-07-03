@@ -4,7 +4,6 @@
 
 import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Image from "next/image";
 import { useAuth } from "@/context/AuthProvider";
 import {
 	ArrowLeft,
@@ -16,45 +15,11 @@ import {
 	Plane,
 } from "lucide-react";
 import { FcGoogle } from "react-icons/fc";
+import { AuthBackdrop, AuthLoading } from "@/components/AuthShell";
 import {
 	LOGIN_GOOGLE_FAIL,
 	mapSupabaseSignInError,
 } from "@/utils/user-messages";
-
-/**
- * Full-bleed island backdrop for the auth pages (island spec v2). Photo +
- * flat rgba(6,20,14,.50) scrim so the centered solid-white card pops. The
- * card provides its own contrast; no bare text sits on the photo.
- */
-function AuthBackdrop() {
-	return (
-		<>
-			<Image
-				src="/hero-island.jpg"
-				alt=""
-				fill
-				priority
-				sizes="100vw"
-				className="-z-10 object-cover object-center"
-			/>
-			<div className="absolute inset-0 -z-10 bg-[rgba(6,20,14,0.50)]" />
-		</>
-	);
-}
-
-function AuthLoading() {
-	return (
-		<div className="font-mtw relative isolate min-h-screen overflow-hidden">
-			<AuthBackdrop />
-			<div className="relative z-10 flex min-h-screen items-center justify-center px-6">
-				<div className="flex items-center gap-3 rounded-mtw-pill border border-mtw-border bg-white px-5 py-3 text-mtw-small text-mtw-ink shadow-mtw-ambient">
-					<Loader2 className="h-4 w-4 animate-spin text-mtw-emerald" />
-					Loading...
-				</div>
-			</div>
-		</div>
-	);
-}
 
 function LoginPageInner() {
 	const router = useRouter();

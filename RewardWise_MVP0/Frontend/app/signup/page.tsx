@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 
 import { useAuth } from "@/context/AuthProvider";
+import { AuthBackdrop, AuthLoading } from "@/components/AuthShell";
 import { validateSignupEmail } from "@/utils/emailValidation";
 import { LOGIN_GOOGLE_FAIL } from "@/utils/user-messages";
 
@@ -109,63 +110,47 @@ export default function SignupPage() {
 	};
 
 	if (authLoading) {
-		return (
-			<div className="relative min-h-screen overflow-hidden bg-[#080E1C] text-white">
-				<div
-					className="absolute inset-0 bg-cover bg-center"
-					style={{ backgroundImage: "url('/beach-hero.png')" }}
-				/>
-				<div className="absolute inset-0 bg-[rgba(8,14,28,0.55)]" />
-				<div className="relative z-10 flex min-h-screen items-center justify-center px-6">
-					<div className="flex items-center gap-3 rounded-full border border-white/12 bg-[rgba(8,14,28,0.74)] px-5 py-3 text-sm text-white/80 backdrop-blur-xl">
-						<Loader2 className="h-4 w-4 animate-spin" />
-						Loading...
-					</div>
-				</div>
-			</div>
-		);
+		return <AuthLoading />;
 	}
 
 	return (
-		<div className="relative min-h-screen overflow-hidden bg-[#080E1C] text-white">
-			<div
-				className="absolute inset-0 bg-cover bg-center"
-				style={{ backgroundImage: "url('/beach-hero.png')" }}
-			/>
-			<div className="absolute inset-0 bg-[rgba(8,14,28,0.55)]" />
-			<div className="absolute inset-0 bg-gradient-to-br from-[rgba(8,14,28,0.68)] via-[rgba(8,14,28,0.35)] to-[rgba(8,14,28,0.6)]" />
+		<div className="font-mtw relative isolate min-h-screen overflow-hidden text-mtw-ink">
+			<AuthBackdrop />
 
 			<div className="relative z-10 flex min-h-screen items-center justify-center px-6 py-10">
-				<div className="w-full max-w-md rounded-[28px] border border-white/12 bg-[rgba(8,14,28,0.78)] p-7 shadow-2xl shadow-black/30 backdrop-blur-2xl sm:p-8">
+				<div
+					data-testid="auth-card"
+					className="w-full max-w-md rounded-mtw-lg border border-mtw-border bg-white p-7 shadow-mtw-ambient sm:p-8"
+				>
 					<button
 						onClick={() => router.push("/")}
-						className="mb-6 inline-flex items-center gap-2 text-sm text-white/55 transition hover:text-white"
+						className="mb-6 inline-flex items-center gap-2 text-mtw-small text-mtw-muted transition-colors hover:text-mtw-ink"
 					>
 						<ArrowLeft className="h-4 w-4" />
 						Back
 					</button>
 
 					<div className="mb-6 flex items-center gap-2">
-						<Plane className="h-5 w-5 text-white" />
-						<span className="text-base font-semibold tracking-tight text-white">
+						<Plane className="h-5 w-5 text-mtw-emerald" />
+						<span className="text-mtw-body font-semibold tracking-tight text-mtw-ink">
 							MyTravelWallet
 						</span>
 					</div>
 
-					<h1 className="text-3xl font-bold tracking-tight text-white">
+					<h1 className="text-mtw-headline font-bold text-mtw-ink-strong">
 						Create your account
 					</h1>
 
-					<p className="mt-2 text-sm leading-6 text-white/65">
+					<p className="mt-2 text-mtw-small leading-6 text-mtw-muted">
 						Start using MyTravelWallet to compare points versus cash and make smarter travel decisions.
 					</p>
 
 					{message ? (
 						<div
-							className={`mt-5 rounded-xl border px-4 py-3 text-sm ${
+							className={`mt-5 rounded-mtw border px-4 py-3 text-mtw-small ${
 								messageTone === "success"
-									? "border-emerald-300/20 bg-emerald-300/10 text-emerald-50"
-									: "border-red-400/25 bg-red-400/10 text-red-100"
+									? "border-mtw-emerald/30 bg-mtw-emerald/10 text-mtw-emerald"
+									: "border-red-200 bg-red-50 text-red-700"
 							}`}
 						>
 							{message}
@@ -175,9 +160,9 @@ export default function SignupPage() {
 					{Object.keys(errors).length > 0 ? (
 						<div
 							role="alert"
-							className="mt-5 rounded-xl border border-red-400/25 bg-red-400/10 px-4 py-3"
+							className="mt-5 rounded-mtw border border-red-200 bg-red-50 px-4 py-3"
 						>
-							<ul className="space-y-1 text-sm text-red-100">
+							<ul className="space-y-1 text-mtw-small text-red-700">
 								{Object.values(errors).map((error, index) => (
 									<li key={index}>{error}</li>
 								))}
@@ -190,7 +175,7 @@ export default function SignupPage() {
 							type="button"
 							onClick={handleGoogleSignup}
 							disabled={submittingGoogle || submittingEmail}
-							className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/12 bg-white/6 px-4 py-3.5 text-sm font-medium text-white transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-70"
+							className="flex w-full items-center justify-center gap-3 rounded-mtw border border-mtw-border bg-white px-4 py-3.5 text-mtw-small font-medium text-mtw-ink transition-colors hover:bg-mtw-surface disabled:cursor-not-allowed disabled:opacity-70"
 						>
 							{submittingGoogle ? (
 								<>
@@ -207,24 +192,24 @@ export default function SignupPage() {
 					</div>
 
 					<div className="my-6 flex items-center">
-						<div className="h-px flex-1 bg-white/10" />
-						<span className="px-3 text-xs uppercase tracking-[0.12em] text-white/30">
+						<div className="h-px flex-1 bg-mtw-border" />
+						<span className="px-3 text-mtw-label uppercase text-mtw-muted">
 							Or use email
 						</span>
-						<div className="h-px flex-1 bg-white/10" />
+						<div className="h-px flex-1 bg-mtw-border" />
 					</div>
 
 					<form onSubmit={handleSubmit} className="space-y-4" noValidate>
 						<div>
 							<label
 								htmlFor="email"
-								className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.14em] text-[#86EFAC]/80"
+								className="mb-2 block text-mtw-label uppercase text-mtw-muted"
 							>
 								Email
 							</label>
 
 							<div className="relative">
-								<Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30" />
+								<Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-mtw-muted" />
 								<input
 									id="email"
 									type="email"
@@ -232,10 +217,8 @@ export default function SignupPage() {
 									onChange={(event) => setEmail(event.target.value)}
 									placeholder="name@example.com"
 									autoComplete="email"
-									className={`w-full rounded-xl border bg-white/7 py-3 pl-10 pr-4 text-sm text-white outline-none transition placeholder:text-white/24 focus:bg-white/10 ${
-										errors.email
-											? "border-red-400/40"
-											: "border-white/12 focus:border-[rgba(34,197,94,0.45)]"
+									className={`w-full rounded-mtw border bg-white py-3 pl-10 pr-4 text-mtw-small text-mtw-ink outline-none transition placeholder:text-mtw-muted focus:ring-2 focus:ring-mtw-emerald ${
+										errors.email ? "border-red-300" : "border-mtw-border"
 									}`}
 								/>
 							</div>
@@ -244,13 +227,13 @@ export default function SignupPage() {
 						<div>
 							<label
 								htmlFor="password"
-								className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.14em] text-[#86EFAC]/80"
+								className="mb-2 block text-mtw-label uppercase text-mtw-muted"
 							>
 								Password
 							</label>
 
 							<div className="relative">
-								<Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/30" />
+								<Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-mtw-muted" />
 								<input
 									id="password"
 									type={showPassword ? "text" : "password"}
@@ -258,17 +241,15 @@ export default function SignupPage() {
 									onChange={(event) => setPassword(event.target.value)}
 									placeholder="At least 8 characters"
 									autoComplete="new-password"
-									className={`w-full rounded-xl border bg-white/7 py-3 pl-10 pr-12 text-sm text-white outline-none transition placeholder:text-white/24 focus:bg-white/10 ${
-										errors.password
-											? "border-red-400/40"
-											: "border-white/12 focus:border-[rgba(34,197,94,0.45)]"
+									className={`w-full rounded-mtw border bg-white py-3 pl-10 pr-12 text-mtw-small text-mtw-ink outline-none transition placeholder:text-mtw-muted focus:ring-2 focus:ring-mtw-emerald ${
+										errors.password ? "border-red-300" : "border-mtw-border"
 									}`}
 								/>
 
 								<button
 									type="button"
 									onClick={() => setShowPassword((prev) => !prev)}
-									className="absolute right-3 top-1/2 -translate-y-1/2 text-white/35 transition hover:text-white/70"
+									className="absolute right-3 top-1/2 -translate-y-1/2 text-mtw-muted transition-colors hover:text-mtw-ink"
 									aria-label={showPassword ? "Hide password" : "Show password"}
 								>
 									{showPassword ? (
@@ -283,7 +264,7 @@ export default function SignupPage() {
 						<button
 							type="submit"
 							disabled={submittingEmail || submittingGoogle}
-							className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#22C55E] px-5 py-3.5 text-sm font-semibold text-[#08111F] transition hover:bg-[#16A34A] disabled:cursor-not-allowed disabled:opacity-70"
+							className="inline-flex w-full items-center justify-center gap-2 rounded-mtw bg-mtw-emerald px-5 py-3.5 text-mtw-small font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
 						>
 							{submittingEmail ? (
 								<>
@@ -296,11 +277,11 @@ export default function SignupPage() {
 						</button>
 					</form>
 
-					<p className="mt-5 text-center text-sm text-white/45">
+					<p className="mt-5 text-center text-mtw-small text-mtw-muted">
 						Already have an account?{" "}
 						<button
 							onClick={() => router.push("/login")}
-							className="font-medium text-[#86EFAC] transition hover:text-[#bbf7d0]"
+							className="font-medium text-mtw-emerald transition-opacity hover:opacity-80"
 						>
 							Sign in
 						</button>
