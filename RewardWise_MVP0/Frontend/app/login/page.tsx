@@ -44,7 +44,7 @@ function AuthBackdrop() {
 
 function AuthLoading() {
 	return (
-		<div className="font-mtw relative min-h-screen overflow-hidden">
+		<div className="font-mtw relative isolate min-h-screen overflow-hidden">
 			<AuthBackdrop />
 			<div className="relative z-10 flex min-h-screen items-center justify-center px-6">
 				<div className="flex items-center gap-3 rounded-mtw-pill border border-mtw-border bg-white px-5 py-3 text-mtw-small text-mtw-ink shadow-mtw-ambient">
@@ -144,7 +144,7 @@ function LoginPageInner() {
 	}
 
 	return (
-		<div className="font-mtw relative min-h-screen overflow-hidden text-mtw-ink">
+		<div className="font-mtw relative isolate min-h-screen overflow-hidden text-mtw-ink">
 			<AuthBackdrop />
 
 			<div className="relative z-10 flex min-h-screen items-center justify-center px-6 py-10">
