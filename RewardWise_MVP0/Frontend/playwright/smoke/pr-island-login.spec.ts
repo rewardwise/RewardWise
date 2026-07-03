@@ -24,8 +24,19 @@ test.describe("island /login — relit solid-white card on island", () => {
 	test("island backdrop + white card + light form + Inter", async ({ page }) => {
 		await page.goto("/login");
 
-		// Island backdrop (next/image with the island asset).
-		await expect(page.locator('img[src*="hero-island"]').first()).toBeAttached();
+		// Island backdrop actually RENDERS (loaded + covers most of the viewport),
+		// not merely attached — a -z-10 backdrop with no `isolate` on the root paints
+		// behind the page bg and shows nothing (regression this asserts against).
+		const islandImg = page.locator('img[src*="hero-island"]').first();
+		await expect(islandImg).toBeAttached();
+		const island = await islandImg.evaluate((el) => {
+			const img = el as HTMLImageElement;
+			const r = img.getBoundingClientRect();
+			return { loaded: img.naturalWidth > 0, w: r.width, h: r.height };
+		});
+		expect(island.loaded).toBe(true);
+		expect(island.w).toBeGreaterThan(page.viewportSize()!.width * 0.9);
+		expect(island.h).toBeGreaterThan(page.viewportSize()!.height * 0.9);
 
 		// Solid-white auth card (falsifies the old dark navy card).
 		const card = page.locator('[data-testid="auth-card"]');
