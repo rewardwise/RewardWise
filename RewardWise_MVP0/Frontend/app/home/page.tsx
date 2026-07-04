@@ -2,6 +2,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthProvider";
 import { useWallet } from "@/context/WalletContext";
@@ -562,16 +563,30 @@ export default function HomePage() {
 
 	return (
 		<div className="relative overflow-hidden">
-			<div className="relative z-10">
-				<main className="max-w-6xl mx-auto px-6 py-6 lg:grid lg:grid-cols-[58fr_42fr] lg:gap-6 lg:items-start">
-					{/* LEFT COLUMN (58%) — search + results, light theme (scoped). */}
-					<div className="mtw-light font-mtw min-w-0">
+			{/* TIER 1 — island entry band (island spec v2, ⓒ): header + search pill
+			    (left) and the Zoe pane (right) sit ON the island; the verdict renders
+			    LIGHT in TIER 2 below. */}
+			<section className="relative isolate overflow-hidden">
+				<Image
+					src="/hero-island.jpg"
+					alt=""
+					fill
+					priority
+					sizes="100vw"
+					className="-z-10 object-cover object-center"
+				/>
+				<div className="absolute inset-0 -z-10 bg-[linear-gradient(180deg,rgba(6,20,14,0.55),rgba(6,20,14,0.30)_45%,rgba(6,20,14,0.55))]" />
+				<main className="relative z-10 max-w-6xl mx-auto px-6 py-6 lg:grid lg:grid-cols-[58fr_42fr] lg:gap-6 lg:items-start">
+					{/* LEFT — entry. NOT mtw-light so the header stays white on the photo;
+					    the search pill is wrapped in its own mtw-light below so its
+					    hardcoded dark inputs still remap to light. */}
+					<div className="font-mtw min-w-0">
 					{/* HEADER */}
 					<div className="mb-6">
 						<h1 className="text-2xl font-bold text-white mb-1">
 							Let's optimize your wallet.
 						</h1>
-						<p className="text-gray-400 text-sm">
+						<p className="text-white/80 text-sm">
 							Search a route or ask Zoe — we'll find the best decision for your
 							rewards.
 						</p>
@@ -581,6 +596,7 @@ export default function HomePage() {
 					{/* SLIM SEARCH PILL — From / To / When visible; 5 secondary fields
 					    collapse under "More options". Same inputs/handlers/defaults,
 					    reorganized only. */}
+					<div className="mtw-light">
 					<div
 						data-testid="search-pill"
 						className="mb-4 rounded-2xl border border-mtw-border bg-white p-3 shadow-mtw-ambient sm:p-4"
@@ -733,63 +749,9 @@ export default function HomePage() {
 						</p>
 					)}
 
-					{/* RESULTS */}
-					{(searching || results) && (
-						<div className="mt-2 space-y-4">
-							{searching ? (
-								<SearchLoadingExperience
-									origin={origin}
-									destination={destination}
-									cabin={cabin}
-									travelers={travelers}
-									isRoundtrip={tripType === "roundtrip"}
-								/>
-							) : results?.verdict ? (
-								<VerdictCard
-									theme="light"
-									onAskZoe={handleAskZoeAboutVerdict}
-									verdict={results.verdict}
-									cashPrice={results.cash_price}
-									origin={results.origin}
-									destination={results.destination}
-									departDate={results.date}
-									departDateEnd={results.depart_date_end ?? null}
-									winningDate={results.winning_date ?? null}
-									returnDate={results.return_date}
-									returnDateEnd={results.return_date_end ?? null}
-									winningReturnDate={results.winning_return_date ?? null}
-									cabin={results.cabin}
-									travelers={numTravelers}
-									isRoundtrip={results.is_roundtrip}
-									awardOptions={results.award_options}
-									returnAwardOptions={results.return_award_options}
-									flights={results.flights}
-									userPrograms={userPrograms}
-									userCards={results.user_cards ?? []}
-									verdictId={results.verdict_id}
-									searchId={results.search_id}
-									onTryDifferentDate={handleTryDifferentDate}
-								/>
-							) : !hasWallet ? (
-								<div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
-									<p className="text-amber-400 text-sm font-semibold mb-1">
-										No wallet set up yet
-									</p>
-									<p className="text-gray-400 text-xs mb-2">
-										Add your loyalty programs to get a personalized verdict.
-									</p>
-									<button
-										onClick={() => router.push("/wallet-setup")}
-										className="text-xs bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg"
-									>
-										Set up wallet →
-									</button>
-								</div>
-							) : null}
-						</div>
-					)}
+					</div>{/* /search-pill mtw-light wrapper */}
 
-					</div>{/* /LEFT COLUMN */}
+					</div>{/* /LEFT COLUMN (entry) */}
 
 					{/* RIGHT COLUMN (42%) — Zoe docked (kept dark; light restyle deferred) */}
 					<div className="mt-4 lg:mt-0 lg:sticky lg:top-6 lg:h-[calc(100vh-3rem)]">
@@ -812,7 +774,69 @@ export default function HomePage() {
 						/>
 					</div>
 				</main>
-			</div>
+			</section>
+
+			{/* TIER 2 — light results, full width below the island band (ⓒ: the
+			    verdict renders as a LIGHT card, not on the photo). */}
+			{(searching || results) && (
+				<section
+					data-testid="home-results"
+					className="mtw-light font-mtw mx-auto max-w-6xl px-6 pb-10"
+				>
+					<div className="mt-2 space-y-4">
+						{searching ? (
+							<SearchLoadingExperience
+								origin={origin}
+								destination={destination}
+								cabin={cabin}
+								travelers={travelers}
+								isRoundtrip={tripType === "roundtrip"}
+							/>
+						) : results?.verdict ? (
+							<VerdictCard
+								theme="light"
+								onAskZoe={handleAskZoeAboutVerdict}
+								verdict={results.verdict}
+								cashPrice={results.cash_price}
+								origin={results.origin}
+								destination={results.destination}
+								departDate={results.date}
+								departDateEnd={results.depart_date_end ?? null}
+								winningDate={results.winning_date ?? null}
+								returnDate={results.return_date}
+								returnDateEnd={results.return_date_end ?? null}
+								winningReturnDate={results.winning_return_date ?? null}
+								cabin={results.cabin}
+								travelers={numTravelers}
+								isRoundtrip={results.is_roundtrip}
+								awardOptions={results.award_options}
+								returnAwardOptions={results.return_award_options}
+								flights={results.flights}
+								userPrograms={userPrograms}
+								userCards={results.user_cards ?? []}
+								verdictId={results.verdict_id}
+								searchId={results.search_id}
+								onTryDifferentDate={handleTryDifferentDate}
+							/>
+						) : !hasWallet ? (
+							<div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
+								<p className="text-amber-400 text-sm font-semibold mb-1">
+									No wallet set up yet
+								</p>
+								<p className="text-gray-400 text-xs mb-2">
+									Add your loyalty programs to get a personalized verdict.
+								</p>
+								<button
+									onClick={() => router.push("/wallet-setup")}
+									className="text-xs bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg"
+								>
+									Set up wallet →
+								</button>
+							</div>
+						) : null}
+					</div>
+				</section>
+			)}
 		</div>
 	);
 }
