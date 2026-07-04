@@ -100,7 +100,7 @@ export default function TopNav() {
 					{walletChips.length > 0 && (
 						<div
 							data-testid="nav-wallet-pill"
-							className="font-mtw hidden items-center gap-x-2 rounded-mtw-pill border border-black/10 bg-white/70 px-3 py-1.5 text-mtw-small sm:inline-flex"
+							className="font-mtw hidden items-center gap-x-2 rounded-mtw-pill border border-black/10 bg-white/80 px-3 py-1.5 text-mtw-small shadow-sm sm:inline-flex"
 						>
 							<span className="font-semibold text-mtw-emerald">Your wallet</span>
 							{walletChips.map((c) => (
