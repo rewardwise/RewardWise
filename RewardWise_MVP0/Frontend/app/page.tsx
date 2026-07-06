@@ -594,11 +594,22 @@ function LandingPageContent() {
 			{showResultsArea ? (
 				<section
 					data-testid="landing-results"
-					className="mx-auto max-w-2xl px-6 py-10"
+					className="relative isolate overflow-hidden"
 				>
+					{/* ⓐ: the guest verdict floats on the ISLAND (not mint); the mint
+					    sections below the hero are unchanged. */}
+					<Image
+						src="/hero-island.jpg"
+						alt=""
+						fill
+						sizes="100vw"
+						className="-z-10 object-cover object-center"
+					/>
+					<div className="absolute inset-0 -z-10 bg-[linear-gradient(180deg,rgba(6,20,14,0.55),rgba(6,20,14,0.30)_45%,rgba(6,20,14,0.55))]" />
+					<div className="relative z-10 mx-auto max-w-2xl px-6 py-10">
 					{/* N-of-3 top bar */}
 					<div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-						<p className="text-mtw-small font-medium text-mtw-muted">
+						<p className="text-mtw-small font-medium text-white/85">
 							{routeSummary}
 						</p>
 						<span
@@ -671,6 +682,7 @@ function LandingPageContent() {
 							/>
 						</div>
 					) : null}
+					</div>
 				</section>
 			) : null}
 
