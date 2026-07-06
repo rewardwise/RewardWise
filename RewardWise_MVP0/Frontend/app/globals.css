@@ -15,7 +15,9 @@
   /* Color — emerald is reserved for CTA / best-highlight / Zoe trigger */
   --color-mtw-bg: #ffffff;
   --color-mtw-surface: #fafafa;
-  --color-mtw-ink: #1f2937;
+  /* Ink matches the prototype's single `--ink` token (#161d19) for fidelity.
+     Darker than the old #1f2937, so contrast only improves (AA-safe). */
+  --color-mtw-ink: #161d19;
   --color-mtw-ink-strong: #161d19;
   --color-mtw-muted: #6b7280;
   --color-mtw-border: #f3f4f6;

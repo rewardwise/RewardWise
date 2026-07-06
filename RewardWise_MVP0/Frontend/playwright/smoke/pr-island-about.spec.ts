@@ -9,6 +9,8 @@
 import { test, expect } from "@playwright/test";
 import { getVercelBypassHeader } from "../auth/vercel-bypass";
 
+// /about is a PUBLIC route (added to middleware publicRoutes) — a GUEST must
+// reach it (not get bounced to /login), so this runs unauthenticated.
 test.use({ storageState: { cookies: [], origins: [] } });
 
 test.describe("island /about — hero band + relit light content", () => {
