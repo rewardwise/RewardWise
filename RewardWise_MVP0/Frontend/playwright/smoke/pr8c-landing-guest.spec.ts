@@ -164,6 +164,12 @@ test.describe("PR 8c: light island landing + guest verdict fork + paywall", () =
 		const verdict = page.locator('[data-testid="guest-verdict"]');
 		await expect(verdict).toBeVisible({ timeout: 15000 });
 		await expect(page.locator('[data-testid="curated-options"]')).toBeVisible();
+
+		// ⓐ (island spec v2): the guest verdict floats on the ISLAND — the results
+		// section carries its own island backdrop (loaded), not the mint page bg.
+		const resultsIsland = page.locator('[data-testid="landing-results"] img[src*="hero-island"]').first();
+		await expect(resultsIsland).toBeAttached();
+		expect(await resultsIsland.evaluate((el) => (el as HTMLImageElement).naturalWidth > 0)).toBe(true);
 		const fork = page.locator('[data-testid="ownership-fork"]');
 		await expect(fork).toBeVisible();
 		await expect(fork).toHaveAttribute("data-fork", "logged_out");
