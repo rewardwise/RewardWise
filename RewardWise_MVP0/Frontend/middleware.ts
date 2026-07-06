@@ -7,6 +7,10 @@ import { isInternalEmail } from "@/utils/auth/internal-accounts";
 
 const publicRoutes = [
   "/",
+  // /about is public marketing content (founder story) linked from the guest
+  // landing nav + footer; guests were bounced to /login — a conversion leak on
+  // the "3 free searches, no login" wedge.
+  "/about",
   "/login",
   "/signup",
   "/auth/callback",
