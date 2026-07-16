@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
-import { isSubscriptionActive } from "@/utils/subscription/check";
-import { isInternalEmail } from "@/utils/auth/internal-accounts";
 
 export async function GET(request: Request) {
 	const { searchParams, origin } = new URL(request.url);
@@ -38,14 +36,10 @@ export async function GET(request: Request) {
 				return NextResponse.redirect(`${origin}${next}`);
 			}
 
-			if (!isInternalEmail(user.email)) {
-				const hasActiveSubscription = await isSubscriptionActive(supabase, user.id);
-
-				if (!hasActiveSubscription) {
-					return NextResponse.redirect(`${origin}/subscribe`);
-				}
-			}
-
+			// Wind-down (2026-07): MyTravelWallet is free for everyone. The
+			// post-login subscription gate that bounced non-subscribers to
+			// /subscribe has been removed — every authenticated user proceeds
+			// straight into the app (wallet setup, then /home).
 			const { count } = await supabase
 				.from("cards")
 				.select("*", { count: "exact", head: true })
