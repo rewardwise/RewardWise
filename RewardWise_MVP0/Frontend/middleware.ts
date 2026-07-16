@@ -3,8 +3,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-import { isInternalEmail } from "@/utils/auth/internal-accounts";
-
 const publicRoutes = [
   "/",
   // /about is public marketing content (founder story) linked from the guest
@@ -18,22 +16,9 @@ const publicRoutes = [
   "/reset-password",
 ];
 
-/**
- * Routes reachable without an active Zoe subscription.
- * Keep this tight. Do NOT include core app routes like /home, /concierge,
- * /wallet-setup, /history, /trips, etc.
- */
-const subscriptionFreeRoutes = ["/subscribe", "/profile"];
-
 function isPublicRoute(pathname: string) {
   return publicRoutes.some((route) => {
     if (route === "/") return pathname === "/";
-    return pathname === route || pathname.startsWith(`${route}/`);
-  });
-}
-
-function isSubscriptionFreeRoute(pathname: string) {
-  return subscriptionFreeRoutes.some((route) => {
     return pathname === route || pathname.startsWith(`${route}/`);
   });
 }
@@ -74,8 +59,13 @@ export async function middleware(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
   const isPublic = isPublicRoute(pathname);
-  const isSubscriptionFree = isSubscriptionFreeRoute(pathname);
 
+  // Wind-down (2026-07): MyTravelWallet is free for everyone, in perpetuity.
+  // The subscription / day-pass paywall has been removed — any signed-in user
+  // has full access to every route. Unauthenticated users are still sent to
+  // /login for a (free) account on non-public routes. To restore the paywall,
+  // revert this commit: the removed block re-checks subscriptions +
+  // day_pass_expires_at and redirects to /subscribe.
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
@@ -84,62 +74,6 @@ export async function middleware(request: NextRequest) {
     const redirectResponse = NextResponse.redirect(url);
     copyCookies(supabaseResponse, redirectResponse);
     return redirectResponse;
-  }
-
-  if (user && !isPublic && !isSubscriptionFree) {
-    if (isInternalEmail(user.email)) {
-      return supabaseResponse;
-    }
-
-    const { data: sub } = await supabase
-      .from("subscriptions")
-      .select("status, current_period_end")
-      .eq("user_id", user.id)
-      .maybeSingle();
-
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("day_pass_expires_at")
-      .eq("user_id", user.id)
-      .maybeSingle();
-
-    const dayPassExpiryMs = profile?.day_pass_expires_at
-      ? new Date(profile.day_pass_expires_at).getTime()
-      : 0;
-
-    const hasActiveDayPass = dayPassExpiryMs > Date.now();
-
-    if (hasActiveDayPass) {
-      return supabaseResponse;
-    }
-
-    const subscriptionPeriodEndMs = sub?.current_period_end
-      ? new Date(sub.current_period_end).getTime()
-      : 0;
-    const hasActiveSubscription =
-      sub?.status === "active" &&
-      (!subscriptionPeriodEndMs || subscriptionPeriodEndMs > Date.now());
-
-    if (sub?.status === "past_due") {
-      const url = request.nextUrl.clone();
-      url.pathname = "/subscribe";
-      url.search = "";
-      url.searchParams.set("past_due", "1");
-
-      const redirectResponse = NextResponse.redirect(url);
-      copyCookies(supabaseResponse, redirectResponse);
-      return redirectResponse;
-    }
-
-    if (!hasActiveSubscription) {
-      const url = request.nextUrl.clone();
-      url.pathname = "/subscribe";
-      url.search = "";
-
-      const redirectResponse = NextResponse.redirect(url);
-      copyCookies(supabaseResponse, redirectResponse);
-      return redirectResponse;
-    }
   }
 
   return supabaseResponse;
