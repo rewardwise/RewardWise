@@ -749,12 +749,32 @@ export default function VerdictCard({
                       </span>
                     )}
                   </div>
-                  <div>
-                    <p className="text-sm font-semibold text-slate-400">Savings</p>
-                    <p className="mt-2 text-2xl font-bold text-emerald-400">
-                      {displaySavings != null ? `~${fmtMoney(displaySavings, 0)}` : "—"}
-                    </p>
-                  </div>
+                  {recommendation === "pay_cash" && hasAward ? (
+                    // "Savings" here would be estimated_savings = cash_price − award
+                    // taxes: the cash you'd skip IF you booked on points — the option
+                    // we're recommending AGAINST, and it ≈ the full fare. Rendering
+                    // that as "Savings" on a pay-cash verdict is dishonest. Show the
+                    // truthful metric instead: the points NOT burned (display-only,
+                    // matched cpp from the engine).
+                    <div>
+                      <p className="text-sm font-semibold text-slate-400">Points kept</p>
+                      <p className="mt-2 text-2xl font-bold text-emerald-400" data-testid="verdict-points-kept">
+                        {Number(displayPoints).toLocaleString()} pts
+                      </p>
+                      {displayCpp != null && (
+                        <p className="mt-1 text-xs text-slate-400">
+                          ≈{Number(displayCpp).toFixed(1)}¢/pt here — worth more on a stronger trip
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-sm font-semibold text-slate-400">Savings</p>
+                      <p className="mt-2 text-2xl font-bold text-emerald-400">
+                        {displaySavings != null ? `~${fmtMoney(displaySavings, 0)}` : "—"}
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 <p className="mt-5 text-base leading-7 text-slate-300">{reasoningCopy}</p>

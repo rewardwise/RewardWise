@@ -196,6 +196,22 @@ describe("VerdictCard — headline leads with dollar savings (Phase 3 redesign)"
     expect(headline).not.toContain("Cash fare");
   });
 
+  it("pay_cash tile shows 'Points kept' with matched cpp, never 'Savings'", () => {
+    renderCard({
+      recommendation: "pay_cash" as const,
+      pay_cash: true,
+      metrics: { cash_price: 169, points_cost: 35000, taxes: 5.6, estimated_savings: 163, cpp: 0.9 },
+    });
+    const kept = container.querySelector('[data-testid="verdict-points-kept"]');
+    expect(kept, "pay_cash must render the Points-kept tile").not.toBeNull();
+    expect(kept!.textContent).toContain("35,000 pts");
+    expect(container.textContent).toContain("Points kept");
+    expect(container.textContent).toContain("≈0.9¢/pt");
+    // estimated_savings (cash − taxes ≈ full fare) must NOT render as "Savings"
+    // on a pay-cash verdict — it describes the option we recommend against.
+    expect(container.textContent).not.toContain("Savings");
+  });
+
   it("use_points headline falls back to bare 'Use points' when savings is missing", () => {
     // Null out every source of displaySavings:
     //   metrics.estimated_savings is the only path. cash_price=null also
