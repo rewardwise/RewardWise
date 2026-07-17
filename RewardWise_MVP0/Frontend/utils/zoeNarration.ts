@@ -51,7 +51,17 @@ const money = (n: number | null | undefined) =>
 const pts = (n: number | null | undefined) => (n == null ? "—" : n.toLocaleString());
 const cpp = (n: number | null | undefined) => (n == null ? "—" : `${n.toFixed(1)}¢/pt`);
 
-export function zoeNarration(verdict: Verdict, ownership?: Ownership | null): ZoeNarration {
+/** Optional route context so Zoe can name the trip she found (from → to). */
+export interface ZoeRouteContext {
+	origin?: string | null;
+	destination?: string | null;
+}
+
+export function zoeNarration(
+	verdict: Verdict,
+	ownership?: Ownership | null,
+	ctx?: ZoeRouteContext | null,
+): ZoeNarration {
 	const r = rec(verdict, ownership);
 	const m = verdict.metrics ?? {};
 	const o = ownership && ownership.applicable ? ownership : null;
@@ -60,17 +70,25 @@ export function zoeNarration(verdict: Verdict, ownership?: Ownership | null): Zo
 	const savings = m.estimated_savings ?? null;
 	const redemptionCpp = m.cpp ?? null;
 
+	// Excited, persona-driven opener naming the trip she found. Route is shown
+	// when we have it (origin → destination); the points math is deliberately
+	// left OUT of the one-liner (it lives in the verdict panel) — Zoe stays short
+	// and celebratory, then gives the cash/points call.
+	const route =
+		ctx?.origin && ctx?.destination ? `${ctx.origin} → ${ctx.destination}` : "your trip";
+	const found = `🎉 Found it! Your ${route} flight`;
+
 	let lead: string;
 	if (r === "use_points") {
 		lead =
 			o && o.can_afford
-				? `🎯 Use your points. ${program} at ${cpp(redemptionCpp)} beats ${money(cash)} cash — and you've got them: ${pts(o.points_needed)} from your ${pts(o.owned_balance)}.`
-				: `🎯 Use your points. ${program} at ${cpp(redemptionCpp)} beats ${money(cash)} cash — that's the better deal here.`;
+				? `${found} — use your points on this one, you've got them. Cash would run ${money(cash)}.`
+				: `${found} — use your points here, it's the better deal. Cash would run ${money(cash)}.`;
 	} else if (r === "pay_cash") {
 		lead =
 			o && !o.can_afford
-				? `🪙 Real talk — points win on value, but you're ${pts(o.shortfall)} short for ${program}. Pay the ${money(cash)} cash and keep your points for a trip where they go further.`
-				: `💵 Pay cash — ${money(cash)}. The points option here is a weak ${cpp(redemptionCpp)} redemption; save them for a stronger trip.`;
+				? `${found} is ${money(cash)}. You're ${pts(o.shortfall)} short for ${program}, so pay the cash and keep your points for a trip where they go further.`
+				: `${found} is ${money(cash)} — pay cash on this one and save your points for a bigger trip. 🙌`;
 	} else {
 		lead = `🤔 The pricing came back thin here — try the search again, or check nearby dates.`;
 	}
