@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthProvider";
 import { useWallet } from "@/context/WalletContext";
 import { zoeNarration, zoeWelcome } from "@/utils/zoeNarration";
+import { findMetroByCsv } from "@/components/metro-groups";
 import type { Verdict as CanonicalVerdict, Ownership } from "@/types/verdict";
 import { useSearchFill } from "@/context/SearchFillContext";
 import { usePreferences } from "@/hooks/usePreferences";
@@ -148,6 +149,12 @@ function formatDuration(mins: number) {
 	const h = Math.floor(mins / 60);
 	const m = mins % 60;
 	return `${h}h ${m}m`;
+}
+
+// "NRT,HND" → "Tokyo"; single IATA codes pass through unchanged.
+function prettyPlace(raw: string): string {
+	if (!raw || !raw.includes(",")) return raw;
+	return findMetroByCsv(raw)?.name ?? raw;
 }
 
 // ─── CASH FLIGHT CARD ─────────────────────────────────────────────────────────
@@ -829,7 +836,12 @@ export default function HomePage() {
 									? zoeNarration(
 											results.verdict as unknown as CanonicalVerdict,
 											results.verdict.ownership ?? null,
-											{ origin: results.origin, destination: results.destination },
+											{
+												// Prettify metro CSVs ("NRT,HND" → "Tokyo") so Zoe names
+												// the city, not raw IATA codes.
+												origin: prettyPlace(results.origin),
+												destination: prettyPlace(results.destination),
+											},
 										)
 									: null
 							}
