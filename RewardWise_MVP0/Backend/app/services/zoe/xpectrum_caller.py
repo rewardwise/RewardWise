@@ -31,7 +31,7 @@ from typing import Any, Optional
 
 import httpx
 
-XPECTRUM_BASE_URL = os.getenv("XPECTRUM_BASE_URL", "https://cloud.xpectrum.co/api/v1")
+XPECTRUM_BASE_URL = os.getenv("XPECTRUM_BASE_URL", "https://cloud.xpectrum.co/v1")
 TIMEOUT = float(os.getenv("XPECTRUM_TIMEOUT_SECONDS", "60"))
 
 _FALLBACK_MSG = "I'm having a little trouble right now — give me a second and try again."
