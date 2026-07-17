@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useWallet } from "@/context/WalletContext";
 import { useAuth } from "@/context/AuthProvider";
 import ReactMarkdown from "react-markdown";
+import remarkBreaks from "remark-breaks";
 import {
 	Check,
 	Edit3,
@@ -583,9 +584,25 @@ if (prefillRaw && onFillSearch) {
 					>
 						{isAssistant ? (
 							<ReactMarkdown
+								// remark-breaks: Xpectrum's compact card uses single newlines
+								// (one leg per line) — without this they collapse into a
+								// run-on paragraph.
+								remarkPlugins={[remarkBreaks]}
 								components={{
 									p: ({ children }) => <p className="mb-1 last:mb-0">{children}</p>,
 									strong: ({ children }) => <strong className="font-semibold text-white">{children}</strong>,
+									// Deep links (outbound · return) must LOOK like links and
+									// open in a new tab — default <a> rendered as plain text.
+									a: ({ children, href }) => (
+										<a
+											href={href}
+											target="_blank"
+											rel="noopener noreferrer"
+											className="font-semibold text-emerald-600 underline underline-offset-2 hover:text-emerald-700"
+										>
+											{children}
+										</a>
+									),
 								}}
 							>
 								{msg.content}
