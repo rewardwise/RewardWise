@@ -629,7 +629,8 @@ export default function HomePage() {
 									max={maxSearchDate}
 									value={departDate}
 									onChange={(e) => setDepartDate(clampISODate(e.target.value, departDate))}
-									className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white [color-scheme:dark] focus:outline-none focus:ring-2 focus:ring-emerald-500"
+									onClick={(e) => e.currentTarget.showPicker?.()}
+									className="w-full cursor-pointer rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white [color-scheme:dark] focus:outline-none focus:ring-2 focus:ring-emerald-500"
 								/>
 								<CashHorizonWarning date={departDate} />
 							</div>
@@ -644,7 +645,8 @@ export default function HomePage() {
 										max={maxSearchDate}
 										value={returnDate}
 										onChange={(e) => setReturnDate(clampISODate(e.target.value, returnDate))}
-										className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white [color-scheme:dark] focus:outline-none focus:ring-2 focus:ring-emerald-500"
+										onClick={(e) => e.currentTarget.showPicker?.()}
+										className="w-full cursor-pointer rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white [color-scheme:dark] focus:outline-none focus:ring-2 focus:ring-emerald-500"
 									/>
 									<CashHorizonWarning date={returnDate} />
 								</div>
@@ -767,6 +769,7 @@ export default function HomePage() {
 									? zoeNarration(
 											results.verdict as unknown as CanonicalVerdict,
 											results.verdict.ownership ?? null,
+											{ origin: results.origin, destination: results.destination },
 										)
 									: null
 							}
