@@ -201,6 +201,12 @@ describe("Verdict round-trip return flight rendering (86ba2ze48)", () => {
             inbound={inbound}
           />
         );
+        // Round-trip legs are tabbed now — the return leg lives behind "To Flight".
+        act(() => {
+          container
+            .querySelector('[data-testid="flight-tab-to"]')!
+            .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+        });
         const returnCard = container.querySelector('[data-testid="flight-card-return"]');
         expect(returnCard).not.toBeNull();
         expect(returnCard!.textContent).toContain("Aeroplan");
@@ -319,10 +325,10 @@ describe("Verdict round-trip return flight rendering (86ba2ze48)", () => {
         expect(outboundCard).not.toBeNull();
       });
 
-      // 3-viewport responsive guard: at this viewport, the rendered card
-      // must carry the responsive classes that prevent horizontal scroll on
-      // narrow mobiles and use the 2-col grid layout on desktop md+.
-      it(`viewport guard at ${name}: responsive grid + card classes present`, () => {
+      // 3-viewport guard: round-trip flight details are tabbed (From Flight /
+      // To Flight), one leg visible at a time. Guard the tab controls exist and
+      // the visible card carries no fixed-width class that would overflow mobile.
+      it(`viewport guard at ${name}: tabbed legs + card classes present`, () => {
         const outbound = buildOutboundLeg({
           recommendation: "use_points",
           bestOutbound: detailedOutboundAward,
@@ -349,13 +355,12 @@ describe("Verdict round-trip return flight rendering (86ba2ze48)", () => {
         );
         const section = container.querySelector("section");
         expect(section).not.toBeNull();
-        // Two-col grid kicks in at md: (>= 768px). Mobile collapses to single col.
-        const grid = section!.querySelector(".grid");
-        expect(grid).not.toBeNull();
-        expect(grid!.className).toMatch(/md:grid-cols-2/);
-        // No fixed-width class on the card that would overflow at 375px
+        // Tabbed legs: both tab controls present, one leg card visible at a time.
+        expect(container.querySelector('[data-testid="flight-tab-from"]')).not.toBeNull();
+        expect(container.querySelector('[data-testid="flight-tab-to"]')).not.toBeNull();
         const cards = section!.querySelectorAll('[data-testid^="flight-card-"]');
-        expect(cards.length).toBe(2);
+        expect(cards.length).toBe(1);
+        // No fixed-width class on the card that would overflow at 375px
         cards.forEach((card) => {
           expect(card.className).not.toMatch(/\bw-\[\d{3,}px\]/);
         });

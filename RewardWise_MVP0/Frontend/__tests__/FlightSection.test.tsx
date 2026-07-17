@@ -83,6 +83,12 @@ describe("FlightSection — dates in header", () => {
         inbound={returnLeg}
       />
     );
+    // Round-trip legs are tabbed — reveal the return leg via the "To Flight" tab.
+    act(() => {
+      container
+        .querySelector('[data-testid="flight-tab-to"]')!
+        .dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
     const returnHeader = container.querySelector('[data-testid="leg-header-return"]');
     expect(returnHeader).not.toBeNull();
     expect(returnHeader!.textContent).toContain("Jun 22");
