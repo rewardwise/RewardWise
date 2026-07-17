@@ -1,6 +1,7 @@
 /** @format */
 "use client";
 
+import { useState } from "react";
 import { PlaneTakeoff, PlaneLanding } from "lucide-react";
 
 type Recommendation = "use_points" | "pay_cash" | "wait";
@@ -205,20 +206,65 @@ function FlightCard({ leg }: { leg: FlightLeg }) {
 }
 
 export default function FlightSection({ recommendation, isRoundtrip, outbound, inbound }: Props) {
+  const [activeTab, setActiveTab] = useState<"from" | "to">("from");
+
   if (recommendation === "wait") return null;
   if (!outbound || outbound.segments.length === 0) return null;
 
   const showInbound = isRoundtrip && inbound && inbound.segments.length > 0;
+
+  // One-way (or no return detail): render the single leg, no tabs.
+  if (!showInbound || !inbound) {
+    return (
+      <section className="mt-6">
+        <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
+          Flight details
+        </p>
+        <FlightCard leg={outbound} />
+      </section>
+    );
+  }
+
+  // Round trip: tabbed so we show one leg at a time (From Flight / To Flight)
+  // instead of a tall two-column block.
+  const tabs = [
+    { id: "from" as const, label: "From Flight" },
+    { id: "to" as const, label: "To Flight" },
+  ];
+  const activeLeg = activeTab === "from" ? outbound : inbound;
 
   return (
     <section className="mt-6">
       <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
         Flight details
       </p>
-      <div className={showInbound ? "grid gap-4 md:grid-cols-2" : "grid gap-4"}>
-        <FlightCard leg={outbound} />
-        {showInbound && inbound ? <FlightCard leg={inbound} /> : null}
+      <div
+        role="tablist"
+        aria-label="Flight legs"
+        className="mb-3 inline-flex rounded-xl border border-white/10 bg-white/[0.03] p-1"
+      >
+        {tabs.map((tab) => {
+          const selected = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              data-testid={`flight-tab-${tab.id}`}
+              onClick={() => setActiveTab(tab.id)}
+              className={`rounded-lg px-4 py-1.5 text-xs font-semibold transition-colors ${
+                selected
+                  ? "bg-emerald-500 text-white"
+                  : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
+      <FlightCard leg={activeLeg} />
     </section>
   );
 }

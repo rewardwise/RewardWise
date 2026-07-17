@@ -753,6 +753,66 @@ export default function HomePage() {
 
 					</div>{/* /search-pill mtw-light wrapper */}
 
+						{/* Verdict / loading — rendered in the LEFT column directly under the
+						    search pill so the result is immediately visible on search (no
+						    scroll past the full-height Zoe pane). */}
+						{(searching || results) && (
+							<section data-testid="home-results" className="mtw-light font-mtw mt-4">
+								<div className="space-y-4">
+									{searching ? (
+										<SearchLoadingExperience
+											origin={origin}
+											destination={destination}
+											cabin={cabin}
+											travelers={travelers}
+											isRoundtrip={tripType === "roundtrip"}
+										/>
+									) : results?.verdict ? (
+										<VerdictCard
+											theme="light"
+											onAskZoe={handleAskZoeAboutVerdict}
+											verdict={results.verdict}
+											cashPrice={results.cash_price}
+											origin={results.origin}
+											destination={results.destination}
+											departDate={results.date}
+											departDateEnd={results.depart_date_end ?? null}
+											winningDate={results.winning_date ?? null}
+											returnDate={results.return_date}
+											returnDateEnd={results.return_date_end ?? null}
+											winningReturnDate={results.winning_return_date ?? null}
+											cabin={results.cabin}
+											travelers={numTravelers}
+											isRoundtrip={results.is_roundtrip}
+											awardOptions={results.award_options}
+											returnAwardOptions={results.return_award_options}
+											flights={results.flights}
+											userPrograms={userPrograms}
+											userCards={results.user_cards ?? []}
+											verdictId={results.verdict_id}
+											searchId={results.search_id}
+											onTryDifferentDate={handleTryDifferentDate}
+										/>
+									) : !hasWallet ? (
+										<div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
+											<p className="text-amber-400 text-sm font-semibold mb-1">
+												No wallet set up yet
+											</p>
+											<p className="text-gray-400 text-xs mb-2">
+												Add your loyalty programs to get a personalized verdict.
+											</p>
+											<button
+												onClick={() => router.push("/wallet-setup")}
+												className="text-xs bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg"
+											>
+												Set up wallet →
+											</button>
+										</div>
+									) : null}
+								</div>
+							</section>
+						)}
+
 					</div>{/* /LEFT COLUMN (entry) */}
 
 					{/* RIGHT COLUMN (42%) — Zoe docked (kept dark; light restyle deferred) */}
@@ -778,68 +838,6 @@ export default function HomePage() {
 					</div>
 				</main>
 			</section>
-
-			{/* TIER 2 — light results, full width below the island band (ⓒ: the
-			    verdict renders as a LIGHT card, not on the photo). */}
-			{(searching || results) && (
-				<section
-					data-testid="home-results"
-					className="mtw-light font-mtw mx-auto max-w-6xl px-6 pb-10"
-				>
-					<div className="mt-2 space-y-4">
-						{searching ? (
-							<SearchLoadingExperience
-								origin={origin}
-								destination={destination}
-								cabin={cabin}
-								travelers={travelers}
-								isRoundtrip={tripType === "roundtrip"}
-							/>
-						) : results?.verdict ? (
-							<VerdictCard
-								theme="light"
-								onAskZoe={handleAskZoeAboutVerdict}
-								verdict={results.verdict}
-								cashPrice={results.cash_price}
-								origin={results.origin}
-								destination={results.destination}
-								departDate={results.date}
-								departDateEnd={results.depart_date_end ?? null}
-								winningDate={results.winning_date ?? null}
-								returnDate={results.return_date}
-								returnDateEnd={results.return_date_end ?? null}
-								winningReturnDate={results.winning_return_date ?? null}
-								cabin={results.cabin}
-								travelers={numTravelers}
-								isRoundtrip={results.is_roundtrip}
-								awardOptions={results.award_options}
-								returnAwardOptions={results.return_award_options}
-								flights={results.flights}
-								userPrograms={userPrograms}
-								userCards={results.user_cards ?? []}
-								verdictId={results.verdict_id}
-								searchId={results.search_id}
-								onTryDifferentDate={handleTryDifferentDate}
-							/>
-						) : !hasWallet ? (
-							<div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">
-								<p className="text-amber-400 text-sm font-semibold mb-1">
-									No wallet set up yet
-								</p>
-								<p className="text-gray-400 text-xs mb-2">
-									Add your loyalty programs to get a personalized verdict.
-								</p>
-								<button
-									onClick={() => router.push("/wallet-setup")}
-									className="text-xs bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg"
-								>
-									Set up wallet →
-								</button>
-							</div>
-						) : null}
-					</div>
-				</section>
-			)}
 		</div>
 	);
 }
