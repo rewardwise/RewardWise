@@ -147,6 +147,33 @@ body {
 .mtw-light .border-gray-600 { border-color: #e5e7eb; }
 .mtw-light .shadow-2xl { box-shadow: 0 4px 32px rgba(16, 24, 40, 0.06); }
 
+/* Accent tints (-200/-300/-400) are dark-theme colors — on the light card they
+   melt into the background (confidence pill, seats-left chip, value badges,
+   leg labels). Deepen text to -700, translucent fills to solid -100 pastels. */
+.mtw-light .text-emerald-200,
+.mtw-light .text-emerald-300 { color: #047857; }
+.mtw-light .text-emerald-400 { color: #059669; }
+.mtw-light .text-amber-200,
+.mtw-light .text-amber-300 { color: #b45309; }
+.mtw-light .text-sky-200,
+.mtw-light .text-sky-300 { color: #0369a1; }
+.mtw-light .text-indigo-300 { color: #4338ca; }
+.mtw-light .text-rose-200,
+.mtw-light .text-rose-300 { color: #be123c; }
+.mtw-light .bg-emerald-500\/10,
+.mtw-light .bg-emerald-500\/15 { background-color: #d1fae5; }
+.mtw-light .bg-amber-500\/10,
+.mtw-light .bg-amber-500\/15 { background-color: #fef3c7; }
+.mtw-light .bg-sky-500\/15 { background-color: #e0f2fe; }
+.mtw-light .bg-indigo-500\/15 { background-color: #e0e7ff; }
+.mtw-light .border-emerald-400\/20,
+.mtw-light .border-emerald-400\/25,
+.mtw-light .border-emerald-400\/30 { border-color: #6ee7b7; }
+.mtw-light .border-amber-400\/25,
+.mtw-light .border-amber-400\/30 { border-color: #fcd34d; }
+.mtw-light .border-sky-400\/30 { border-color: #7dd3fc; }
+.mtw-light .border-indigo-400\/20 { border-color: #a5b4fc; }
+
 /* ─────────────────────────────────────────────────────────────────────────
    Zoe docked pane — LIGHT (PR 6). Component-scoped remap of Zoe's dark chrome
    (set via the docked container's .zoe-light class). Emerald buttons KEEP white

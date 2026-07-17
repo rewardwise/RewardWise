@@ -18,16 +18,18 @@ type Props = {
   publicPreview?: boolean;
 };
 
+// Light-card legible tones (the -200 tints were dark-theme colors that melted
+// into the light verdict card background).
 function confidenceTone(confidence: Confidence) {
-  if (confidence === "high") return "border-emerald-400/25 bg-emerald-500/10 text-emerald-200";
-  if (confidence === "medium") return "border-amber-400/25 bg-amber-500/10 text-amber-200";
-  return "border-slate-400/20 bg-slate-400/10 text-slate-200";
+  if (confidence === "high") return "border-emerald-300 bg-emerald-100 text-emerald-800";
+  if (confidence === "medium") return "border-amber-300 bg-amber-100 text-amber-800";
+  return "border-slate-300 bg-slate-200 text-slate-700";
 }
 
 function confidenceDot(confidence: Confidence) {
-  if (confidence === "high") return "bg-emerald-300";
-  if (confidence === "medium") return "bg-amber-300";
-  return "bg-slate-300";
+  if (confidence === "high") return "bg-emerald-500";
+  if (confidence === "medium") return "bg-amber-500";
+  return "bg-slate-500";
 }
 
 export default function VerdictTopRow({
