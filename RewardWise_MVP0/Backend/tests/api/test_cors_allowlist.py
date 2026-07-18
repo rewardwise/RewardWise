@@ -4,7 +4,7 @@ Pre-fix gap: `Backend/app/main.py` only listed prod/localhost origins in
 `allow_origins`. Vercel branch-preview URLs
 (`mytravelwallet-ai-git-<branch>-my-travel-walletai.vercel.app`) preflight-
 400'd with no Access-Control-Allow-Origin, so the browser blocked
-`/api/public-search` POSTs from any PR preview deploy. The Playwright
+`/api/search` POSTs (CORS middleware config check). The Playwright
 preview-smoke gate could not pass until this hole closed.
 
 These tests pin the post-fix contract by exercising Starlette's actual
@@ -37,7 +37,7 @@ def _build_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    @app.post("/api/public-search")
+    @app.post("/api/search")
     def _stub():
         return {"ok": True}
 
@@ -49,7 +49,7 @@ client = TestClient(_build_app())
 
 def _preflight(origin: str):
     return client.options(
-        "/api/public-search",
+        "/api/search",
         headers={
             "Origin": origin,
             "Access-Control-Request-Method": "POST",
