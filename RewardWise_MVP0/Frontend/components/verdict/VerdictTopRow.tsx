@@ -15,7 +15,6 @@ type Props = {
   speaking: boolean;
   onListenToggle: () => void;
   verdictId?: string | null;
-  publicPreview?: boolean;
 };
 
 // Light-card legible tones (the -200 tints were dark-theme colors that melted
@@ -38,7 +37,6 @@ export default function VerdictTopRow({
   speaking,
   onListenToggle,
   verdictId,
-  publicPreview = false,
 }: Props) {
   const [choice, setChoice] = useState<1 | 5 | null>(null);
   const [open, setOpen] = useState(false);
@@ -47,7 +45,7 @@ export default function VerdictTopRow({
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
 
-  const showFeedback = !publicPreview && !!verdictId;
+  const showFeedback = !!verdictId;
 
   const submit = async () => {
     if (!choice || saving) return;
@@ -93,7 +91,7 @@ export default function VerdictTopRow({
 
       <h2 className="text-4xl font-extrabold tracking-tight text-white md:text-5xl">{recommendationHeadline}</h2>
 
-      {!publicPreview && (
+      {(
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={onListenToggle}

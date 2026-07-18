@@ -40,7 +40,6 @@ describe("VerdictTopRow — Partial data pill removed", () => {
           speaking={false}
           onListenToggle={() => undefined}
           verdictId={null}
-          publicPreview={true}
         />
       );
     });

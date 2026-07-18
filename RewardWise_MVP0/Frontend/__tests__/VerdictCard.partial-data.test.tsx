@@ -48,11 +48,6 @@ vi.mock("@/components/verdict/MultiHandoffGrid", () => ({
   default: () => <div data-testid="multi-handoff-stub" />,
 }));
 
-vi.mock("@/components/verdict/WalletFramingPreview", () => ({
-  __esModule: true,
-  default: () => <div data-testid="wallet-framing-stub" />,
-}));
-
 import VerdictCard from "../components/VerdictCard";
 
 let container: HTMLDivElement;
