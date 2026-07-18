@@ -147,7 +147,7 @@ function RouteMap({ origin, destination }: { origin?: string; destination?: stri
   const rightLabel = destination?.toUpperCase() || "Destination";
 
   return (
-    <div className="relative mx-auto mt-7 h-72 w-full max-w-4xl overflow-hidden rounded-3xl border border-white/10 bg-slate-900/70 text-emerald-100 shadow-inner shadow-black/20">
+    <div className="relative mx-auto mt-7 h-72 w-full max-w-4xl overflow-hidden rounded-3xl border border-gray-200 bg-emerald-50 text-emerald-900 shadow-inner">
       <style>{`
         @keyframes mtw-route-dash {
           to { stroke-dashoffset: -24; }
@@ -161,7 +161,7 @@ function RouteMap({ origin, destination }: { origin?: string; destination?: stri
       {/* Ambient glow */}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(16,185,129,0.16),transparent_30%),radial-gradient(circle_at_80%_65%,rgba(56,189,248,0.12),transparent_32%)]" />
       {/* Grid overlay */}
-      <div className="absolute inset-0 opacity-[0.08] [background-image:linear-gradient(rgba(255,255,255,.35)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.35)_1px,transparent_1px)] [background-size:34px_34px]" />
+      <div className="absolute inset-0 opacity-[0.08] [background-image:linear-gradient(rgba(15,23,42,.4)_1px,transparent_1px),linear-gradient(90deg,rgba(15,23,42,.4)_1px,transparent_1px)] [background-size:34px_34px]" />
 
       <svg
         className="absolute inset-0 h-full w-full"
@@ -173,8 +173,8 @@ function RouteMap({ origin, destination }: { origin?: string; destination?: stri
         <g transform={mapTransform}>
           <path
             d={mapPath}
-            fill="rgba(148, 163, 184, 0.22)"
-            stroke="rgba(148, 163, 184, 0.24)"
+            fill="rgba(100, 116, 139, 0.28)"
+            stroke="rgba(100, 116, 139, 0.45)"
             strokeWidth="0.7"
             vectorEffect="non-scaling-stroke"
           />
@@ -184,7 +184,7 @@ function RouteMap({ origin, destination }: { origin?: string; destination?: stri
         <path
           d={routePath}
           fill="none"
-          stroke="rgba(110, 231, 183, 0.95)"
+          stroke="rgba(5, 150, 105, 0.95)"
           strokeWidth={strokeWidth}
           strokeLinecap="round"
           strokeDasharray="8 8"
@@ -192,28 +192,28 @@ function RouteMap({ origin, destination }: { origin?: string; destination?: stri
         />
 
         {/* Origin dot + pulse ring (emerald) */}
-        <circle cx={start.x} cy={start.y} r={3.5} fill="rgb(110, 231, 183)" />
+        <circle cx={start.x} cy={start.y} r={3.5} fill="rgb(5, 150, 105)" />
         <foreignObject x={start.x - 6} y={start.y - 6} width={12} height={12}>
           <div
-            className="h-3 w-3 rounded-full border border-emerald-200/60 bg-emerald-300/20"
+            className="h-3 w-3 rounded-full border border-emerald-500/60 bg-emerald-500/20"
             style={{ animation: "mtw-map-pulse 1.8s ease-in-out infinite" }}
           />
         </foreignObject>
 
         {/* Destination dot + ring (sky) */}
-        <circle cx={end.x} cy={end.y} r={3.5} fill="rgb(125, 211, 252)" />
+        <circle cx={end.x} cy={end.y} r={3.5} fill="rgb(2, 132, 199)" />
         <foreignObject x={end.x - 6} y={end.y - 6} width={12} height={12}>
-          <div className="h-3 w-3 rounded-full border border-sky-200/60 bg-sky-300/20" />
+          <div className="h-3 w-3 rounded-full border border-sky-500/60 bg-sky-500/20" />
         </foreignObject>
       </svg>
 
       {/* Route label badge */}
-      <div className="absolute left-4 top-3 rounded-full border border-white/10 bg-black/20 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400 backdrop-blur-md">
+      <div className="absolute left-4 top-3 rounded-full border border-gray-200 bg-white/80 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-gray-500 backdrop-blur-md">
         {mapLabel}
       </div>
 
       {/* Airport labels — always origin left, destination right */}
-      <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between text-sm font-bold text-white">
+      <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between text-sm font-bold text-gray-900">
         <span>{leftLabel}</span>
         <span>{rightLabel}</span>
       </div>
@@ -261,7 +261,7 @@ export default function SearchLoadingExperience({
     : steps[Math.max(0, activeIndex)]?.label || "Starting search...";
 
   return (
-    <div className="rounded-[1.75rem] border border-white/10 bg-slate-950/80 p-6 shadow-2xl shadow-black/30 backdrop-blur-xl sm:p-8">
+    <div className="rounded-[1.75rem] border border-gray-200 bg-white p-6 shadow-xl shadow-gray-200/60 sm:p-8">
       <style>{`
         @keyframes mtw-pulse-dot {
           0%, 100% { opacity: 0.45; transform: scale(1); }
@@ -270,28 +270,28 @@ export default function SearchLoadingExperience({
       `}</style>
 
       <div className="mx-auto max-w-5xl text-center">
-        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-emerald-300">
+        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-emerald-600">
           Building your trip verdict
         </p>
 
-        <h2 className="mt-3 text-2xl font-black tracking-tight text-white sm:text-4xl">
+        <h2 className="mt-3 text-2xl font-black tracking-tight text-gray-900 sm:text-4xl">
           {route}
         </h2>
 
-        <p className="mt-2 text-sm text-slate-400">
+        <p className="mt-2 text-sm text-gray-500">
           {travelers} traveler{travelers === 1 ? "" : "s"} · {cabin ? cabinLabel(cabin) : ""} · {isRoundtrip ? "round trip" : "one way"}
         </p>
 
         <RouteMap origin={origin} destination={destination} />
 
         <div className="mx-auto mt-7 max-w-4xl">
-          <div className="flex items-center justify-between text-sm font-medium text-slate-400">
+          <div className="flex items-center justify-between text-sm font-medium text-gray-600">
             <span>{statusText}</span>
             <span>{overMinimum ? "100%" : `${progress}%`}</span>
           </div>
-          <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-white/10">
+          <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-gray-200">
             <div
-              className="h-full rounded-full bg-emerald-300 transition-all duration-200 ease-out"
+              className="h-full rounded-full bg-emerald-500 transition-all duration-200 ease-out"
               style={{ width: `${overMinimum ? 100 : progress}%` }}
             />
           </div>
@@ -307,22 +307,22 @@ export default function SearchLoadingExperience({
                 key={step.label}
                 className={`rounded-2xl border px-3 py-3 transition-all duration-300 ${
                   isActive
-                    ? "border-emerald-300/30 bg-emerald-400/10 text-white"
+                    ? "border-emerald-300 bg-emerald-50 text-gray-900"
                     : isDone
-                      ? "border-emerald-300/15 bg-white/[0.035] text-slate-200"
-                      : "border-white/10 bg-white/[0.02] text-slate-500"
+                      ? "border-emerald-200 bg-gray-50 text-gray-700"
+                      : "border-gray-200 bg-gray-50/60 text-gray-400"
                 }`}
               >
                 <div className="mb-2 flex items-center gap-2">
                   <div
                     className={`flex h-5 w-5 items-center justify-center rounded-full ${
-                      isDone || isActive ? "bg-emerald-300/15 text-emerald-200" : "bg-white/5 text-slate-500"
+                      isDone || isActive ? "bg-emerald-100 text-emerald-600" : "bg-gray-100 text-gray-400"
                     }`}
                     style={{ animation: isActive ? "mtw-pulse-dot 1.2s ease-in-out infinite" : undefined }}
                   >
                     {isDone ? <Check className="h-3.5 w-3.5" /> : <Circle className="h-2.5 w-2.5 fill-current" />}
                   </div>
-                  <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-gray-400">
                     Step {index + 1}
                   </span>
                 </div>
