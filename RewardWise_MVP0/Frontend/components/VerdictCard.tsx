@@ -15,7 +15,6 @@ import EmptyWalletCTA from "@/components/verdict/EmptyWalletCTA";
 import ErrorStateCard from "@/components/verdict/ErrorStateCard";
 import FlightSection, { FlightLeg } from "@/components/verdict/FlightSection";
 import MultiHandoffGrid, { MultiHandoffProgram, MultiHandoffCashAirline } from "@/components/verdict/MultiHandoffGrid";
-import CuratedOptions from "@/components/verdict/CuratedOptions";
 import PartialDataCard from "@/components/verdict/PartialDataCard";
 import { selectTopProgram } from "@/utils/topProgramSelection";
 import type { Verdict } from "@/types/verdict";
@@ -633,21 +632,6 @@ export default function VerdictCard({
               verdictId={verdictId}
             />
 
-            {/* Curated 3-option list (redesign) — reuses the deterministic
-                selection above; one card highlighted matching the recommendation,
-                matched cpp shown only on the winner. */}
-            <CuratedOptions
-              recommendation={recommendation}
-              awardOptions={awardOptions}
-              winnerProgram={winner?.program ?? null}
-              cashPrice={displayCashPrice}
-              matchedCpp={metrics.cpp ?? null}
-              savings={metrics.estimated_savings ?? null}
-              ownership={verdict.ownership ?? null}
-              searchId={searchId ?? null}
-              verdictId={verdictId ?? null}
-            />
-
             <div
               data-testid="verdict-reasoning-block"
               role="region"
@@ -656,6 +640,31 @@ export default function VerdictCard({
               <p className="mt-5 max-w-4xl text-lg font-medium leading-8 text-slate-300 md:text-xl">
                 {mainExplanation}
               </p>
+              {displayCashPrice != null && (
+                <p
+                  data-testid="verdict-cash-flights"
+                  className="mt-3 text-base font-semibold text-white"
+                >
+                  {fmtMoney(displayCashPrice, 0)}
+                  {(() => {
+                    const out = (bestCashFlight?.legs ?? [])
+                      .map((l) => l.flight_number)
+                      .filter(Boolean)
+                      .join(", ");
+                    const back = (bestCashFlight?.return_flight?.legs ?? [])
+                      .map((l) => l.flight_number)
+                      .filter(Boolean)
+                      .join(", ");
+                    if (!out && !back) return null;
+                    return (
+                      <span className="font-normal text-slate-300">
+                        {out ? ` · ${out} out` : ""}
+                        {back ? ` · ${back} back` : ""}
+                      </span>
+                    );
+                  })()}
+                </p>
+              )}
               {tierLabel && displayCpp != null && (
                 <div className="mt-4 flex flex-col gap-2 md:max-w-3xl">
                   <span
@@ -707,65 +716,6 @@ export default function VerdictCard({
                 </p>
               )}
 
-              <div className="mt-6 rounded-2xl bg-white/[0.04] p-5 md:p-6">
-                <div className="grid gap-5 md:grid-cols-3">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-400">Cash fare</p>
-                    <p className="mt-2 text-2xl font-bold text-white">{fmtMoney(displayCashPrice, 0)}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-slate-400">Best award</p>
-                    <p className="mt-2 text-2xl font-bold text-white" data-testid="verdict-points-total">
-                      {hasAward ? `${Number(displayPoints).toLocaleString()} pts` : "—"}
-                      {displayTaxes != null && displayTaxes > 0 && <span className="text-base font-semibold text-slate-300"> + {fmtMoney(displayTaxes, 0)}</span>}
-                    </p>
-                    {showPerTravelerCaption && (
-                      <p
-                        className="mt-1 text-xs text-slate-400"
-                        data-testid="verdict-points-per-traveler"
-                      >
-                        {`${Number(displayPointsPerTraveler).toLocaleString()} pts each · ${travelersCount} travelers`}
-                      </p>
-                    )}
-                    {remainingSeats != null && remainingSeats > 0 && (
-                      <span
-                        data-testid="verdict-seats-chip"
-                        className="mt-2 inline-flex items-center rounded-full border border-amber-400/30 bg-amber-500/10 px-2.5 py-0.5 text-[11px] font-semibold text-amber-200"
-                      >
-                        {remainingSeats} seat{remainingSeats !== 1 ? "s" : ""} left
-                      </span>
-                    )}
-                  </div>
-                  {recommendation === "pay_cash" && hasAward ? (
-                    // "Savings" here would be estimated_savings = cash_price − award
-                    // taxes: the cash you'd skip IF you booked on points — the option
-                    // we're recommending AGAINST, and it ≈ the full fare. Rendering
-                    // that as "Savings" on a pay-cash verdict is dishonest. Show the
-                    // truthful metric instead: the points NOT burned (display-only,
-                    // matched cpp from the engine).
-                    <div>
-                      <p className="text-sm font-semibold text-slate-400">Points kept</p>
-                      <p className="mt-2 text-2xl font-bold text-emerald-400" data-testid="verdict-points-kept">
-                        {Number(displayPoints).toLocaleString()} pts
-                      </p>
-                      {displayCpp != null && (
-                        <p className="mt-1 text-xs text-slate-400">
-                          ≈{Number(displayCpp).toFixed(1)}¢/pt here — worth more on a stronger trip
-                        </p>
-                      )}
-                    </div>
-                  ) : (
-                    <div>
-                      <p className="text-sm font-semibold text-slate-400">Savings</p>
-                      <p className="mt-2 text-2xl font-bold text-emerald-400">
-                        {displaySavings != null ? `~${fmtMoney(displaySavings, 0)}` : "—"}
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                <p className="mt-5 text-base leading-7 text-slate-300">{reasoningCopy}</p>
-              </div>
             </div>
 
             {(
