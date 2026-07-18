@@ -540,6 +540,21 @@ export default function HomePage() {
 
 	const numTravelers = results?.travelers ?? travelers;
 
+	// Small-viewport auto-scroll: on phones the stacked search pill (~640px)
+	// pushes the verdict below the fold when results land, so bring the headline
+	// into view. Desktop's 58/42 split already shows it above the fold — never
+	// move the viewport there (lg breakpoint = 1024, where the columns split),
+	// and skip when the verdict is already near the top.
+	useEffect(() => {
+		if (!results?.verdict) return;
+		if (typeof window === "undefined" || window.innerWidth >= 1024) return;
+		const el = document.querySelector('[data-testid="home-results"]');
+		if (!el) return;
+		if (el.getBoundingClientRect().top > 160) {
+			el.scrollIntoView({ behavior: "smooth", block: "start" });
+		}
+	}, [results]);
+
 	useEffect(() => {
 		if (!results?.verdict) return;
 		trackAnalyticsEvent("verdict_viewed", {
