@@ -2,7 +2,7 @@
 
 "use client";
 
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import {
@@ -17,90 +17,13 @@ import {
 	Route,
 	Search,
 	User,
-	Wallet,
 } from "lucide-react";
 
 import AirportSearch from "@/components/AirportSearch";
-import SearchLoadingExperience from "@/components/SearchLoadingExperience";
-import CuratedOptions from "@/components/verdict/CuratedOptions";
 import LandingNav from "@/components/LandingNav";
-import GuestZoeFab from "@/components/GuestZoeFab";
 import { useAuth } from "@/context/AuthProvider";
 import { useSearchFill } from "@/context/SearchFillContext";
 import type { Cabin } from "@/utils/cabin";
-import {
-	dedupeByProgram,
-	filterByDate,
-	type DedupeAwardOption,
-} from "@/utils/awardOptions";
-import type { Ownership } from "@/types/verdict";
-import {
-	PUBLIC_SEARCH_FREE_LIMIT,
-	pluralizeSearch,
-} from "@/utils/public-search";
-
-interface VerdictWinner {
-	program: string | null;
-	points: number | null;
-	taxes: number | null;
-	cpp: number | null;
-	direct: boolean | null;
-}
-
-interface BookingLink {
-	seats_aero_link: string | null;
-	airline_link: string | null;
-	preferred: "seats_aero" | "airline" | "none";
-}
-
-interface Verdict {
-	verdict: string;
-	verdict_label?: string;
-	recommendation?: "use_points" | "pay_cash" | "wait";
-	headline?: string;
-	explanation?: string;
-	winner: VerdictWinner | null;
-	pay_cash: boolean;
-	confidence: "high" | "medium" | "low";
-	confidence_reason?: string;
-	booking_note: string;
-	booking_link: BookingLink;
-	data_quality?: string;
-	missing_sources?: string[];
-	metrics?: {
-		cash_price?: number | null;
-		points_cost?: number | null;
-		taxes?: number | null;
-		cpp?: number | null;
-		estimated_savings?: number | null;
-	};
-}
-
-interface SearchResult {
-	search_id?: string | null;
-	verdict_id?: string | null;
-	public_trial_id?: string | null;
-	origin: string;
-	destination: string;
-	date: string;
-	return_date: string | null;
-	cabin: string;
-	travelers: number;
-	is_roundtrip: boolean;
-	cash_price: number | null;
-	price_level: string | null;
-	typical_price_range: [number, number] | null;
-	flights: any[];
-	award_options: any[];
-	return_award_options: any[];
-	verdict: Verdict;
-}
-
-const MIN_PUBLIC_SEARCH_LOADING_MS = 5000;
-
-function sleep(ms: number) {
-	return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
 
 // ---------------------------------------------------------------------------
 // How-it-works — the three steps below the hero (redesign 01-search.png). No
@@ -124,35 +47,6 @@ const HOW_IT_WORKS = [
 	},
 ];
 
-/**
- * Synthesize a client-side `logged_out` ownership so the guest verdict renders
- * the b1 "connect your wallet" fork (shipped in OwnershipFork, Phase 2a). The
- * backend never sends ownership for guests — it's wallet-derived — so we mark it
- * `applicable: true` (CuratedOptions gates the fork on that) with zeroed balances
- * and `fork_reason: "logged_out"`, which OwnershipFork keys off before any
- * balance math. No fabricated wallet numbers; the fork only invites a connect.
- */
-function guestOwnership(winnerProgram: string | null): Ownership {
-	return {
-		applicable: true,
-		program: winnerProgram ?? "",
-		program_label: null,
-		points_needed: 0,
-		owned_balance: 0,
-		shortfall: 0,
-		can_afford: false,
-		reachable_partners: [],
-		buyable: false,
-		buy_rate_cpp: null,
-		redemption_cpp: null,
-		buy_gap_cost: null,
-		buy_gap_worth_it: false,
-		fork_recommendation: "pay_cash",
-		fork_reason: "logged_out",
-		transfers_as_of: null,
-	};
-}
-
 function LandingPageContent() {
 	const router = useRouter();
 	const searchParams = useSearchParams();
@@ -170,15 +64,7 @@ function LandingPageContent() {
 	const [maxStops, setMaxStops] = useState<string>("any");
 	const [tripType, setTripType] = useState<"roundtrip" | "oneway">("roundtrip");
 	const [showMore, setShowMore] = useState(false);
-	const [searching, setSearching] = useState(false);
-	const [searchError, setSearchError] = useState("");
 	const [signingOutUnauthorized, setSigningOutUnauthorized] = useState(false);
-	const [results, setResults] = useState<SearchResult | null>(null);
-	// Client-side hint only (NOT the paywall). The backend `public_search_trials`
-	// gate is the source of truth; a 429 flips `blocked`. We just count successful
-	// guest searches this session to render "Search N of 3 free".
-	const [searchesUsed, setSearchesUsed] = useState(0);
-	const [blocked, setBlocked] = useState(false);
 
 	const accessDenied = searchParams.get("access") === "denied";
 
@@ -230,96 +116,12 @@ function LandingPageContent() {
 		searchCardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
 	};
 
-	const handleSearch = async () => {
-		const searchStartedAt = Date.now();
-
-		if (!origin || !destination || !departDate) {
-			setSearchError("Please fill in origin, destination, and departure date.");
-			return;
-		}
-
-		if (tripType === "roundtrip" && !returnDate) {
-			setSearchError("Please select a return date for round trips.");
-			return;
-		}
-
-		setSearchError("");
-		setResults(null);
-		setBlocked(false);
-		setSearching(true);
-
-		try {
-			const params = new URLSearchParams({
-				origin,
-				destination,
-				date: departDate,
-				cabin,
-				travelers,
-			});
-
-			if (tripType === "roundtrip" && returnDate) {
-				params.append("return_date", returnDate);
-			}
-			if (maxStops !== "any") {
-				params.append("max_stops", maxStops);
-			}
-
-			const API_URL = process.env.NEXT_PUBLIC_API_URL;
-			if (!API_URL) {
-				throw new Error("Missing NEXT_PUBLIC_API_URL.");
-			}
-
-			const res = await fetch(`${API_URL}/api/public-search?${params.toString()}`, {
-				method: "POST",
-			});
-
-			// 429 = the backend free-trial gate is exhausted. This is the paywall
-			// (the "Search N of 3 free" chip is only a client-side hint); render the
-			// block state instead of a generic error.
-			if (res.status === 429) {
-				setSearching(false);
-				setBlocked(true);
-				setSearchesUsed(PUBLIC_SEARCH_FREE_LIMIT);
-				return;
-			}
-
-			if (!res.ok) {
-				const errData = await res.json().catch(() => null);
-				const detail = errData?.detail;
-				const message = Array.isArray(detail)
-					? (detail[0]?.msg?.replace("Value error, ", "") ??
-						`Server error: ${res.status}`)
-					: (detail ?? `Server error: ${res.status}`);
-				throw new Error(message);
-			}
-
-			const data = await res.json();
-			const remainingLoadingMs =
-				MIN_PUBLIC_SEARCH_LOADING_MS - (Date.now() - searchStartedAt);
-			if (remainingLoadingMs > 0) {
-				await sleep(remainingLoadingMs);
-			}
-			setResults(data);
-			setSearchesUsed((n) => Math.min(n + 1, PUBLIC_SEARCH_FREE_LIMIT));
-		} catch (err: any) {
-			setSearchError(err.message || "Something went wrong. Try again.");
-		} finally {
-			setSearching(false);
-		}
+	// Guest search flow removed (cost decision): anonymous users never trigger a
+	// live search. The form is a signup hook — whatever they typed rides along
+	// via setPendingSearch and prefills after account creation.
+	const handleSearch = () => {
+		handleAuthRoute("/signup");
 	};
-
-	// Map the public-search result into CuratedOptions props. Same dedupe path as
-	// VerdictCard (dedupe-by-program), so the guest sees the identical curated set.
-	const curatedAwards = useMemo(() => {
-		if (!results) return [];
-		const source = (results.award_options ?? []) as DedupeAwardOption[];
-		return dedupeByProgram(filterByDate(source, null)).map((o) => ({
-			program: o.program,
-			points: o.points,
-			taxes: o.taxes ?? null,
-			direct: o.direct,
-		}));
-	}, [results]);
 
 	if (loading || signingOutUnauthorized) {
 		return (
@@ -331,20 +133,6 @@ function LandingPageContent() {
 			</div>
 		);
 	}
-
-	const recommendation =
-		results?.verdict.recommendation ??
-		(results?.verdict.pay_cash ? "pay_cash" : "use_points");
-	const winnerProgram = results?.verdict.winner?.program ?? null;
-	const cashPrice = results?.verdict.metrics?.cash_price ?? results?.cash_price ?? null;
-	const matchedCpp = results?.verdict.metrics?.cpp ?? null;
-	const savings = results?.verdict.metrics?.estimated_savings ?? null;
-
-	const routeSummary = results
-		? `${results.origin} ${results.is_roundtrip ? "⇄" : "→"} ${results.destination}`
-		: "";
-
-	const showResultsArea = Boolean(searching || results || blocked);
 
 	return (
 		// NOTE: `mtw-light` is intentionally NOT on the root. Its
@@ -552,139 +340,18 @@ function LandingPageContent() {
 
 						<button
 							onClick={handleSearch}
-							disabled={
-								searching ||
-								!origin ||
-								!destination ||
-								!departDate ||
-								(tripType === "roundtrip" && !returnDate)
-							}
 							data-testid="landing-search-cta"
-							className="mt-4 flex w-full items-center justify-center gap-2 rounded-mtw bg-mtw-emerald py-3 text-mtw-body font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+							className="mt-4 flex w-full items-center justify-center gap-2 rounded-mtw bg-mtw-emerald py-3 text-mtw-body font-semibold text-white transition-opacity hover:opacity-90"
 						>
-							{searching ? (
-								<>
-									<Loader2 className="h-5 w-5 animate-spin" /> Searching...
-								</>
-							) : (
-								<>See the smartest way to pay</>
-							)}
+							See the smartest way to pay
 						</button>
-
-						{searchError && (
-							<div
-								data-testid="landing-search-error"
-								className="mt-3 rounded-mtw border border-red-200 bg-red-50 px-4 py-3 text-mtw-small text-red-700"
-							>
-								{searchError}
-							</div>
-						)}
 					</div>
 
 					<p className="mt-4 text-mtw-small text-white/85">
-						Free to try. No sign-up. {PUBLIC_SEARCH_FREE_LIMIT}{" "}
-						{pluralizeSearch()} on us.
+						Create a free account and your search comes with you.
 					</p>
 				</div>
 			</section>
-
-			{/* ---------------------------------------------------------------- */}
-			{/* RESULTS AREA — guest verdict / loading / paywall block.          */}
-			{/* ---------------------------------------------------------------- */}
-			{showResultsArea ? (
-				<section
-					data-testid="landing-results"
-					className="relative isolate overflow-hidden"
-				>
-					{/* ⓐ: the guest verdict floats on the ISLAND (not mint); the mint
-					    sections below the hero are unchanged. */}
-					<Image
-						src="/hero-island.jpg"
-						alt=""
-						fill
-						sizes="100vw"
-						className="-z-10 object-cover object-center"
-					/>
-					<div className="absolute inset-0 -z-10 bg-[linear-gradient(180deg,rgba(6,20,14,0.55),rgba(6,20,14,0.30)_45%,rgba(6,20,14,0.55))]" />
-					<div className="relative z-10 mx-auto max-w-2xl px-6 py-10">
-					{/* N-of-3 top bar */}
-					<div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-						<p className="text-mtw-small font-medium text-white/85">
-							{routeSummary}
-						</p>
-						<span
-							data-testid="free-search-counter"
-							className="rounded-mtw-pill border border-mtw-border bg-white px-3 py-1 text-mtw-label uppercase text-mtw-muted"
-						>
-							Search {Math.min(Math.max(searchesUsed, 1), PUBLIC_SEARCH_FREE_LIMIT)}{" "}
-							of {PUBLIC_SEARCH_FREE_LIMIT} free
-						</span>
-					</div>
-
-					{blocked ? (
-						<div
-							data-testid="paywall-block"
-							className="rounded-mtw-lg border border-mtw-border bg-white p-6 text-center shadow-mtw-ambient"
-						>
-							<span className="mx-auto flex h-11 w-11 items-center justify-center rounded-full bg-mtw-emerald/10 text-mtw-emerald">
-								<Wallet className="h-5 w-5" />
-							</span>
-							<h2 className="mt-4 text-mtw-headline text-mtw-ink">
-								You&apos;ve used your {PUBLIC_SEARCH_FREE_LIMIT} free{" "}
-								{pluralizeSearch()}.
-							</h2>
-							<p className="mx-auto mt-2 max-w-md text-mtw-small leading-6 text-mtw-muted">
-								Create a free account to keep comparing trips, add your wallet,
-								and get verdicts personalized to the cards you actually hold.
-							</p>
-							<div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-center">
-								<button
-									type="button"
-									onClick={() => handleAuthRoute("/signup")}
-									className="rounded-mtw bg-mtw-emerald px-5 py-2.5 text-mtw-small font-semibold text-white transition-opacity hover:opacity-90"
-								>
-									Create free account
-								</button>
-								<button
-									type="button"
-									onClick={() => handleAuthRoute("/login")}
-									className="rounded-mtw border border-mtw-border px-5 py-2.5 text-mtw-small font-medium text-mtw-ink transition-colors hover:bg-mtw-surface"
-								>
-									Sign in
-								</button>
-							</div>
-						</div>
-					) : searching ? (
-						<div className="mtw-light rounded-mtw-lg border border-mtw-border bg-white p-6 shadow-mtw-ambient">
-							<SearchLoadingExperience
-								origin={origin}
-								destination={destination}
-								cabin={cabin}
-								travelers={Number(travelers)}
-								isRoundtrip={tripType === "roundtrip"}
-							/>
-						</div>
-					) : results?.verdict ? (
-						<div
-							data-testid="guest-verdict"
-							className="rounded-mtw-lg border border-mtw-border bg-white p-6 shadow-mtw-ambient"
-						>
-							<CuratedOptions
-								recommendation={recommendation}
-								awardOptions={curatedAwards}
-								winnerProgram={winnerProgram}
-								cashPrice={cashPrice}
-								matchedCpp={matchedCpp}
-								savings={savings}
-								ownership={guestOwnership(winnerProgram)}
-								searchId={results.search_id ?? null}
-								verdictId={results.verdict_id ?? null}
-							/>
-						</div>
-					) : null}
-					</div>
-				</section>
-			) : null}
 
 			{/* ---------------------------------------------------------------- */}
 			{/* Trust bar                                                        */}
@@ -812,8 +479,6 @@ function LandingPageContent() {
 				</div>
 			</footer>
 
-			{/* Guest Zoe FAB — deterministic welcome (no auth-gated chat). */}
-			<GuestZoeFab />
 		</div>
 	);
 }
