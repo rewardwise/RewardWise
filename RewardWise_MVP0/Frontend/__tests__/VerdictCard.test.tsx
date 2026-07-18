@@ -128,9 +128,11 @@ describe("VerdictCard — surface cleanup contract", () => {
     const block = container.querySelector('[data-testid="verdict-reasoning-block"]');
     expect(block, "verdict-reasoning-block must be present in the DOM").not.toBeNull();
     expect(container.textContent).toContain(EXPLANATION);
-    expect(container.textContent).toContain("Cash fare");
-    expect(container.textContent).toContain("Best award");
-    expect(container.textContent).toContain("Savings");
+    // Simplified card (2026-07): the Cash fare / Best award / Savings tile row
+    // and the standalone reasoning paragraph are gone.
+    expect(container.textContent).not.toContain("Cash fare");
+    expect(container.textContent).not.toContain("Best award");
+    expect(container.textContent).not.toContain("Savings");
   });
 
   it("does not render a reasoning toggle button", () => {
@@ -196,20 +198,20 @@ describe("VerdictCard — headline leads with dollar savings (Phase 3 redesign)"
     expect(headline).not.toContain("Cash fare");
   });
 
-  it("pay_cash tile shows 'Points kept' with matched cpp, never 'Savings'", () => {
+  it("simplified card: cash figure line renders, no tiles or best-of list", () => {
     renderCard({
       recommendation: "pay_cash" as const,
       pay_cash: true,
       metrics: { cash_price: 169, points_cost: 35000, taxes: 5.6, estimated_savings: 163, cpp: 0.9 },
     });
-    const kept = container.querySelector('[data-testid="verdict-points-kept"]');
-    expect(kept, "pay_cash must render the Points-kept tile").not.toBeNull();
-    expect(kept!.textContent).toContain("35,000 pts");
-    expect(container.textContent).toContain("Points kept");
-    expect(container.textContent).toContain("≈0.9¢/pt");
-    // estimated_savings (cash − taxes ≈ full fare) must NOT render as "Savings"
-    // on a pay-cash verdict — it describes the option we recommend against.
+    const cashLine = container.querySelector('[data-testid="verdict-cash-flights"]');
+    expect(cashLine, "cash figure line must render").not.toBeNull();
+    expect(cashLine!.textContent).toContain("$169");
+    // The removed surfaces stay removed — no tiles, no misleading Savings, no
+    // best-of option list.
+    expect(container.textContent).not.toContain("Points kept");
     expect(container.textContent).not.toContain("Savings");
+    expect(container.textContent).not.toContain("BEST VALUE");
   });
 
   it("use_points headline falls back to bare 'Use points' when savings is missing", () => {
