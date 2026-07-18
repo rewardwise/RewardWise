@@ -16,13 +16,8 @@ import ErrorStateCard from "@/components/verdict/ErrorStateCard";
 import FlightSection, { FlightLeg } from "@/components/verdict/FlightSection";
 import MultiHandoffGrid, { MultiHandoffProgram, MultiHandoffCashAirline } from "@/components/verdict/MultiHandoffGrid";
 import CuratedOptions from "@/components/verdict/CuratedOptions";
-import WalletFramingPreview from "@/components/verdict/WalletFramingPreview";
 import PartialDataCard from "@/components/verdict/PartialDataCard";
 import { selectTopProgram } from "@/utils/topProgramSelection";
-import {
-  PUBLIC_SEARCH_FREE_LIMIT,
-  pluralizeUse,
-} from "@/utils/public-search";
 import type { Verdict } from "@/types/verdict";
 
 interface CashLeg {
@@ -136,9 +131,6 @@ interface VerdictCardProps {
   verdictId?: string | null;
   searchId?: string | null;
   onAskZoe?: (context: string) => void;
-  publicPreview?: boolean;
-  onPublicPreviewSignup?: () => void;
-  onPublicPreviewSignin?: () => void;
   onTryDifferentDate?: () => void;
   /**
    * Color theme. "dark" (default) keeps the existing styling everywhere it's
@@ -290,9 +282,6 @@ export default function VerdictCard({
   userCards = [],
   verdictId,
   onAskZoe,
-  publicPreview = false,
-  onPublicPreviewSignup,
-  onPublicPreviewSignin,
   onTryDifferentDate,
   theme = "dark",
   searchId,
@@ -537,9 +526,8 @@ export default function VerdictCard({
   // Empty wallet onboarding state: logged-in user with zero programs AND
   // zero cards gets a graceful "set up your wallet" prompt above the cash
   // flights. Force cash-only legs here since the verdict may be use_points
-  // (award legs would mislabel the FlightSection). Public preview keeps the
-  // existing marketing flow.
-  if (!publicPreview && userPrograms.length === 0 && userCards.length === 0) {
+  // (award legs would mislabel the FlightSection).
+  if (userPrograms.length === 0 && userCards.length === 0) {
     const cashOutbound = buildOutboundLeg({
       recommendation: "pay_cash",
       bestOutbound,
@@ -643,7 +631,6 @@ export default function VerdictCard({
               speaking={speaking}
               onListenToggle={speak}
               verdictId={verdictId}
-              publicPreview={publicPreview}
             />
 
             {/* Curated 3-option list (redesign) — reuses the deterministic
@@ -781,7 +768,7 @@ export default function VerdictCard({
               </div>
             </div>
 
-            {!publicPreview && (
+            {(
               <>
                 <FlightSection
                   recommendation={recommendation}
@@ -833,78 +820,8 @@ export default function VerdictCard({
               </>
             )}
 
-            {/* Guest-only wallet framing — shown when verdict defaults to cash
-                because no wallet info is available. Conversion play: surface
-                what wallets would change about the verdict (ticket 86ba11m1f). */}
-            {publicPreview && recommendation === "pay_cash" && (
-              <WalletFramingPreview onSignup={onPublicPreviewSignup} />
-            )}
-
-            {/* Zoe locked features — public preview filler to balance height */}
-{publicPreview && (
-  <div className="mt-5 rounded-2xl border border-white/8 bg-white/[0.02] p-5">
-    <p className="mb-4 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-      Full access with an account
-    </p>
-
-    <div className="space-y-4">
-      {[
-        {
-          icon: "✦",
-          color: "text-emerald-300 bg-emerald-400/10 border-emerald-400/20",
-          label: "Ask Zoe anything",
-          sub: "Get follow-up answers about your specific trip — why not points, what if you wait, nearby dates.",
-        },
-        {
-          icon: "⚡",
-          color: "text-amber-300 bg-amber-400/10 border-amber-400/20",
-          label: "Set price alerts",
-          sub: "Zoe watches the route and pings you when cash fares drop or award space opens up.",
-        },
-        {
-          icon: "◈",
-          color: "text-sky-300 bg-sky-400/10 border-sky-400/20",
-          label: "Your wallet, your verdict",
-          sub: "Connect your loyalty programs so every recommendation is built around what you actually have.",
-        },
-        {
-          icon: "↺",
-          color: "text-violet-300 bg-violet-400/10 border-violet-400/20",
-          label: "Personalized trip history",
-          sub: "Save past searches and compare future trips against what you’ve already looked at.",
-        },
-        {
-          icon: "⌁",
-          color: "text-rose-300 bg-rose-400/10 border-rose-400/20",
-          label: "Smarter points timing",
-          sub: "See when it may be better to save your points for a higher-value redemption.",
-        },
-        {
-          icon: "✓",
-          color: "text-green-300 bg-green-400/10 border-green-400/20",
-          label: "Less guesswork",
-          sub: "One clear answer before you book.",
-        },
-      ].map(({ icon, color, label, sub }) => (
-        <div key={label} className="flex items-start gap-3">
-          <span
-            className={`mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-xl border text-sm font-semibold ${color}`}
-          >
-            {icon}
-          </span>
-
-          <div>
-            <p className="text-sm font-semibold text-slate-300">{label}</p>
-            <p className="mt-0.5 text-xs leading-5 text-slate-500">{sub}</p>
-          </div>
-        </div>
-      ))}
-    </div>
-  </div>
-)}
-
             {/* Footer controls — full app only */}
-            {!publicPreview && onAskZoe && (
+            {onAskZoe && (
               <div className="mt-6 flex justify-end border-t border-white/10 pt-4">
                 <button
                   type="button"
@@ -937,33 +854,9 @@ export default function VerdictCard({
 
 
 
-            {!publicPreview && verdict.booking_note && <p className="mt-4 text-xs text-slate-500">{verdict.booking_note}</p>}
+            {verdict.booking_note && <p className="mt-4 text-xs text-slate-500">{verdict.booking_note}</p>}
           </div>
 
-      {publicPreview && (onPublicPreviewSignup || onPublicPreviewSignin) && (
-        <div className="rounded-3xl border border-white/10 bg-slate-950/95 p-5 shadow-2xl">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Keep comparing trips</p>
-          <p className="mt-2 text-sm leading-6 text-slate-300">
-            This free search shows the verdict and key details only — and it&apos;s limited to {PUBLIC_SEARCH_FREE_LIMIT} {pluralizeUse()} per network. Create an account to save searches, add your wallet, and unlock the full experience with booking tools, alerts, and deeper comparisons.
-          </p>
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            <button
-              type="button"
-              onClick={onPublicPreviewSignup}
-              className="inline-flex items-center justify-center rounded-2xl bg-emerald-400 px-5 py-3 text-sm font-bold text-slate-950 transition hover:bg-emerald-300"
-            >
-              Create free account
-            </button>
-            <button
-              type="button"
-              onClick={onPublicPreviewSignin}
-              className="inline-flex items-center justify-center rounded-2xl border border-white/12 bg-white/[0.04] px-5 py-3 text-sm font-medium text-slate-200 transition hover:bg-white/[0.08] hover:text-white"
-            >
-              Sign in
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

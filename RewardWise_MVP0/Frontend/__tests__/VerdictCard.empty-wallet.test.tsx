@@ -50,11 +50,6 @@ vi.mock("@/components/verdict/MultiHandoffGrid", () => ({
   default: () => <div data-testid="multi-handoff-stub" />,
 }));
 
-vi.mock("@/components/verdict/WalletFramingPreview", () => ({
-  __esModule: true,
-  default: () => <div data-testid="wallet-framing-stub" />,
-}));
-
 import VerdictCard from "../components/VerdictCard";
 
 let container: HTMLDivElement;
@@ -101,7 +96,6 @@ function buildVerdict(overrides: Partial<Verdict> = {}): Verdict {
 function renderCard(props: {
   userPrograms?: string[];
   userCards?: string[];
-  publicPreview?: boolean;
   verdict?: Verdict;
 }) {
   act(() => {
@@ -115,7 +109,6 @@ function renderCard(props: {
         travelers={1}
         userPrograms={props.userPrograms ?? []}
         userCards={props.userCards ?? []}
-        publicPreview={props.publicPreview ?? false}
       />,
     );
   });
@@ -169,17 +162,5 @@ describe("VerdictCard — empty-wallet onboarding branch", () => {
     expect(
       container.querySelector('[data-testid="verdict-top-row"]'),
     ).not.toBeNull();
-  });
-
-  it("public preview + empty wallet → empty-wallet branch does NOT fire", () => {
-    renderCard({
-      userPrograms: [],
-      userCards: [],
-      publicPreview: true,
-    });
-    expect(
-      container.querySelector('[data-testid="empty-wallet-cta"]'),
-      "preview path must keep marketing surface, not switch to onboarding",
-    ).toBeNull();
   });
 });
