@@ -32,6 +32,12 @@ type Props = {
   isRoundtrip: boolean;
   outbound: FlightLeg | null;
   inbound: FlightLeg | null;
+  /**
+   * Lazy return-leg fetch (pay_cash round trips): SerpAPI only exposes return
+   * legs via a second token-keyed request, so it fires on FIRST To-Flight tab
+   * activation — never during search. Resolves a detailed FlightLeg or null.
+   */
+  onLoadReturnDetails?: (() => Promise<FlightLeg | null>) | null;
 };
 
 function fmtDuration(mins?: number) {
@@ -205,8 +211,36 @@ function FlightCard({ leg }: { leg: FlightLeg }) {
   );
 }
 
-export default function FlightSection({ recommendation, isRoundtrip, outbound, inbound }: Props) {
+export default function FlightSection({
+  recommendation,
+  isRoundtrip,
+  outbound,
+  inbound,
+  onLoadReturnDetails = null,
+}: Props) {
   const [activeTab, setActiveTab] = useState<"from" | "to">("from");
+  const [lazyInbound, setLazyInbound] = useState<FlightLeg | null>(null);
+  const [lazyState, setLazyState] = useState<"idle" | "loading" | "done" | "failed">("idle");
+
+  const wantLazy =
+    onLoadReturnDetails != null && (inbound == null || inbound.data_quality === "summary");
+
+  const activateTab = (id: "from" | "to") => {
+    setActiveTab(id);
+    if (id === "to" && wantLazy && lazyState === "idle") {
+      setLazyState("loading");
+      onLoadReturnDetails!()
+        .then((leg) => {
+          if (leg && leg.segments.length > 0) {
+            setLazyInbound(leg);
+            setLazyState("done");
+          } else {
+            setLazyState("failed");
+          }
+        })
+        .catch(() => setLazyState("failed"));
+    }
+  };
 
   if (recommendation === "wait") return null;
   if (!outbound || outbound.segments.length === 0) return null;
@@ -231,7 +265,8 @@ export default function FlightSection({ recommendation, isRoundtrip, outbound, i
     { id: "from" as const, label: "From Flight" },
     { id: "to" as const, label: "To Flight" },
   ];
-  const activeLeg = activeTab === "from" ? outbound : inbound;
+  const displayedInbound = lazyInbound ?? inbound;
+  const activeLeg = activeTab === "from" ? outbound : displayedInbound;
 
   return (
     <section className="mt-4">
@@ -252,7 +287,7 @@ export default function FlightSection({ recommendation, isRoundtrip, outbound, i
               role="tab"
               aria-selected={selected}
               data-testid={`flight-tab-${tab.id}`}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => activateTab(tab.id)}
               className={`rounded-lg px-4 py-1.5 text-xs font-semibold transition-colors ${
                 selected
                   ? "bg-emerald-500 text-white"
@@ -264,7 +299,26 @@ export default function FlightSection({ recommendation, isRoundtrip, outbound, i
           );
         })}
       </div>
-      <FlightCard leg={activeLeg} />
+      {activeTab === "to" && lazyState === "loading" ? (
+        <div
+          data-testid="return-leg-loading"
+          className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 text-sm text-slate-400"
+        >
+          Loading return flight details…
+        </div>
+      ) : activeTab === "to" && lazyState === "failed" ? (
+        <div className="flex flex-col gap-3">
+          {displayedInbound ? <FlightCard leg={displayedInbound} /> : null}
+          <p
+            data-testid="return-leg-unavailable"
+            className="text-xs italic text-slate-400"
+          >
+            Return details not available from the cash source. Confirm on the airline site.
+          </p>
+        </div>
+      ) : activeLeg ? (
+        <FlightCard leg={activeLeg} />
+      ) : null}
     </section>
   );
 }

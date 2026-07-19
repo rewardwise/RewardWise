@@ -98,6 +98,10 @@ def _parse_flight(f: dict) -> dict:
         "stops": len(outbound_legs) - 1,
         "legs": outbound_legs,
         "return_flight": return_info,
+        # Round-trip SerpAPI responses carry return legs only via a SECOND
+        # request keyed by this token; kept so the frontend can lazy-fetch
+        # return details on To-Flight tab click (display-only).
+        "departure_token": f.get("departure_token"),
     }
 
 
@@ -192,3 +196,68 @@ async def get_serpapi_cash_price(
 
     except Exception as e:
         return _empty_response(error=str(e))
+
+async def get_serpapi_return_flights(
+    origin: str,
+    destination: str,
+    date: str,
+    return_date: str,
+    departure_token: str,
+    cabin: str = "economy",
+    travelers: int = 1,
+) -> Optional[dict]:
+    """Second SerpAPI request: returning flights for a chosen outbound.
+
+    Google Flights only exposes return legs via a follow-up request keyed by
+    the outbound's departure_token. Display-only (does not feed verdict math);
+    called lazily from the To-Flight tab. Returns the cheapest returning
+    option in the same shape as _parse_flight's return_info, or None.
+    """
+    api_key = os.getenv("SERPAPI_KEY")
+    if not api_key or not departure_token:
+        return None
+
+    params = {
+        "engine": "google_flights",
+        "departure_id": origin.upper(),
+        "arrival_id": destination.upper(),
+        "outbound_date": date,
+        "return_date": return_date,
+        "type": "1",
+        "travel_class": CABIN_CLASS_MAP.get((cabin or "economy").lower(), 1),
+        "adults": travelers,
+        "currency": "USD",
+        "hl": "en",
+        "api_key": api_key,
+        "departure_token": departure_token,
+    }
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(SERPAPI_BASE_URL, params=params, timeout=15.0)
+            response.raise_for_status()
+            data = response.json()
+
+        options = (data.get("best_flights") or []) + (data.get("other_flights") or [])
+        if not options:
+            return None
+        cheapest = sorted(options, key=lambda f: f.get("price", float("inf")))[0]
+        legs_raw = cheapest.get("flights", [])
+        legs = _parse_legs(legs_raw)
+        if not legs:
+            return None
+        first, last = legs_raw[0], legs_raw[-1]
+        return {
+            "departure_airport": first.get("departure_airport", {}).get("name"),
+            "departure_iata": first.get("departure_airport", {}).get("id"),
+            "departure_time": first.get("departure_airport", {}).get("time"),
+            "arrival_airport": last.get("arrival_airport", {}).get("name"),
+            "arrival_iata": last.get("arrival_airport", {}).get("id"),
+            "arrival_time": last.get("arrival_airport", {}).get("time"),
+            "total_duration": cheapest.get("total_duration"),
+            "stops": len(legs) - 1,
+            "legs": legs,
+        }
+    except Exception as e:
+        print(f"SerpAPI return-flight fetch failed: {e}")
+        return None

@@ -60,6 +60,7 @@ interface CashFlight {
   arrival_time?: string;
   legs?: CashLeg[];
   return_flight?: CashReturnFlight | null;
+  departure_token?: string | null;
   booking_url?: string | null;
   raw_booking_url?: string | null;
   vendor?: string | null;
@@ -130,6 +131,9 @@ interface VerdictCardProps {
   verdictId?: string | null;
   searchId?: string | null;
   onAskZoe?: (context: string) => void;
+  /** Lazy return-leg fetch (session-authed, lives in the page). Returns the
+   *  raw return_flight object for a departure_token, or null. */
+  onFetchReturnFlight?: ((departureToken: string) => Promise<CashReturnFlight | null>) | null;
   onTryDifferentDate?: () => void;
   /**
    * Color theme. "dark" (default) keeps the existing styling everywhere it's
@@ -281,6 +285,7 @@ export default function VerdictCard({
   userCards = [],
   verdictId,
   onAskZoe,
+  onFetchReturnFlight = null,
   onTryDifferentDate,
   theme = "dark",
   searchId,
@@ -460,6 +465,30 @@ export default function VerdictCard({
       ]
     : [];
   const bestReturnDate = winningReturnDate || returnDate || "";
+  // Lazy To-Flight details: only for pay_cash round trips where the provider
+  // gave us a departure_token and no detailed return legs. Reuses the standard
+  // inbound-leg builder so the fetched leg renders identically to the From tab.
+  const lazyReturnLoader =
+    onFetchReturnFlight &&
+    recommendation === "pay_cash" &&
+    isRoundtrip &&
+    bestCashFlight?.departure_token &&
+    !(bestCashFlight.return_flight?.legs?.length)
+      ? async () => {
+          const rf = await onFetchReturnFlight(bestCashFlight.departure_token as string);
+          if (!rf) return null;
+          return buildInboundLeg({
+            recommendation: "pay_cash",
+            isRoundtrip: true,
+            bestCashFlight: { ...bestCashFlight, return_flight: rf },
+            origin,
+            destination,
+            returnDate,
+            winningReturnDate,
+          });
+        }
+      : null;
+
   const cashHandoff: MultiHandoffCashAirline | null = bestCashFlight
     ? {
         airline: bestCashFlight.legs?.[0]?.airline || "the airline",
@@ -730,6 +759,7 @@ export default function VerdictCard({
                   isRoundtrip={Boolean(isRoundtrip)}
                   outbound={outboundLeg}
                   inbound={inboundLeg}
+                  onLoadReturnDetails={lazyReturnLoader}
                 />
                 {recommendation === "use_points" ? (
                   isRoundtrip && returnHandoffPrograms.length > 0 ? (
