@@ -69,8 +69,13 @@ def _compose_xpectrum_query(
     preamble: list[str] = []
     if verdict_context:
         preamble.append(
-            "[Context — the user is asking about this search result]\n"
-            f"{verdict_context}"
+            "[Live search result — the user is looking at this verdict right now]\n"
+            f"{verdict_context}\n"
+            "[Instructions] Answer the user's question USING THE NUMBERS ABOVE. "
+            "They are live engine data for this exact trip. Never invent, estimate, "
+            "or substitute your own cash prices, award prices, or point amounts; "
+            "never claim pricing is unavailable when it appears above. Keep your "
+            "usual short, friendly format."
         )
     if wallet_summary and wallet_summary != "No reward programs on file.":
         preamble.append(f"[User's points wallet] {wallet_summary}")

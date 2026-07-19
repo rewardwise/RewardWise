@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthProvider";
 import { useWallet } from "@/context/WalletContext";
 import { zoeNarration, zoeWelcome } from "@/utils/zoeNarration";
+import { buildZoeVerdictContext } from "@/utils/zoeVerdictContext";
 import { findMetroByCsv } from "@/components/metro-groups";
 import type { Verdict as CanonicalVerdict, Ownership } from "@/types/verdict";
 import { useSearchFill } from "@/context/SearchFillContext";
@@ -335,12 +336,13 @@ export default function HomePage() {
 		},
 	});
 
-	const handleAskZoeAboutVerdict = (context: string) => {
+	const handleAskZoeAboutVerdict = (_context: string) => {
 		// Reset to null first so the useEffect in ZoeChat always fires,
-		// even if the same verdict is clicked twice.
+		// even if the same verdict is clicked twice. The context itself always
+		// comes from buildZoeVerdictContext (single, basis-consistent source).
 		setVerdictContext(null);
 		setTimeout(() => {
-			setVerdictContext(context);
+			if (results?.verdict) setVerdictContext(buildZoeVerdictContext(results));
 			setIsChatOpen(true);
 		}, 0);
 	};
@@ -539,6 +541,15 @@ export default function HomePage() {
 	runSearchRef.current = runSearch;
 
 	const numTravelers = results?.travelers ?? travelers;
+
+	// Ground Zoe in the engine's numbers: attach the verdict context to every
+	// chat turn while a verdict is on screen (typing directly used to send
+	// verdict_context: null, and Zoe fabricated costs). Cleared when no verdict
+	// exists so general questions aren't anchored to a stale trip.
+	useEffect(() => {
+		setVerdictContext(results?.verdict ? buildZoeVerdictContext(results) : null);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [results]);
 
 	// Small-viewport auto-scroll: on phones the stacked search pill (~640px)
 	// pushes the verdict below the fold when results land, so bring the headline
