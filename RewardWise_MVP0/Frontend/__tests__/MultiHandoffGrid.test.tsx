@@ -126,16 +126,18 @@ describe("MultiHandoffGrid — cash card URL fallback (Ticket 86ba25kaa)", () =>
     expect(anchor!.getAttribute("href")).toBe("https://www.someregionalcarrier.com");
   });
 
-  it("hides the card entirely when bookingUrl is null AND airline is empty string", () => {
+  it("falls back to Google Flights (cash source) when bookingUrl is null AND airline is empty string", () => {
     renderPayCashWithAirline("", null);
-    expect(container.querySelector("a")).toBeNull();
-    expect(container.textContent).not.toContain("Visit");
+    const a = container.querySelector("a");
+    expect(a, "cash card must still render with the Google Flights fallback").not.toBeNull();
+    expect(a!.getAttribute("href")).toContain("google.com/travel/flights");
   });
 
-  it("hides the card entirely when bookingUrl is null AND airline is whitespace only", () => {
+  it("falls back to Google Flights (cash source) when bookingUrl is null AND airline is whitespace only", () => {
     renderPayCashWithAirline("   ", null);
-    expect(container.querySelector("a")).toBeNull();
-    expect(container.textContent).not.toContain("Visit");
+    const a = container.querySelector("a");
+    expect(a).not.toBeNull();
+    expect(a!.getAttribute("href")).toContain("google.com/travel/flights");
   });
 
   it("synthesized URL anchor preserves target=_blank and rel=noopener noreferrer", () => {
