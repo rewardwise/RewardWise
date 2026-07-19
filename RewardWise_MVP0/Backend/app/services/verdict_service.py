@@ -257,6 +257,28 @@ def _matched_cpp(
     return round((float(cash_price) - total_taxes) / total_points * 100, 4)
 
 
+def _display_award_totals(
+    outbound_points: int,
+    outbound_taxes: float,
+    inbound_winner: Optional[dict],
+    travelers: int,
+) -> tuple[int, float]:
+    """Matched-scope TOTAL points and taxes for display copy.
+
+    The explanation strings compare against the full-trip cash price, so the
+    award side must be the same basis (both legs when a matched return exists,
+    all travelers) — winner.points/taxes alone are per-leg per-pax and made the
+    one-liner mix bases ("$217 round-trip cash vs 16,100 one-way points").
+    Copy-only: gates/thresholds already use _matched_cpp and are unchanged.
+    """
+    t = max(int(travelers or 1), 1)
+    return_points = int((inbound_winner or {}).get("points") or 0)
+    return_taxes = float((inbound_winner or {}).get("taxes") or 0)
+    total_points = (int(outbound_points or 0) + return_points) * t
+    total_taxes = (float(outbound_taxes or 0) + return_taxes) * t
+    return total_points, total_taxes
+
+
 def _metrics(
     cash_price: Optional[float],
     winner: Optional[dict],
@@ -758,10 +780,14 @@ async def generate_verdict(
         cpp = matched_cpp
 
     if cash_price <= CHEAP_CASH_THRESHOLD_USD or cpp < CPP_PAY_CASH_THRESHOLD:
+        display_points, display_taxes = _display_award_totals(
+            points, taxes, inbound_winner, travelers
+        )
         explanation = (
-            f"Cash is only {_cash_label(cash_price)}, while the best award I found is {points:,} points"
-            f"{' plus about $' + str(int(round(taxes))) + ' in taxes' if taxes else ''}."
-            " Your points are likely worth more on a different trip."
+            f"Cash is only {_cash_label(cash_price)} for the whole trip, while the best award"
+            f" I found is {display_points:,} points"
+            f"{' plus about $' + str(int(round(display_taxes))) + ' in taxes' if display_taxes else ''}"
+            " for the same trip. Your points are likely worth more on a different trip."
         )
         response = _base_response(
             recommendation="pay_cash",
