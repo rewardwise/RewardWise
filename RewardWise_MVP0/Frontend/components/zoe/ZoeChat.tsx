@@ -265,14 +265,16 @@ if (prefillRaw && onFillSearch) {
 		}
 	}, [isOpen, messages.length, conversationId, verdictContext, variant]);
 
-	// ── Verdict context injection ─────────────────────────────────────────────
+	// ── Verdict context ───────────────────────────────────────────────────────
+	// Context is a SILENT payload: it rides along on every /api/zoe call while a
+	// verdict is on screen (grounding fix, PR #231 auto-attach). The old behavior
+	// echoed the raw context as a fake assistant bubble and wiped the visible
+	// thread — with auto-attach that fired on EVERY search. Now: start a fresh
+	// upstream conversation for the new trip, leave the UI thread alone (the
+	// docked narration bubble already announces the verdict).
 	useEffect(() => {
 		if (!verdictContext) return;
 		setConversationId(null);
-		setMessages([{
-			role: "assistant",
-			content: `I can see the result from your search. ${verdictContext} What would you like to know about it?`,
-		}]);
 	// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [verdictContext]);
 
