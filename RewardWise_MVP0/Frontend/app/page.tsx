@@ -174,7 +174,7 @@ function LandingPageContent() {
 					</h1>
 					<p className="mx-auto mt-4 max-w-xl text-base leading-7 text-white/90 sm:text-lg">
 						Tell us where you&apos;re going. We&apos;ll find the smartest way to
-						pay. No account needed.
+						pay. Free account, verdict in seconds.
 					</p>
 
 					{/* Search card (reskinned slim pill) */}
