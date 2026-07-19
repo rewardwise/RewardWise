@@ -187,8 +187,16 @@ export default function MultiHandoffGrid({
 
   if (!cashAirline) return null;
   const airlineName = cashAirline.airline || "the airline";
-  const url = cashAirline.bookingUrl || synthesizeAirlineHomepage(cashAirline.airline);
-  if (!url) return null;
+  // Cash-source resolution order: the flight's own booking URL -> the cash
+  // carrier's homepage -> Google Flights for the resolved route+date. All three
+  // are CASH booking sources; an award-program link must never appear here.
+  const googleFlightsFallback = `https://www.google.com/travel/flights?q=${encodeURIComponent(
+    `Flights ${routeLabel.replace(/[⇄→]/g, "to")} ${bestDate}`.replace(/\s+/g, " ")
+  )}`;
+  const url =
+    cashAirline.bookingUrl ||
+    synthesizeAirlineHomepage(cashAirline.airline) ||
+    googleFlightsFallback;
   const linkDomain = domainFromUrl(url);
 
   const cardContent = (

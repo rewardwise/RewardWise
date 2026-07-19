@@ -464,7 +464,12 @@ export default function VerdictCard({
     ? {
         airline: bestCashFlight.legs?.[0]?.airline || "the airline",
         cashPrice: bestCashFlight.price ?? displayCashPrice ?? null,
-        bookingUrl: bestCashFlight.booking_url ?? bookingUrl,
+        // NEVER fall back to the verdict booking_link here — that is the AWARD
+        // program's link (qantas.com / aircanada.com), and on a pay_cash verdict
+        // it sent users to a site that cannot sell the cash fare. With null,
+        // MultiHandoffGrid resolves the cash carrier's own site, then the
+        // route-resolved Google Flights fallback.
+        bookingUrl: bestCashFlight.booking_url ?? null,
       }
     : null;
   // Raw origin/destination are the user's metro CSV ("SFO,OAK,SJC"); the
