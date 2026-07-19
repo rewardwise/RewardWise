@@ -61,6 +61,15 @@ function synthesizeAirlineHomepage(airline: string | null | undefined): string |
   if (KNOWN_AIRLINE_DOMAINS[norm]) {
     return `https://www.${KNOWN_AIRLINE_DOMAINS[norm]}`;
   }
+  // Providers often send the SHORT carrier name ("Alaska", "Frontier"). Match
+  // it against the known keys before slug-guessing — the naive slug produced
+  // alaska.com (the state tourism site) for an Alaska Airlines itinerary.
+  const partial = Object.keys(KNOWN_AIRLINE_DOMAINS).find(
+    (k) => k.startsWith(`${norm} `) || k === norm || k.split(" ")[0] === norm
+  );
+  if (partial) {
+    return `https://www.${KNOWN_AIRLINE_DOMAINS[partial]}`;
+  }
   const slug = norm.replace(/[^a-z0-9]+/g, "");
   return slug ? `https://www.${slug}.com` : null;
 }
