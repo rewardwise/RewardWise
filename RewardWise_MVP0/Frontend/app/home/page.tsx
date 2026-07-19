@@ -55,6 +55,7 @@ interface FlightLeg {
 }
 
 interface CashFlight {
+	departure_token?: string | null;
 	price: number;
 	total_duration: number;
 	stops: number;
@@ -335,6 +336,36 @@ export default function HomePage() {
 			userProgramCount: userPrograms?.length ?? 0,
 		},
 	});
+
+	// Session-authed lazy fetch of return-leg details (fires only on To-Flight
+	// tab click - never during search, so baseline latency is untouched).
+	const fetchReturnFlight = useCallback(
+		async (departureToken: string) => {
+			const API_URL = process.env.NEXT_PUBLIC_API_URL;
+			if (!API_URL || !session?.access_token || !results?.return_date) return null;
+			try {
+				const params = new URLSearchParams({
+					origin: results.origin,
+					destination: results.destination,
+					date: results.date,
+					return_date: results.return_date,
+					cabin: results.cabin,
+					travelers: String(results.travelers ?? 1),
+					departure_token: departureToken,
+				});
+				const res = await fetch(`${API_URL}/api/return-flight?${params.toString()}`, {
+					method: "POST",
+					headers: { Authorization: `Bearer ${session.access_token}` },
+				});
+				if (!res.ok) return null;
+				const data = await res.json();
+				return data?.return_flight ?? null;
+			} catch {
+				return null;
+			}
+		},
+		[results, session?.access_token],
+	);
 
 	const handleAskZoeAboutVerdict = (_context: string) => {
 		// Reset to null first so the useEffect in ZoeChat always fires,
@@ -824,7 +855,8 @@ export default function HomePage() {
 											userCards={results.user_cards ?? []}
 											verdictId={results.verdict_id}
 											searchId={results.search_id}
-											onTryDifferentDate={handleTryDifferentDate}
+											onFetchReturnFlight={fetchReturnFlight}
+										onTryDifferentDate={handleTryDifferentDate}
 										/>
 									) : !hasWallet ? (
 										<div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4">

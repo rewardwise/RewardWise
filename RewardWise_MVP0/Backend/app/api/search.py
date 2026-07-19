@@ -427,6 +427,56 @@ async def run_search(request: Request, params):
     return await search(request=request, params=params)
 
 # ---------------------------------------------------------------------------
+# Lazy return-flight details (display-only)
+# ---------------------------------------------------------------------------
+# Round-trip SerpAPI results carry return legs only via a second request keyed
+# by the outbound's departure_token. Fetched lazily on To-Flight tab click so
+# baseline search latency is untouched. Auth-gated (protects SerpAPI quota);
+# never feeds verdict math.
+
+@router.post("/return-flight")
+@limiter.limit("20/minute")
+async def return_flight_details(
+    request: Request,
+    origin: str = Query(...),
+    destination: str = Query(...),
+    date: str = Query(...),
+    return_date: str = Query(...),
+    departure_token: str = Query(...),
+    cabin: str = Query(default="economy"),
+    travelers: int = Query(default=1),
+):
+    auth_header = request.headers.get("authorization")
+    if not auth_header:
+        raise HTTPException(status_code=401, detail="Missing authorization header")
+    token = auth_header.replace("Bearer ", "").strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+    SUPABASE_URL = os.environ.get("SUPABASE_URL")
+    SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{SUPABASE_URL}/auth/v1/user",
+            headers={"Authorization": f"Bearer {token}", "apikey": SERVICE_KEY},
+        )
+    if response.status_code != 200:
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+
+    from app.services.flight_pricing.serpapi_provider import get_serpapi_return_flights
+
+    info = await get_serpapi_return_flights(
+        origin=origin,
+        destination=destination,
+        date=date,
+        return_date=return_date,
+        departure_token=departure_token,
+        cabin=cabin,
+        travelers=travelers,
+    )
+    return {"return_flight": info}
+
+
+# ---------------------------------------------------------------------------
 # Shared IP-hash helpers (used by the newsletter dedupe; the guest public-search
 # flow that originally introduced them was removed).
 # ---------------------------------------------------------------------------
