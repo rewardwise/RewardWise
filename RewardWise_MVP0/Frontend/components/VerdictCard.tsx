@@ -621,7 +621,7 @@ export default function VerdictCard({
 
   return (
     <div className="flex flex-col gap-5">
-      <div className={`${theme === "light" ? "mtw-light font-mtw " : ""}rounded-3xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl md:p-8 flex flex-col`}>
+      <div className={`${theme === "light" ? "mtw-light font-mtw " : ""}rounded-3xl border border-white/10 bg-slate-950/95 p-5 shadow-2xl md:p-6 flex flex-col`}>
 
             {/* Header */}
             <VerdictTopRow
@@ -637,7 +637,7 @@ export default function VerdictCard({
               role="region"
               aria-label="Verdict reasoning"
             >
-              <p className="mt-5 max-w-4xl text-lg font-medium leading-8 text-slate-300 md:text-xl">
+              <p className="mt-3 max-w-4xl text-base font-medium leading-7 text-slate-300">
                 {mainExplanation}
               </p>
               {displayCashPrice != null && (

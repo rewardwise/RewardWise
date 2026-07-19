@@ -216,7 +216,7 @@ export default function FlightSection({ recommendation, isRoundtrip, outbound, i
   // One-way (or no return detail): render the single leg, no tabs.
   if (!showInbound || !inbound) {
     return (
-      <section className="mt-6">
+      <section className="mt-4">
         <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
           Flight details
         </p>
@@ -234,7 +234,7 @@ export default function FlightSection({ recommendation, isRoundtrip, outbound, i
   const activeLeg = activeTab === "from" ? outbound : inbound;
 
   return (
-    <section className="mt-6">
+    <section className="mt-4">
       <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">
         Flight details
       </p>
