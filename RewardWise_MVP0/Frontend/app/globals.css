@@ -189,6 +189,24 @@ body {
 .mtw-light .border-amber-300\/40 { border-color: #fcd34d; }
 .mtw-light .border-emerald-300\/40 { border-color: #6ee7b7; }
 
+/* Opacity-variant dark panels (wallet-setup, subscribe) — same missed-remap
+   disease; covered so a wrapping .mtw-light fully lightens them. */
+.mtw-light .bg-gray-900\/90 { background-color: #ffffff; }
+.mtw-light .bg-gray-800\/60,
+.mtw-light .bg-gray-800\/50 { background-color: #f3f4f6; }
+.mtw-light .bg-slate-900\/70 { background-color: #f3f4f6; }
+.mtw-light .bg-slate-800 { background-color: #f3f4f6; }
+.mtw-light .bg-gray-800\/40,
+.mtw-light .bg-gray-800\/90,
+.mtw-light .bg-gray-900\/70,
+.mtw-light .bg-gray-900\/50 { background-color: #f3f4f6; }
+.mtw-light .bg-slate-950\/94,
+.mtw-light .bg-slate-950\/40,
+.mtw-light .bg-slate-950\/80,
+.mtw-light .bg-slate-900\/95 { background-color: #ffffff; }
+.mtw-light .border-gray-600 { border-color: #e5e7eb; }
+.mtw-light .text-gray-500 { color: #6b7280; }
+
 /* ─────────────────────────────────────────────────────────────────────────
    Zoe docked pane — LIGHT (PR 6). Component-scoped remap of Zoe's dark chrome
    (set via the docked container's .zoe-light class). Emerald buttons KEEP white

@@ -78,7 +78,7 @@ function SubscribeInner({ isThankYou }: { isThankYou: boolean }) {
 			<div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-cyan-950 relative">
 				<TropicalBackground />
 				<div className="relative z-10 flex items-center justify-center min-h-screen px-6">
-					<div className="bg-gray-900/90 backdrop-blur rounded-xl p-8 text-center shadow-2xl max-w-md w-full">
+					<div className="mtw-light bg-gray-900/90 backdrop-blur rounded-xl p-8 text-center shadow-2xl max-w-md w-full">
 						<div className="w-16 h-16 bg-amber-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
 							<CreditCard className="w-8 h-8 text-amber-400" />
 						</div>
@@ -121,7 +121,7 @@ function SubscribeInner({ isThankYou }: { isThankYou: boolean }) {
 			<div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-cyan-950 relative">
 				<TropicalBackground />
 				<div className="relative z-10 flex items-center justify-center min-h-screen px-6">
-					<div className="bg-gray-900/90 backdrop-blur rounded-xl p-8 text-center shadow-2xl max-w-md w-full">
+					<div className="mtw-light bg-gray-900/90 backdrop-blur rounded-xl p-8 text-center shadow-2xl max-w-md w-full">
 						<div className="w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
 							<CheckCircle className="w-8 h-8 text-emerald-400" />
 						</div>
@@ -158,7 +158,7 @@ function SubscribeInner({ isThankYou }: { isThankYou: boolean }) {
 			<div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-cyan-950 relative">
 				<TropicalBackground />
 				<div className="relative z-10 flex items-center justify-center min-h-screen px-6">
-					<div className="bg-gray-900/90 backdrop-blur rounded-xl p-8 text-center shadow-2xl max-w-md w-full">
+					<div className="mtw-light bg-gray-900/90 backdrop-blur rounded-xl p-8 text-center shadow-2xl max-w-md w-full">
 						<div className="w-16 h-16 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
 							<CheckCircle className="w-8 h-8 text-emerald-400" />
 						</div>
