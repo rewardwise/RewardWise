@@ -15,6 +15,7 @@ import EmptyWalletCTA from "@/components/verdict/EmptyWalletCTA";
 import ErrorStateCard from "@/components/verdict/ErrorStateCard";
 import FlightSection, { FlightLeg } from "@/components/verdict/FlightSection";
 import MultiHandoffGrid, { MultiHandoffProgram, MultiHandoffCashAirline } from "@/components/verdict/MultiHandoffGrid";
+import HowToBook from "@/components/verdict/HowToBook";
 import PartialDataCard from "@/components/verdict/PartialDataCard";
 import { selectTopProgram } from "@/utils/topProgramSelection";
 import type { Verdict } from "@/types/verdict";
@@ -378,10 +379,6 @@ export default function VerdictCard({
     return verdict.verdict_label ?? "Wait";
   })();
 
-  const honestyLine =
-    recommendation === "use_points" && hasAward && displayCashPrice != null
-      ? `${Number(displayPoints).toLocaleString()} pts instead of ${fmtMoney(displayCashPrice, 0)} cash`
-      : null;
 
   const isOutboundFlex = Boolean(departDateEnd && departDateEnd !== departDate);
   const isReturnFlex = Boolean(
@@ -464,6 +461,25 @@ export default function VerdictCard({
         },
       ]
     : [];
+  // Trade line (v3): ONE line, ONE basis — the round trip. Sums the two
+  // chosen per-leg options (already x travelers) so the points figure covers
+  // the same trip as the cash figure; cpp shown only when the engine's
+  // matched-scope cpp exists (same-program both legs). Display-only.
+  const tradeLegsPts =
+    (handoffPrograms[0]?.points ?? 0) + (returnHandoffPrograms[0]?.points ?? 0);
+  const tradeLegsTaxes =
+    (handoffPrograms[0]?.taxes ?? 0) + (returnHandoffPrograms[0]?.taxes ?? 0);
+  const tradePts = tradeLegsPts > 0 ? tradeLegsPts : (displayPoints ?? 0);
+  const tradeTaxes = tradeLegsPts > 0 ? tradeLegsTaxes : (displayTaxes ?? 0);
+  const honestyLine =
+    recommendation === "use_points" && tradePts > 0 && displayCashPrice != null
+      ? `${Number(tradePts).toLocaleString()} pts${
+          tradeTaxes > 0 ? ` + ${fmtMoney(tradeTaxes, 2)}` : ""
+        } instead of ${fmtMoney(displayCashPrice, 0)} cash${
+          metrics.cpp != null ? ` · ${metrics.cpp.toFixed(2)}\u00a2/pt` : ""
+        } · ${isRoundtrip ? "round trip" : "one way"}`
+      : null;
+
   const bestReturnDate = winningReturnDate || returnDate || "";
   // Lazy To-Flight details: only for pay_cash round trips where the provider
   // gave us a departure_token and no detailed return legs. Reuses the standard
@@ -699,25 +715,10 @@ export default function VerdictCard({
                   })()}
                 </p>
               )}
-              {tierLabel && displayCpp != null && (
-                <div className="mt-4 flex flex-col gap-2 md:max-w-3xl">
-                  <span
-                    data-testid="verdict-tier-badge"
-                    data-tier={verdictTier ?? undefined}
-                    className={`inline-flex w-fit items-center rounded-full border px-3 py-1 text-sm font-semibold ${tierClasses}`}
-                  >
-                    {tierLabel} · {displayCpp.toFixed(2)}¢/pt
-                  </span>
-                  {tierExplanation && (
-                    <p
-                      data-testid="verdict-tier-explanation"
-                      className="text-sm leading-6 text-slate-300"
-                    >
-                      {tierExplanation}
-                    </p>
-                  )}
-                </div>
-              )}
+              <p data-testid="verdict-flight-line" className="mt-1 text-sm text-slate-400">
+                {routeLabel} · {bestDate}
+                {isRoundtrip && bestReturnDate ? ` – ${bestReturnDate}` : ""} · {travelersLabel} · {cabinLabel(cabin || "economy")}
+              </p>
               {searchedRangeCopy && hasBetterDate && (
                 <div
                   data-testid="best-date-callout-prominent"
@@ -762,37 +763,29 @@ export default function VerdictCard({
                   onLoadReturnDetails={lazyReturnLoader}
                 />
                 {recommendation === "use_points" ? (
-                  isRoundtrip && returnHandoffPrograms.length > 0 ? (
-                    <div
-                      data-testid="verdict-handoffs-grid"
-                      className="grid gap-5 md:grid-cols-2"
-                    >
-                      <MultiHandoffGrid
-                        recommendation="use_points"
-                        programs={handoffPrograms}
-                        bestDate={bestDate}
-                        routeLabel={routeLabel}
-                        travelersLabel={travelersLabel}
-                        legLabel="Outbound"
-                      />
-                      <MultiHandoffGrid
-                        recommendation="use_points"
-                        programs={returnHandoffPrograms}
-                        bestDate={bestReturnDate}
-                        routeLabel={routeLabel}
-                        travelersLabel={travelersLabel}
-                        legLabel="Return"
-                      />
-                    </div>
-                  ) : (
-                    <MultiHandoffGrid
-                      recommendation="use_points"
-                      programs={handoffPrograms}
-                      bestDate={bestDate}
-                      routeLabel={routeLabel}
-                      travelersLabel={travelersLabel}
-                    />
-                  )
+                  <HowToBook
+                    legs={[
+                      ...(handoffPrograms[0]
+                        ? [{
+                            legLabel: "Outbound" as const,
+                            program: handoffPrograms[0].program,
+                            points: handoffPrograms[0].points,
+                            taxes: handoffPrograms[0].taxes,
+                            date: bestDate,
+                          }]
+                        : []),
+                      ...(isRoundtrip && returnHandoffPrograms[0]
+                        ? [{
+                            legLabel: "Return" as const,
+                            program: returnHandoffPrograms[0].program,
+                            points: returnHandoffPrograms[0].points,
+                            taxes: returnHandoffPrograms[0].taxes,
+                            date: bestReturnDate,
+                          }]
+                        : []),
+                    ]}
+                    verifyNote={verdict.booking_note ?? null}
+                  />
                 ) : recommendation === "pay_cash" ? (
                   <MultiHandoffGrid
                     recommendation="pay_cash"

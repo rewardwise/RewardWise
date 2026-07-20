@@ -7,7 +7,7 @@
 //
 // Bug 86ba2ze4e: round-trip Use Points verdicts previously rendered up to
 // 5 cards (every wallet-matching program). Spec is one card per leg —
-// outbound + return (when round-trip), 1 + 0 (when one-way).
+// v3: single HowToBook block; links per leg, transfer note once per program.
 //
 // Children other than MultiHandoffGrid are stubbed so the assertions hit
 // the actual grid component. The 3-viewport mandate is per the sprint
@@ -178,11 +178,14 @@ function renderCard({
   });
 }
 
-function handoffSections(): Element[] {
-  return Array.from(container.querySelectorAll("section")).filter((s) => {
-    const header = s.querySelector("p");
-    return (header?.textContent || "").includes("Book ");
-  });
+function howToBook(): Element | null {
+  return container.querySelector('[data-testid="how-to-book"]');
+}
+function bookLink(leg: "outbound" | "return"): Element | null {
+  return container.querySelector(`[data-testid="book-${leg}"]`);
+}
+function transferNotes(): Element[] {
+  return Array.from(container.querySelectorAll('[data-testid="transfer-note"]'));
 }
 
 describe("VerdictCard top-1 per leg (86ba2ze4e)", () => {
@@ -199,11 +202,10 @@ describe("VerdictCard top-1 per leg (86ba2ze4e)", () => {
           isRoundtrip: false,
           userPrograms: ["united"],
         });
-        const grids = handoffSections();
-        expect(grids.length).toBe(1);
-        const header = grids[0].querySelector("p")?.textContent || "";
-        expect(header).toBe("Book through your program");
-        expect(header).not.toMatch(/outbound|return/i);
+        const block = howToBook();
+        expect(block, "single how-to-book block renders").not.toBeNull();
+        expect(bookLink("outbound"), "one-way has an outbound link").not.toBeNull();
+        expect(bookLink("return"), "one-way has NO return link").toBeNull();
       });
 
       // Case 2: Round-trip, same program both legs. Two grids, each labeled
@@ -215,13 +217,12 @@ describe("VerdictCard top-1 per leg (86ba2ze4e)", () => {
           isRoundtrip: true,
           userPrograms: ["united"],
         });
-        const grids = handoffSections();
-        expect(grids.length).toBe(2);
-        const headers = grids.map((g) => g.querySelector("p")?.textContent || "");
-        expect(headers[0].toLowerCase()).toContain("outbound");
-        expect(headers[1].toLowerCase()).toContain("return");
-        const united = container.textContent || "";
-        expect(united.toLowerCase().split("united").length - 1).toBeGreaterThanOrEqual(2);
+        expect(bookLink("outbound")).not.toBeNull();
+        expect(bookLink("return")).not.toBeNull();
+        // Same program both legs -> the transfer note is stated exactly ONCE.
+        expect(transferNotes().length).toBe(1);
+        expect(bookLink("outbound")!.textContent?.toLowerCase()).toContain("united");
+        expect(bookLink("return")!.textContent?.toLowerCase()).toContain("united");
       });
 
       // Case 3: Round-trip, different best programs per leg. Two grids, each
@@ -234,12 +235,12 @@ describe("VerdictCard top-1 per leg (86ba2ze4e)", () => {
           isRoundtrip: true,
           userCards: ["Chase Ultimate Rewards"],
         });
-        const grids = handoffSections();
-        expect(grids.length).toBe(2);
-        const outboundText = grids[0].textContent?.toLowerCase() || "";
-        const returnText = grids[1].textContent?.toLowerCase() || "";
+        const outboundText = bookLink("outbound")?.textContent?.toLowerCase() || "";
+        const returnText = bookLink("return")?.textContent?.toLowerCase() || "";
         expect(outboundText).toContain("united");
         expect(returnText).toContain("aeroplan");
+        // Two different programs -> two transfer notes (one per unique program).
+        expect(transferNotes().length).toBe(2);
       });
 
       // (Former case 4: empty-wallet cpp-tiebreak inside the handoff grid.)
@@ -264,10 +265,9 @@ describe("VerdictCard top-1 per leg (86ba2ze4e)", () => {
           isRoundtrip: false,
           userCards: ["Chase Ultimate Rewards"],
         });
-        const grids = handoffSections();
-        expect(grids.length).toBe(1);
         // 1.6 * 1.0 = 1.60 vs 1.9 * 0.7 = 1.33 → aeroplan wins.
-        expect(grids[0].textContent?.toLowerCase()).toContain("aeroplan");
+        expect(bookLink("outbound")?.textContent?.toLowerCase()).toContain("aeroplan");
+        expect(bookLink("return")).toBeNull();
       });
 
       // Case 6 / viewport guard: no horizontal-overflow class at 375px, and
@@ -280,17 +280,12 @@ describe("VerdictCard top-1 per leg (86ba2ze4e)", () => {
           isRoundtrip: true,
           userCards: ["Chase Ultimate Rewards"],
         });
-        const grids = handoffSections();
-        expect(grids.length).toBe(2);
-        grids.forEach((grid) => {
-          const inner = grid.querySelector(".grid");
-          expect(inner).not.toBeNull();
-          // Top-1 always renders a single card, so the grid stays single-column
-          // — md:grid-cols-2 must NOT be on either grid.
-          expect(inner!.className).not.toMatch(/md:grid-cols-2/);
-          // No fixed-pixel-width classes that would overflow at 375px.
-          expect(grid.innerHTML).not.toMatch(/\bw-\[\d{3,}px\]/);
-        });
+        const block = howToBook();
+        expect(block).not.toBeNull();
+        // v3: single stacked block — the overlapping md:grid-cols-2 pair is gone.
+        expect(block!.innerHTML).not.toMatch(/md:grid-cols-2/);
+        // No fixed-pixel-width classes that would overflow at 375px.
+        expect(block!.innerHTML).not.toMatch(/\bw-\[\d{3,}px\]/);
       });
     });
   });

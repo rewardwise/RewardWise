@@ -174,6 +174,21 @@ body {
 .mtw-light .border-sky-400\/30 { border-color: #7dd3fc; }
 .mtw-light .border-indigo-400\/20 { border-color: #a5b4fc; }
 
+/* -100/-50 tints and slate-100 were still dark-theme colors — they made the
+   tier pill render "empty" (invisible text) and washed out program names on
+   amber fills. Deepen them the same way as the -200/-300 sweep. */
+.mtw-light .text-emerald-100 { color: #047857; }
+.mtw-light .text-amber-100 { color: #b45309; }
+.mtw-light .text-sky-100 { color: #0369a1; }
+.mtw-light .text-slate-100 { color: #1f2937; }
+.mtw-light .text-slate-300\/90,
+.mtw-light .text-emerald-200\/90 { color: #047857; }
+.mtw-light .bg-emerald-500\/\[0\.06\],
+.mtw-light .bg-emerald-500\/\[0\.08\] { background-color: #ecfdf5; }
+.mtw-light .bg-amber-500\/\[0\.08\] { background-color: #fffbeb; }
+.mtw-light .border-amber-300\/40 { border-color: #fcd34d; }
+.mtw-light .border-emerald-300\/40 { border-color: #6ee7b7; }
+
 /* ─────────────────────────────────────────────────────────────────────────
    Zoe docked pane — LIGHT (PR 6). Component-scoped remap of Zoe's dark chrome
    (set via the docked container's .zoe-light class). Emerald buttons KEEP white
