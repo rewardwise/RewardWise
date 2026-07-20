@@ -132,7 +132,7 @@ export default function PartialDataCard({
 					</p>
 					<p className="mt-1 text-sm text-slate-300">
 						{winner.points != null
-							? `${winner.points.toLocaleString()} points`
+							? `${winner.points.toLocaleString()} points (outbound, per traveler)`
 							: "Points TBD"}
 						{winner.taxes != null && winner.taxes > 0
 							? ` plus $${winner.taxes.toFixed(0)} in taxes`

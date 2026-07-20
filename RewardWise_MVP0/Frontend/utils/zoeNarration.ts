@@ -105,7 +105,9 @@ export function zoeNarration(
 
 	const pointsAnywayReply =
 		r === "use_points"
-			? `Go for it — book ${program} for ${pts(o?.points_needed ?? verdict.winner?.points)} pts (~${cpp(redemptionCpp)}). 👍`
+			? o?.points_needed != null
+				? `Go for it — book ${program} for ${pts(o.points_needed)} pts (~${cpp(redemptionCpp)}). 👍`
+				: `Go for it — book ${program} (~${cpp(redemptionCpp)}). 👍`
 			: o && !o.can_afford
 				? `You can't quite — you're ${pts(o.shortfall)} pts short for ${program}. You'd have to buy or earn the gap first, and buying usually isn't worth it.`
 				: `You can, but it's a weak ${cpp(redemptionCpp)} redemption — you'd spend points to save only ${money(savings)} vs cash. Your call, but cash keeps more value.`;

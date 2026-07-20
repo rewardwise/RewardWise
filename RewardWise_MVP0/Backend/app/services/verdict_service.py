@@ -726,11 +726,13 @@ async def generate_verdict(
 
     # Awards only, no cash comparison.
     if cash_price is None:
+        wait_pts, _wt = _display_award_totals(points, 0, inbound_winner, travelers)
+        wait_basis = "for the whole trip" if inbound_winner else "for the outbound leg"
         response = _base_response(
             recommendation="wait",
             verdict_label="Wait",
             headline=f"{program_label} has award space, but I do not have a live cash fare to compare it against.",
-            explanation=f"The best current option I found is {points:,} points{' nonstop' if direct else ''}. Without a live cash price, I cannot safely say whether using points beats paying cash.",
+            explanation=f"The best current option I found is {wait_pts:,} points {wait_basis}{' nonstop' if direct else ''}. Without a live cash price, I cannot safely say whether using points beats paying cash.",
             confidence="low",
             confidence_reason="Award availability was found, but live cash pricing was unavailable.",
             booking_note=f"If you want to use points, verify the award on {program_label}'s site before transferring.",
