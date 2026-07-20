@@ -502,11 +502,15 @@ def _gray_zone_response(
     the framing.
     """
     cash_label = _cash_label(cash_price)
+    display_points, _display_taxes_unused = _display_award_totals(
+        points, 0, inbound_winner, travelers
+    )
+    trip_basis = "for the whole trip" if inbound_winner else "for the outbound leg"
     if recommendation == "pay_cash":
         verdict_label = "Pay Cash"
         headline = "Pay cash. Save your points for a stronger redemption."
         explanation = (
-            f"I found {program_label} at {points:,} points versus {cash_label} cash."
+            f"I found {program_label} at {display_points:,} points {trip_basis} versus {cash_label} cash for the round trip."
             f" At {cpp:.2f}¢/pt, the award value here is below the threshold where points typically beat cash."
             " Paying cash preserves your points for a higher-value redemption on a different trip."
         )
@@ -521,7 +525,7 @@ def _gray_zone_response(
         verdict_label = "Use Points"
         headline = "Use points. Better than paying cash, though not the strongest redemption."
         explanation = (
-            f"I found {program_label} at {points:,} points versus {cash_label} cash."
+            f"I found {program_label} at {display_points:,} points {trip_basis} versus {cash_label} cash for the round trip."
             f" At {cpp:.2f}¢/pt, this beats paying cash, but it is not at premium-redemption levels."
             " If you have flexibility, you might find better value on a different route or date."
         )
@@ -830,10 +834,14 @@ async def generate_verdict(
         return response
 
     if cpp >= CPP_USE_POINTS_STRONG_THRESHOLD:
+        strong_pts, strong_taxes = _display_award_totals(
+            points, taxes, inbound_winner, travelers
+        )
+        strong_basis = "for the whole trip" if inbound_winner else "for the outbound leg"
         explanation = (
-            f"The best award is {points:,} points"
-            f"{' plus about $' + str(int(round(taxes))) + ' in taxes' if taxes else ''}"
-            f", which saves about ${savings:,.0f} compared with paying {_cash_label(cash_price)} cash."
+            f"The best award is {strong_pts:,} points"
+            f"{' plus about $' + str(int(round(strong_taxes))) + ' in taxes' if strong_taxes else ''}"
+            f" {strong_basis}, which saves about ${savings:,.0f} compared with paying {_cash_label(cash_price)} cash."
         )
         if urgency:
             explanation += f" There are only {remaining_seats} seat{'s' if remaining_seats != 1 else ''} left, so this is worth acting on soon."
