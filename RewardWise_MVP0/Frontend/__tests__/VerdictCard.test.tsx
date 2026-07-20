@@ -202,7 +202,7 @@ describe("VerdictCard — headline leads with dollar savings (Phase 3 redesign)"
     renderCard({
       recommendation: "pay_cash" as const,
       pay_cash: true,
-      metrics: { cash_price: 169, points_cost: 35000, taxes: 5.6, estimated_savings: 163, cpp: 0.9 },
+      metrics: { cash_price: 169, points_cost: 35000, taxes: 5.6, estimated_savings: 163, cpp: 0.9 } as (typeof baseVerdict)["metrics"],
     });
     const cashLine = container.querySelector('[data-testid="verdict-cash-flights"]');
     expect(cashLine, "cash figure line must render").not.toBeNull();
@@ -262,7 +262,7 @@ describe("VerdictCard — tier badge removed (card v3)", () => {
     renderCard({
       verdict_tier: "premium",
       tier_explanation: "This is one of the best uses of your points.",
-      metrics: { cash_price: 800, points_cost: 35000, taxes: 5.6, estimated_savings: 200, cpp: 2.27 },
+      metrics: { cash_price: 800, points_cost: 35000, taxes: 5.6, estimated_savings: 200, cpp: 2.27 } as (typeof baseVerdict)["metrics"],
     } as Partial<typeof baseVerdict>);
     expect(container.querySelector('[data-testid="verdict-tier-badge"]')).toBeNull();
     expect(container.querySelector('[data-testid="verdict-tier-explanation"]')).toBeNull();

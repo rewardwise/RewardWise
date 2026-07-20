@@ -475,9 +475,10 @@ export default function VerdictCard({
     recommendation === "use_points" && tradePts > 0 && displayCashPrice != null
       ? `${Number(tradePts).toLocaleString()} pts${
           tradeTaxes > 0 ? ` + ${fmtMoney(tradeTaxes, 2)}` : ""
-        } instead of ${fmtMoney(displayCashPrice, 0)} cash${
-          metrics.cpp != null ? ` · ${metrics.cpp.toFixed(2)}\u00a2/pt` : ""
-        } · ${isRoundtrip ? "round trip" : "one way"}`
+        } instead of ${fmtMoney(displayCashPrice, 0)} cash${(() => {
+          const c = ((displayCashPrice - tradeTaxes) / tradePts) * 100;
+          return Number.isFinite(c) && c > 0 ? ` · ${c.toFixed(2)}\u00a2/pt` : "";
+        })()} · ${isRoundtrip ? "round trip" : "one way"}`
       : null;
 
   const bestReturnDate = winningReturnDate || returnDate || "";
@@ -717,7 +718,7 @@ export default function VerdictCard({
               )}
               <p data-testid="verdict-flight-line" className="mt-1 text-sm text-slate-400">
                 {routeLabel} · {bestDate}
-                {isRoundtrip && bestReturnDate ? ` – ${bestReturnDate}` : ""} · {travelersLabel} · {cabinLabel(cabin || "economy")}
+                {isRoundtrip && bestReturnDate ? ` – ${bestReturnDate}` : ""} · {travelersLabel}
               </p>
               {searchedRangeCopy && hasBetterDate && (
                 <div
@@ -832,7 +833,9 @@ export default function VerdictCard({
 
 
 
-            {verdict.booking_note && <p className="mt-4 text-xs text-slate-500">{verdict.booking_note}</p>}
+            {recommendation !== "use_points" && verdict.booking_note && (
+              <p className="mt-4 text-xs text-slate-500">{verdict.booking_note}</p>
+            )}
           </div>
 
     </div>
