@@ -16,6 +16,7 @@ import ErrorStateCard from "@/components/verdict/ErrorStateCard";
 import FlightSection, { FlightLeg } from "@/components/verdict/FlightSection";
 import MultiHandoffGrid, { MultiHandoffProgram, MultiHandoffCashAirline } from "@/components/verdict/MultiHandoffGrid";
 import HowToBook from "@/components/verdict/HowToBook";
+import { getProgramHandoffInfo } from "@/utils/airlines";
 import PartialDataCard from "@/components/verdict/PartialDataCard";
 import { selectTopProgram } from "@/utils/topProgramSelection";
 import type { Verdict } from "@/types/verdict";
@@ -785,7 +786,22 @@ export default function VerdictCard({
                           }]
                         : []),
                     ]}
-                    verifyNote={verdict.booking_note ?? null}
+                    verifyNote={(() => {
+                      // Derived from the SAME wallet-fit selection as the
+                      // displayed legs — the engine winner can be a different
+                      // program, and 'Verify on Aeroplan' next to Virgin
+                      // Atlantic legs sends the user to the wrong site.
+                      const names = Array.from(
+                        new Set(
+                          [handoffPrograms[0]?.program, isRoundtrip ? returnHandoffPrograms[0]?.program : null]
+                            .filter((p): p is string => Boolean(p))
+                            .map((p) => getProgramHandoffInfo(p).displayName)
+                        )
+                      );
+                      if (names.length === 0) return verdict.booking_note ?? null;
+                      const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+                      return `Verify the award on ${list}'s site before you transfer any points.`;
+                    })()}
                   />
                 ) : recommendation === "pay_cash" ? (
                   <MultiHandoffGrid
