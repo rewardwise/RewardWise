@@ -255,7 +255,9 @@ if (prefillRaw && onFillSearch) {
 		if (scroller && scroller !== document.body && scroller !== document.documentElement) {
 			scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
 		}
-	}, [messages, typing]);
+		// forkMsgs added (audit #5): chip replies and narration Q&A previously
+		// didn't trigger the scroll, so replies landed below the visible pane.
+	}, [messages, forkMsgs, typing]);
 
 	// ── Welcome message (floating variant only) ───────────────────────────────
 	// The docked pane uses the deterministic `welcome` prop (lead + chips), so
