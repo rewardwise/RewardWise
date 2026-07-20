@@ -29,6 +29,7 @@ import {
 import { createClient } from "@/utils/supabase/client";
 import { useZoeVoice, VoiceState } from "@/hooks/useZoeVoice";
 import { trackAnalyticsEvent } from "@/utils/analytics/client";
+import { extractTripParams } from "@/utils/tripExtract";
 import type { ZoeNarration, ZoeChip, ZoeWelcome } from "@/utils/zoeNarration";
 
 const supabase = createClient();
@@ -441,6 +442,21 @@ if (prefillRaw && onFillSearch) {
 		setMessages(prev => [...prev, { role: "user", content: trimmed }]);
 		setInput("");
 		setTyping(true);
+
+		// Deterministic trip-param autofill (no LLM, local datasets only): when
+		// the typed message states a trip, populate the search form. Partial fill
+		// is fine; wrong fill never (extractor is exact-resolution-only) and
+		// non-trip messages return null so the form is untouched.
+		if (onFillSearch) {
+			const extracted = extractTripParams(trimmed);
+			if (extracted) {
+				trackAnalyticsEvent("zoe_form_autofill", {
+					event_type: "zoe",
+					metadata: { fields: Object.keys(extracted) },
+				});
+				onFillSearch(extracted);
+			}
+		}
 
 		let convId = conversationId;
 		if (!convId && user) {
