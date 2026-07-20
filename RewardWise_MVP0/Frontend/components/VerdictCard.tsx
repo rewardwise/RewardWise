@@ -16,6 +16,7 @@ import ErrorStateCard from "@/components/verdict/ErrorStateCard";
 import FlightSection, { FlightLeg } from "@/components/verdict/FlightSection";
 import MultiHandoffGrid, { MultiHandoffProgram, MultiHandoffCashAirline } from "@/components/verdict/MultiHandoffGrid";
 import HowToBook from "@/components/verdict/HowToBook";
+import OwnershipFork from "@/components/verdict/OwnershipFork";
 import { getProgramHandoffInfo } from "@/utils/airlines";
 import PartialDataCard from "@/components/verdict/PartialDataCard";
 import { selectTopProgram } from "@/utils/topProgramSelection";
@@ -752,6 +753,18 @@ export default function VerdictCard({
                   {honestyLine}
                 </p>
               )}
+
+              {/* Ownership fork (b2 "you have enough" / b3 "you're short") — the
+                  wallet personalization the landing page sells. Was hosted inside
+                  CuratedOptions and silently lost when the card v3 removed the
+                  best-of-3 list (#227); re-mounted standalone. */}
+              {verdict.ownership?.applicable ? (
+                <OwnershipFork
+                  ownership={verdict.ownership}
+                  searchId={searchId ?? null}
+                  verdictId={verdictId ?? null}
+                />
+              ) : null}
 
             </div>
 
