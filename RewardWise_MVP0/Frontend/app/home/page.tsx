@@ -462,7 +462,26 @@ export default function HomePage() {
 				});
 				return;
 			}
-			if (tripType === "roundtrip" && !returnDate) {
+			// Same origin/destination: catch client-side — the backend rejects it with
+		// a raw Pydantic error AND the request burns paid API quota.
+		const oSet = new Set(origin.split(",").map((s) => s.trim().toUpperCase()));
+		const dSet = new Set(destination.split(",").map((s) => s.trim().toUpperCase()));
+		if (origin && destination && [...oSet].some((c) => dSet.has(c))) {
+			const message = "Origin and destination must be different.";
+			setSearchError(message);
+			trackAnalyticsEvent("search_failed", {
+				event_type: "search",
+				...currentSearchAnalyticsPayload(triggerSource),
+				search_success: false,
+				search_error_message: message,
+				latency_ms: 0,
+				error_message: message,
+				metadata: { ...currentSearchAnalyticsPayload(triggerSource).metadata, error_name: "same_origin_destination" },
+			});
+			return;
+		}
+
+		if (tripType === "roundtrip" && !returnDate) {
 				const message = "Please select a return date for round trips.";
 				setSearchError(message);
 				trackAnalyticsEvent("search_validation_failed", {
