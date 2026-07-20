@@ -692,14 +692,14 @@ def test_matched_scope_one_pax_oneway_unchanged():
     assert result["confidence"] == "high"
     assert result["winner"]["cpp"] == 2.0
     assert result["metrics"]["cpp"] == pytest.approx(2.0)
-
-
-def test_matched_scope_rt_no_program_match_falls_back_to_one_way_costing():
-    """When no inbound award matches the outbound program, matched_cpp is computed
-    on outbound only (the user can only book outbound on points).
-    """
-    outbound = _award(program="united", points=40000, taxes=0.0, cpp=3.0)
-    inbound = _award(program="aeroplan", points=40000, taxes=0.0, cpp=3.0)  # program mismatch
+# RT with no SAME-program return: honest costing now includes the best
+# ANY-program return award (separate one-way bookings are the product's real
+# booking model). The old behavior costed outbound-only points against the
+# FULL round-trip cash, inflating cpp ~2x — the fallback bug behind the
+# >=1-in-6 use_points flip floor found in the stored-verdict replay.
+def test_rt_cross_program_return_included_in_costing():
+    outbound = _award(program="united", points=40000, taxes=0.0)
+    inbound = _award(program="aeroplan", points=40000, taxes=0.0)
     result = _run(
         cash_price=1200.0,
         travelers=1,
@@ -708,7 +708,23 @@ def test_matched_scope_rt_no_program_match_falls_back_to_one_way_costing():
         award_options=[outbound],
         return_award_options=[inbound],
     )
-    # matched_cpp = 1200 / 40000 × 100 = 3.0¢/pt → use_points strong.
-    assert result["recommendation"] == "use_points"
-    assert result["metrics"]["cpp"] == pytest.approx(3.0)
-    assert result["metrics"]["points_cost"] == 40_000  # one-way costing
+    # Honest full-trip: 1200 / (40000 + 40000) × 100 = 1.5¢/pt — gray zone,
+    # NOT the inflated 3.0 the outbound-only fallback produced.
+    assert result["metrics"]["cpp"] == pytest.approx(1.5)
+    assert result["metrics"]["points_cost"] == 80000
+
+
+def test_rt_no_return_awards_costs_half_fare():
+    outbound = _award(program="united", points=40000, taxes=0.0)
+    result = _run(
+        cash_price=1200.0,
+        travelers=1,
+        is_roundtrip=True,
+        return_date="2026-09-29",
+        award_options=[outbound],
+        return_award_options=[],
+    )
+    # No return award at ALL: outbound award vs HALF the RT fare —
+    # 600 / 40000 × 100 = 1.5¢/pt, never full-cash-over-half-points (3.0).
+    assert result["metrics"]["cpp"] == pytest.approx(1.5)
+
