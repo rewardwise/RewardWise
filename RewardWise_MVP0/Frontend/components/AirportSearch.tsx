@@ -176,12 +176,7 @@ export default function AirportSearch({
       {open && results.length > 0 && (
         <div
           ref={dropdownRef}
-          className="absolute z-50 mt-1 w-full rounded-xl overflow-hidden shadow-2xl"
-          style={{
-            background: "#1e293b",
-            border: "1px solid rgba(255,255,255,0.08)",
-            boxShadow: "0 16px 40px rgba(0,0,0,0.5)",
-          }}
+          className="absolute z-50 mt-1 w-full overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl"
         >
           {results.map((r, i) => {
             const isMetro = r.kind === "metro";
@@ -204,15 +199,15 @@ export default function AirportSearch({
                 onMouseEnter={() => setHighlighted(i)}
                 className="w-full px-4 py-2.5 flex items-center gap-3 text-left transition-colors"
                 style={{
-                  background: i === highlighted ? "rgba(52,211,153,0.08)" : "transparent",
-                  borderBottom: i < results.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none",
+                  background: i === highlighted ? "rgba(16,185,129,0.08)" : "transparent",
+                  borderBottom: i < results.length - 1 ? "1px solid rgba(0,0,0,0.05)" : "none",
                 }}
               >
                 <span
                   className="font-bold text-sm flex-shrink-0 w-14 text-center rounded-md py-0.5"
                   style={{
-                    color: i === highlighted ? "#34d399" : "#94a3b8",
-                    background: i === highlighted ? "rgba(52,211,153,0.1)" : "rgba(255,255,255,0.05)",
+                    color: i === highlighted ? "#059669" : "#6b7280",
+                    background: i === highlighted ? "rgba(16,185,129,0.1)" : "rgba(0,0,0,0.04)",
                   }}
                 >
                   {isMetro ? `${code} ✦` : code}
@@ -221,18 +216,18 @@ export default function AirportSearch({
                 <div className="flex-1 min-w-0">
                   <p
                     className="text-sm font-medium truncate"
-                    style={{ color: i === highlighted ? "#fff" : "#cbd5e1" }}
+                    style={{ color: i === highlighted ? "#1f2937" : "#374151" }}
                   >
                     {primary}
                   </p>
                   {isMetro && (
-                    <p className="text-[11px] text-emerald-400/70 truncate">
+                    <p className="text-[11px] text-emerald-600/80 truncate">
                       All airports — {r.metro.airports.length} in this group
                     </p>
                   )}
                 </div>
 
-                <span className="text-xs flex-shrink-0 truncate max-w-[120px]" style={{ color: "#475569" }}>
+                <span className="text-xs flex-shrink-0 truncate max-w-[120px]" style={{ color: "#9ca3af" }}>
                   {trailing}
                 </span>
               </button>

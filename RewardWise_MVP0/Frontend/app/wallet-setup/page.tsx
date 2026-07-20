@@ -667,7 +667,7 @@ export default function WalletSetupPage() {
         ══════════════════════════════════ */}
         {viewMode === "portfolio" && (
           <>
-            <div className="bg-gray-900/90 backdrop-blur rounded-xl p-6 shadow-2xl space-y-3">
+            <div className="mtw-light bg-gray-900/90 backdrop-blur rounded-xl p-6 shadow-2xl space-y-3">
               <h2 className="text-base font-semibold text-white mb-1">Your Wallet</h2>
 
               {savedCards.map((card) => (
@@ -794,7 +794,7 @@ export default function WalletSetupPage() {
             ADD CARDS VIEW
         ══════════════════════════════════ */}
         {viewMode === "add-cards" && (
-          <div className="bg-gray-900/90 backdrop-blur rounded-xl p-6 shadow-2xl space-y-4">
+          <div className="mtw-light bg-gray-900/90 backdrop-blur rounded-xl p-6 shadow-2xl space-y-4">
             <div>
               <h2 className="text-lg font-semibold text-white">Add to your wallet</h2>
               <p className="text-gray-400 text-sm mt-1">
