@@ -44,7 +44,7 @@ export default function HowToBook({ legs, verifyNote = null }: Props) {
 			<p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-700">
 				How to book
 			</p>
-			<div className="flex flex-col gap-3 rounded-2xl border border-emerald-300 bg-emerald-50/60 p-4">
+			<div className="flex flex-col gap-2.5 rounded-2xl border border-emerald-300 bg-emerald-50/60 p-3">
 				{uniquePrograms.map((key) => {
 					const { displayName } = getProgramHandoffInfo(key);
 					const partners = (TRANSFER_PARTNERS[key] ?? []).slice(0, 3);
@@ -53,7 +53,7 @@ export default function HowToBook({ legs, verifyNote = null }: Props) {
 						<div
 							key={`transfer-${key}`}
 							data-testid="transfer-note"
-							className="rounded-xl border border-amber-300 bg-amber-50 p-3"
+							className="rounded-xl border border-amber-300 bg-amber-50 p-2.5"
 						>
 							<p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-amber-800">
 								Transfer to {displayName}
