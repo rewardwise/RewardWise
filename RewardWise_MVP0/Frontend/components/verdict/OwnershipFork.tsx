@@ -141,6 +141,12 @@ export default function OwnershipFork({ ownership, searchId, verdictId }: Owners
 						Book with points <ExternalLink className="h-4 w-4" aria-hidden="true" />
 					</a>
 				) : null}
+							{(o as any).scope === "outbound_only" ? (
+					<p data-testid="fork-return-cash-note" className="mt-2 text-mtw-small text-mtw-muted">
+						No award space for the return leg — it stays a cash purchase (roughly
+						half the round-trip fare; one-way fares are often higher).
+					</p>
+				) : null}
 			</section>
 		);
 	}

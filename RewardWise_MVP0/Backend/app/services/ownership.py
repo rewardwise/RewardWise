@@ -285,6 +285,7 @@ def compute_ownership(verdict: dict, wallet_balances: Optional[dict]) -> Optiona
         "applicable": True,
         "program": slug,
         "program_label": SOURCE_SLUG_TO_PARTNER_DISPLAY.get(slug) or winner.get("program"),
+        "scope": metrics.get("scope"),
         "points_needed": int(points_needed),
         "owned_balance": int(owned_balance),
         "shortfall": int(shortfall),

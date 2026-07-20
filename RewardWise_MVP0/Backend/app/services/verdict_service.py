@@ -359,16 +359,27 @@ def _metrics(
         cash_price, outbound_points_per_pax, outbound_taxes, inbound_winner, travelers,
         is_roundtrip=is_roundtrip,
     )
+    # Scope of every figure in this dict. cash/2 is an ESTIMATE with a known
+    # asymmetry: conservative for the verdict (understates cpp -> biases
+    # pay_cash, safe) but OPTIMISTIC for the user's out-of-pocket return cost
+    # (one-way fares routinely exceed half the round trip) — display copy must
+    # hedge it even though the verdict math needn't.
+    scope = (
+        "outbound_only" if (is_roundtrip and not inbound_winner)
+        else ("round_trip" if is_roundtrip else "one_way")
+    )
+    comparison_cash: Optional[float] = None
     savings: Optional[float] = None
     if cash_price is not None:
         effective_cash = float(cash_price)
-        # RT costed outbound-only (no return award at all): the award only
-        # replaces half the fare — savings must not claim the whole ticket.
-        if is_roundtrip and not inbound_winner:
+        if scope == "outbound_only":
             effective_cash = effective_cash / 2.0
+        comparison_cash = round(effective_cash, 2)
         savings = max(0.0, round(effective_cash - taxes, 2))
     return {
         "cash_price": cash_price,
+        "scope": scope,
+        "comparison_cash": comparison_cash,
         "points_cost": points_cost,
         "points_cost_per_traveler": points_cost_per_traveler,
         "travelers": travelers,

@@ -473,14 +473,21 @@ export default function VerdictCard({
     (handoffPrograms[0]?.taxes ?? 0) + (returnHandoffPrograms[0]?.taxes ?? 0);
   const tradePts = tradeLegsPts > 0 ? tradeLegsPts : (displayPoints ?? 0);
   const tradeTaxes = tradeLegsPts > 0 ? tradeLegsTaxes : (displayTaxes ?? 0);
+  const mScope = (metrics as any).scope as string | undefined;
+  const mComparison = (metrics as any).comparison_cash as number | null | undefined;
+  const scopeLabel =
+    mScope === "outbound_only"
+      ? "outbound award \u00b7 return stays a cash purchase"
+      : mScope === "one_way"
+        ? "one way"
+        : "round trip";
   const honestyLine =
-    recommendation === "use_points" && tradePts > 0 && displayCashPrice != null
+    recommendation === "use_points" && tradePts > 0 && (mComparison ?? displayCashPrice) != null
       ? `${Number(tradePts).toLocaleString()} pts${
           tradeTaxes > 0 ? ` + ${fmtMoney(tradeTaxes, 2)}` : ""
-        } instead of ${fmtMoney(displayCashPrice, 0)} cash${(() => {
-          const c = ((displayCashPrice - tradeTaxes) / tradePts) * 100;
-          return Number.isFinite(c) && c > 0 ? ` · ${c.toFixed(2)}\u00a2/pt` : "";
-        })()} · ${isRoundtrip ? "round trip" : "one way"}`
+        } instead of ${fmtMoney((mComparison ?? displayCashPrice) as number, 0)} cash${
+          metrics.cpp != null ? ` \u00b7 ${metrics.cpp.toFixed(2)}\u00a2/pt` : ""
+        } \u00b7 ${scopeLabel}`
       : null;
 
   const bestReturnDate = winningReturnDate || returnDate || "";
