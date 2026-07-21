@@ -1,12 +1,13 @@
 /** @format */
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Calendar,
   Sparkles,
 } from "lucide-react";
 import { cabinLabel } from "@/utils/cabin";
+import { trackAnalyticsEvent } from "@/utils/analytics/client";
 import { fmtMoney } from "@/utils/format";
 import { dedupeByProgram, filterByDate } from "@/utils/awardOptions";
 import { buildOutboundLeg, buildInboundLeg } from "@/utils/flightLegs";
@@ -450,6 +451,21 @@ export default function VerdictCard({
   const engineOutbound =
     winner?.program && winner?.points ? { program: winner.program, points: winner.points, taxes: winner.taxes ?? null } : null;
   const outboundPick = engineOutbound ?? topOutboundAward;
+  // Transitional-fallback telemetry (#2 step c): fires only when a payload
+  // lacks engine picks (pre-step-c cached verdicts). DELETE selectTopProgram
+  // + this effect once analytics shows zero verdict_selector_fallback events
+  // for 14 consecutive days post-deploy (L2 cache reuse window aged out).
+  useEffect(() => {
+    if (!engineOutbound && topOutboundAward) {
+      trackAnalyticsEvent("verdict_selector_fallback", {
+        event_type: "verdict",
+        search_id: searchId ?? null,
+        verdict_id: verdictId ?? null,
+        metadata: { leg: "outbound", program: topOutboundAward.program },
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchId]);
   const handoffPrograms: MultiHandoffProgram[] = outboundPick
     ? [
         {
