@@ -203,51 +203,6 @@ def _fmt(name: str) -> str:
 
 def _cash_label(cash_price: Optional[float]) -> str:
     return f"${cash_price:.0f}" if cash_price is not None else "cash unavailable"
-
-
-def _pick_inbound_winner(
-    outbound_winner: Optional[dict], return_awards: Optional[list]
-) -> Optional[dict]:
-    """Return the inbound award that matches the outbound winner's program.
-
-    Used to honestly cost a round-trip redemption: seats.aero awards are one-way
-    per pax, so the true RT cost is outbound + return points (both per pax).
-    Picking the program-matched inbound preserves the user-bookable assumption —
-    you can't mix programs on a single award itinerary. When no program-matched
-    return is available, fall back to one-way costing (return = None) rather
-    than silently swapping in an unbookable cross-program return.
-    """
-    if not outbound_winner or not return_awards:
-        return None
-    program = (outbound_winner.get("program") or "").lower()
-    if not program:
-        return None
-    for award in return_awards:
-        if (award.get("program") or "").lower() == program:
-            return award
-    return None
-
-
-def _pick_costing_inbound(return_awards: Optional[list]) -> Optional[dict]:
-    """Best ANY-program return award, for honest full-trip costing.
-
-    Awards here are separate one-way bookings — the product's How-to-book
-    explicitly instructs booking each leg on its own program — so a
-    cross-program return is bookable reality, not an unbookable synthetic.
-    Used when no same-program return exists: the old behavior costed the
-    round trip with OUTBOUND-ONLY points against the FULL round-trip cash,
-    inflating cpp ~2x and flipping verdicts to use_points that honest math
-    calls pay_cash (replay: >=1 in 6 of all use_points verdicts — a floor).
-    """
-    if not return_awards:
-        return None
-    return min(
-        (a for a in return_awards if a.get("points")),
-        key=lambda a: (int(a.get("points") or 0), float(a.get("taxes") or 0)),
-        default=None,
-    )
-
-
 def _matched_cpp(
     cash_price: Optional[float],
     outbound_points: int,

@@ -106,7 +106,7 @@ function setViewport(width: number) {
 const baseVerdict = {
   verdict: "Use points",
   recommendation: "use_points" as "use_points" | "pay_cash" | "wait",
-  winner: { program: "united", points: null as unknown as number, taxes: 5.6, cpp: 1.8, direct: true },
+  winner: { program: "united", points: 35000, taxes: 5.6, cpp: 1.8, direct: true },
   pay_cash: false,
   confidence: "high" as const,
   confidence_reason: "Award beats cash on this route.",
@@ -147,6 +147,7 @@ interface RenderOpts {
   isRoundtrip: boolean;
   userPrograms?: string[];
   userCards?: string[];
+  verdictOverrides?: Partial<typeof baseVerdict> & Record<string, unknown>;
 }
 
 function renderCard({
@@ -155,11 +156,12 @@ function renderCard({
   isRoundtrip,
   userPrograms = [],
   userCards = [],
+  verdictOverrides = {},
 }: RenderOpts) {
   act(() => {
     root.render(
       <VerdictCard
-        verdict={baseVerdict}
+        verdict={{ ...baseVerdict, ...verdictOverrides }}
         cashPrice={800}
         origin="SFO"
         destination="NRT"
@@ -234,6 +236,10 @@ describe("VerdictCard top-1 per leg (86ba2ze4e)", () => {
           returnAwardOptions: [aeroplanAward],
           isRoundtrip: true,
           userCards: ["Chase Ultimate Rewards"],
+          verdictOverrides: {
+            winner: { program: "united", points: unitedAward.points, taxes: unitedAward.taxes, cpp: 1.8, direct: true },
+            return_winner: { program: "aeroplan", points: aeroplanAward.points, taxes: aeroplanAward.taxes, cpp: 1.6, direct: true },
+          },
         });
         const outboundText = bookLink("outbound")?.textContent?.toLowerCase() || "";
         const returnText = bookLink("return")?.textContent?.toLowerCase() || "";
@@ -259,15 +265,33 @@ describe("VerdictCard top-1 per leg (86ba2ze4e)", () => {
         // Even without the wallet-fit penalty, united would still win on cpp,
         // so use an inverted setup: aeroplan 1.6 reachable vs delta 1.9 unreachable.
         const deltaHigh = { ...deltaAward, cpp: 1.9 };
+        // REAL path (step c): the ENGINE runs the wallet-fit scoring and ships
+        // its pick as verdict.winner — _select_top_award picks aeroplan here
+        // (1.6 reachable beats 1.9 x 0.7 = 1.33; policy covered by backend
+        // test_select_top_award.py). The card must render the engine pick.
         renderCard({
           awardOptions: [deltaHigh, aeroplanAward],
           returnAwardOptions: [],
           isRoundtrip: false,
           userCards: ["Chase Ultimate Rewards"],
+          verdictOverrides: {
+            winner: { program: "aeroplan", points: aeroplanAward.points, taxes: aeroplanAward.taxes, cpp: 1.6, direct: true },
+          },
         });
-        // 1.6 * 1.0 = 1.60 vs 1.9 * 0.7 = 1.33 → aeroplan wins.
         expect(bookLink("outbound")?.textContent?.toLowerCase()).toContain("aeroplan");
         expect(bookLink("return")).toBeNull();
+      });
+
+      it("cached-payload fallback (TRANSITIONAL — delete with selectTopProgram once analytics shows zero verdict_selector_fallback for 14 days): no engine winner -> local selector runs", () => {
+        const deltaHigh = { ...deltaAward, cpp: 1.9 };
+        renderCard({
+          awardOptions: [deltaHigh, aeroplanAward],
+          returnAwardOptions: [],
+          isRoundtrip: false,
+          userCards: ["Chase Ultimate Rewards"],
+          verdictOverrides: { winner: { program: "aeroplan", points: null as unknown as number, taxes: 5.6, cpp: 1.6, direct: true } },
+        });
+        expect(bookLink("outbound")?.textContent?.toLowerCase()).toContain("aeroplan");
       });
 
       // Case 6 / viewport guard: no horizontal-overflow class at 375px, and
