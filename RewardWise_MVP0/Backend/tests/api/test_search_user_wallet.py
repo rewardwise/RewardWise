@@ -45,8 +45,10 @@ def test_wallet_returns_both_keys_for_chase_ur():
     assert "aeroplan" in wallet["programs"]
     assert "virginatlantic" in wallet["programs"]
     assert "flyingblue" in wallet["programs"]
-    # ...but not united (no Chase UR alias for united)
-    assert "united" not in wallet["programs"]
+    # ...including united: Chase UR -> United MileagePlus is a real 1:1
+    # transfer the old hand-maintained alias file was MISSING (same class of
+    # divergence as the Amex->Delta/VS gaps that motivated the generator).
+    assert "united" in wallet["programs"]
 
 
 def test_wallet_sums_points_balance_by_brand():
