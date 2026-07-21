@@ -73,3 +73,33 @@ describe("extractTripParams — deterministic, wrong-fill-proof", () => {
 		expect(r?.destination).toBeUndefined();
 	});
 });
+
+describe("extractTripParams — incremental updates (form context)", () => {
+	const CUR = { date: "2026-09-10", return_date: "2026-09-14" };
+
+	it("'what about the 20th instead?' updates only the depart date", () => {
+		const r = extractTripParams("what about the 20th instead?", TODAY, CUR);
+		expect(r).toEqual({ date: "2026-09-20" });
+	});
+
+	it("'come back on the 25th' updates only the return date", () => {
+		const r = extractTripParams("can I come back on the 25th?", TODAY, CUR);
+		expect(r).toEqual({ return_date: "2026-09-25" });
+	});
+
+	it("day in the past rolls to the next month", () => {
+		const r = extractTripParams("what about the 5th?", TODAY, { date: "2026-07-10" });
+		// July 5 is before 2026-07-20 (TODAY) -> August 5.
+		expect(r).toEqual({ date: "2026-08-05" });
+	});
+
+	it("no form context -> bare day extracts nothing (never guesses month)", () => {
+		expect(extractTripParams("what about the 20th instead?", TODAY, null)).toBeNull();
+	});
+
+	it("'2 travelers' never triggers the day pattern", () => {
+		const r = extractTripParams("make it 2 travelers", TODAY, CUR);
+		expect(r?.date).toBeUndefined();
+		expect(r?.travelers).toBe(2);
+	});
+});

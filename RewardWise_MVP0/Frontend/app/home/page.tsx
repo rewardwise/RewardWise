@@ -922,6 +922,7 @@ export default function HomePage() {
 										)
 									: null
 							}
+							currentSearch={{ date: departDate || null, return_date: returnDate || null }}
 							welcome={zoeWelcome()}
 						/>
 					</div>

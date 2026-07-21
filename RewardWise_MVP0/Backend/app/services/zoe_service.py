@@ -31,6 +31,9 @@ Response shape (frontend-compatible, unchanged):
 
 from __future__ import annotations
 
+import json
+import re
+
 from typing import Any, Dict, Optional
 
 from app.db.client import get_db_client
@@ -276,6 +279,21 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
 
     message_text = reply.answer or "Something went wrong — give me a second."
 
+    # Future-proof consumer for Xpectrum's [[TRIP_PARAMS]] block: when the
+    # template ships it, the JSON is stripped from the visible reply and
+    # returned as structured `prefill` (the frontend prefers it over local
+    # extraction). Zero-cost until the vendor emits it.
+    prefill: Optional[dict] = None
+    m = re.search(r"\[\[TRIP_PARAMS\]\]\s*(\{.*?\})", message_text, re.S)
+    if m:
+        try:
+            candidate = json.loads(m.group(1))
+            allowed = {"origin", "destination", "date", "return_date", "travelers", "tripType"}
+            prefill = {k: v for k, v in candidate.items() if k in allowed} or None
+            message_text = (message_text[: m.start()] + message_text[m.end():]).strip()
+        except (ValueError, TypeError):
+            prefill = None
+
     # ── STEP 4: Save session + log interaction ────────────────────────────────
     session.add_turn("user", text)
     session.add_turn("assistant", message_text)
@@ -292,4 +310,7 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
         feedback_signal=None,
     )
 
-    return _reply(message_text, interaction_id=interaction_id)
+    response = _reply(message_text, interaction_id=interaction_id)
+    if prefill:
+        response["prefill"] = prefill
+    return response

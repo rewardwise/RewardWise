@@ -107,7 +107,16 @@ function extractDates(msg: string, today: Date): ExtractedDates {
 
 // ── Main extractor ──────────────────────────────────────────────────────────
 
-export function extractTripParams(message: string, today: Date = new Date()): ExtractedTrip | null {
+export interface CurrentTrip {
+	date?: string | null;
+	return_date?: string | null;
+}
+
+export function extractTripParams(
+	message: string,
+	today: Date = new Date(),
+	current: CurrentTrip | null = null,
+): ExtractedTrip | null {
 	const msg = message.toLowerCase();
 	const out: ExtractedTrip = {};
 
@@ -152,6 +161,30 @@ export function extractTripParams(message: string, today: Date = new Date()): Ex
 
 	Object.assign(out, extractDates(msg, today));
 
+	// Incremental day-only update ("what about the 20th instead?", "come back
+	// on the 25th"): only when a month-anchored date was NOT already extracted
+	// and the FORM already has a date to borrow month/year context from.
+	// Requires an ordinal or "the N" so bare counts ("2 travelers") never match.
+	if (!out.date && !out.return_date && current) {
+		const dm = msg.match(/\b(?:on\s+|about\s+)?the\s+(\d{1,2})(?:st|nd|rd|th)?\b|\b(\d{1,2})(?:st|nd|rd|th)\b/);
+		if (dm) {
+			const day = parseInt(dm[1] ?? dm[2], 10);
+			const isReturn = /\b(?:return|back|home|returning)\b/.test(msg);
+			const anchorIso = isReturn ? (current.return_date || current.date) : (current.date || current.return_date);
+			if (day >= 1 && day <= 31 && anchorIso && /^\d{4}-\d{2}-\d{2}$/.test(anchorIso)) {
+				const [ay, am] = anchorIso.split("-").map(Number);
+				let iso = toISO(ay, am, day);
+				// Same month as the anchor; roll forward a month if it lands in the past.
+				const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+				if (new Date(ay, am - 1, day) < startOfToday) {
+					iso = am === 12 ? toISO(ay + 1, 1, day) : toISO(ay, am + 1, day);
+				}
+				if (isReturn) out.return_date = iso;
+				else out.date = iso;
+			}
+		}
+	}
+
 	const trav = msg.match(/\b(\d{1,2})\s*(?:travelers?|adults?|passengers?|people|pax)\b/);
 	if (trav) {
 		const n = parseInt(trav[1], 10);
@@ -159,11 +192,15 @@ export function extractTripParams(message: string, today: Date = new Date()): Ex
 	}
 
 	if (/\bone[\s-]?way\b/.test(msg)) out.tripType = "oneway";
-	else if (out.return_date) out.tripType = "roundtrip";
+	else if (out.return_date && (out.origin || out.destination)) out.tripType = "roundtrip";
+	// (incremental return-date updates don't touch tripType — the form already knows)
 
 	// Non-trip guard: nothing confidently extracted -> null (form untouched).
-	const hasRoute = Boolean(out.origin || out.destination);
-	const hasDate = Boolean(out.date);
-	if (!hasRoute && !hasDate) return null;
+	// return_date-only (incremental "come back on the 25th") and travelers-only
+	// ("make it 2 travelers") are valid partial updates.
+	const hasSignal = Boolean(
+		out.origin || out.destination || out.date || out.return_date || out.travelers
+	);
+	if (!hasSignal) return null;
 	return out;
 }
