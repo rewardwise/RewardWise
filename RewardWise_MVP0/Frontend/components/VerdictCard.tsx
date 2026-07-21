@@ -444,22 +444,33 @@ export default function VerdictCard({
   // Top-1 program per leg: wallet-fit-adjusted cpp, single card not five.
   // selectTopProgram returns null if all awards have null/zero cpp.
   const topOutboundAward = selectTopProgram(awardOptions, userPrograms, userCards);
-  const handoffPrograms: MultiHandoffProgram[] = topOutboundAward
+  // Step c: the ENGINE is the single selection source — consume its winner
+  // when the payload carries usable points (fallback: local selectTopProgram
+  // for cached pre-step-c payloads only).
+  const engineOutbound =
+    winner?.program && winner?.points ? { program: winner.program, points: winner.points, taxes: winner.taxes ?? null } : null;
+  const outboundPick = engineOutbound ?? topOutboundAward;
+  const handoffPrograms: MultiHandoffProgram[] = outboundPick
     ? [
         {
-          program: topOutboundAward.program,
-          points: topOutboundAward.points * travelers,
-          taxes: topOutboundAward.taxes,
+          program: outboundPick.program,
+          points: (outboundPick.points as number) * travelers,
+          taxes: outboundPick.taxes ?? null,
         },
       ]
     : [];
   const topReturnAward = selectTopProgram(returnAwardOptions, userPrograms, userCards);
-  const returnHandoffPrograms: MultiHandoffProgram[] = topReturnAward
+  const engineReturn =
+    verdict.return_winner?.program && verdict.return_winner?.points
+      ? { program: verdict.return_winner.program, points: verdict.return_winner.points, taxes: verdict.return_winner.taxes ?? null }
+      : null;
+  const returnPick = engineReturn ?? topReturnAward;
+  const returnHandoffPrograms: MultiHandoffProgram[] = returnPick
     ? [
         {
-          program: topReturnAward.program,
-          points: topReturnAward.points * travelers,
-          taxes: topReturnAward.taxes,
+          program: returnPick.program,
+          points: (returnPick.points as number) * travelers,
+          taxes: returnPick.taxes ?? null,
         },
       ]
     : [];

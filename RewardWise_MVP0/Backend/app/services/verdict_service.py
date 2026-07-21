@@ -496,6 +496,9 @@ def _base_response(
         "explanation": explanation,
         "verdict": verdict,
         "winner": winner,
+        # inbound_winner IS the return winner post step-c (single selector);
+        # exposed so the card consumes the engine's return pick directly.
+        "return_winner": inbound_winner,
         "pay_cash": pay_cash,
         "confidence": confidence,
         "confidence_reason": confidence_reason,
@@ -509,6 +512,35 @@ def _base_response(
         "verdict_tier": verdict_tier,
         "tier_explanation": tier_explanation,
     }
+
+
+WALLET_FIT_MULTIPLIER = 0.7  # mirror of Frontend/utils/topProgramSelection.ts
+
+
+def _select_top_award(awards: Optional[list], user_programs: Optional[list]) -> Optional[dict]:
+    """SINGLE selection source (#2 step c): the same wallet-fit-adjusted-cpp
+    scoring as the card's selectTopProgram, ported verbatim. The engine winner
+    and the card's How-to-book picks now derive from this one function's
+    output (engine computes, card consumes winner/return_winner), so headline
+    figures and booking figures cannot diverge.
+    score = cpp x (1 if reachable else 0.7); tiebreak reachable, then order.
+    Reachability = program in the alias-expanded wallet (single transfer truth
+    post step-b)."""
+    if not awards:
+        return None
+    reachable_set = {p.lower() for p in (user_programs or [])}
+    scored = []
+    for idx, a in enumerate(awards):
+        cpp = a.get("cpp")
+        if cpp is None or cpp <= 0:
+            continue
+        reachable = (a.get("program") or "").lower() in reachable_set
+        score = float(cpp) * (1.0 if reachable else WALLET_FIT_MULTIPLIER)
+        scored.append((-score, 0 if reachable else 1, idx, a))
+    if not scored:
+        return awards[0] if awards else None
+    scored.sort()
+    return scored[0][3]
 
 
 def _choose_candidate(award_options: list, user_programs: Optional[list]) -> tuple[list, list]:
@@ -745,19 +777,20 @@ async def generate_verdict(
         return response
 
     # Candidate winner.
-    winner = (candidates or all_awards)[0]
+    winner = _select_top_award(candidates or all_awards, user_programs) or (candidates or all_awards)[0]
     # Round-trip inbound winner: program-matched return award, or None if no
     # match (one-way fallback). Costs the redemption honestly as
     # outbound + return points instead of doubling outbound or dropping return.
-    inbound_winner: Optional[dict] = (
-        _pick_inbound_winner(winner, return_award_options) if is_roundtrip else None
+    # Return winner from the SAME single selector as the outbound winner —
+    # the exact award the card's How-to-book "Book return" points at.
+    return_winner: Optional[dict] = (
+        _select_top_award(return_award_options, user_programs) if is_roundtrip else None
     )
-    # Honest full-trip costing: same-program return when it exists, else the
-    # best any-program return (separate one-way bookings are the product's
-    # actual booking model). None only when the search has no return awards.
-    costing_inbound: Optional[dict] = (
-        inbound_winner or (_pick_costing_inbound(return_award_options) if is_roundtrip else None)
-    )
+    # Costing principle (step c): cost EXACTLY what the card tells the user to
+    # book — outbound winner + return winner. Same-program matching falls out
+    # naturally when the selector picks the same program for both legs.
+    inbound_winner: Optional[dict] = return_winner
+    costing_inbound: Optional[dict] = return_winner
     program = winner.get("program") or "unknown"
     points = int(winner.get("points") or 0)
     taxes = float(winner.get("taxes") or 0)

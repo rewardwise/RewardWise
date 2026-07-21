@@ -106,7 +106,7 @@ function setViewport(width: number) {
 const baseVerdict = {
   verdict: "Use points",
   recommendation: "use_points" as "use_points" | "pay_cash" | "wait",
-  winner: { program: "united", points: 35000, taxes: 5.6, cpp: 1.8, direct: true },
+  winner: { program: "united", points: null as unknown as number, taxes: 5.6, cpp: 1.8, direct: true },
   pay_cash: false,
   confidence: "high" as const,
   confidence_reason: "Award beats cash on this route.",
