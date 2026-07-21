@@ -29,7 +29,7 @@ import {
 import { createClient } from "@/utils/supabase/client";
 import { useZoeVoice, VoiceState } from "@/hooks/useZoeVoice";
 import { trackAnalyticsEvent } from "@/utils/analytics/client";
-import { extractTripParams } from "@/utils/tripExtract";
+import { extractTripParams, type CurrentTrip, type ExtractedTrip } from "@/utils/tripExtract";
 import type { ZoeNarration, ZoeChip, ZoeWelcome } from "@/utils/zoeNarration";
 
 const supabase = createClient();
@@ -63,6 +63,9 @@ interface ZoeChatProps {
 	}) => void;
 	/** Called when Zoe fills the form AND is ready to search — auto-triggers search */
 	onAutoSearch?: () => void;
+	/** Current form dates — month/year context for incremental updates
+	 *  ("what about the 20th instead?"). */
+	currentSearch?: CurrentTrip | null;
 	/**
 	 * Rendering location, NOT a restyle. "floating" (default) = the existing
 	 * fixed FAB + drawer/modal. "docked" = rendered in-flow to fill a parent
@@ -119,6 +122,7 @@ export default function ZoeChat({
 	setIsOpen,
 	onFillSearch,
 	onAutoSearch,
+	currentSearch = null,
 	verdictContext,
 	variant = "floating",
 	narration = null,
@@ -203,6 +207,18 @@ export default function ZoeChat({
 					...prev,
 					{ role: "assistant", content: reply, prefilled: !!prefillRaw },
 				]);
+			}
+			// Voice path: same single consumer — server prefill (below) wins;
+			// otherwise deterministic extraction from the TRANSCRIPT.
+			if (transcript && !prefillRaw && onFillSearch) {
+				const extracted = extractTripParams(transcript, new Date(), currentSearch);
+				if (extracted) {
+					trackAnalyticsEvent("zoe_form_autofill", {
+						event_type: "zoe",
+						metadata: { fields: Object.keys(extracted), source: "voice-local" },
+					});
+					onFillSearch(extracted);
+				}
 			}
 			// ✅ FIXED — parse it first
 if (prefillRaw && onFillSearch) {
@@ -445,20 +461,19 @@ if (prefillRaw && onFillSearch) {
 		setInput("");
 		setTyping(true);
 
-		// Deterministic trip-param autofill (no LLM, local datasets only): when
-		// the typed message states a trip, populate the search form. Partial fill
-		// is fine; wrong fill never (extractor is exact-resolution-only) and
-		// non-trip messages return null so the form is untouched.
-		if (onFillSearch) {
-			const extracted = extractTripParams(trimmed);
-			if (extracted) {
-				trackAnalyticsEvent("zoe_form_autofill", {
-					event_type: "zoe",
-					metadata: { fields: Object.keys(extracted) },
-				});
-				onFillSearch(extracted);
-			}
-		}
+		// ONE autofill consumer, two sources (future-proofed): the server's
+		// structured prefill (Xpectrum [[TRIP_PARAMS]], parsed by the backend) is
+		// AUTHORITATIVE when present in the reply; the local deterministic
+		// extractor fills instantly as fallback. Fill-only — never auto-search.
+		const applyTripFill = (params: ExtractedTrip | null, source: string) => {
+			if (!params || !onFillSearch) return;
+			trackAnalyticsEvent("zoe_form_autofill", {
+				event_type: "zoe",
+				metadata: { fields: Object.keys(params), source },
+			});
+			onFillSearch(params);
+		};
+		applyTripFill(extractTripParams(trimmed, new Date(), currentSearch), "local");
 
 		let convId = conversationId;
 		if (!convId && user) {
@@ -487,6 +502,11 @@ if (prefillRaw && onFillSearch) {
 				}),
 			});
 			const data = await res.json();
+			// Server-provided structured trip params (Xpectrum [[TRIP_PARAMS]] via
+			// the backend parser) override the local extraction when present.
+			if (data?.prefill && typeof data.prefill === "object") {
+				applyTripFill(data.prefill as ExtractedTrip, "server");
+			}
 			const reply = data.message || "Something went wrong — try again.";
 			const prefill = data.prefill || null;
 			const interaction_id = data.interaction_id || null;
