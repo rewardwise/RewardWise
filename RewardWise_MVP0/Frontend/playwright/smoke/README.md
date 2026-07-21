@@ -49,10 +49,18 @@ of which var is populated — no config flag.
 ## Smoke test user wallet state
 
 The user behind `MTW_SMOKE_EMAIL` (`smoke-test@mytravelwallet.ai`) is
-seeded in production with:
+seeded in production with a single card (verified live 2026-07-21,
+`playwright/.artifacts/wallet-state.png`):
 
-- **Chase Ultimate Rewards:** 100,000 points
-- **Amex Membership Rewards:** 100,000 points
+- **Amex Membership Rewards** (Amex Platinum): 250,000 points
+
+History: the original seed was 100k Chase UR + 100k Amex MR, but
+`pr8a-hotfix-2.spec.ts` wrote 250,000 into the first card on every run
+without restoring it, and the Chase card was later removed — the docs
+and the live wallet silently diverged. That spec now restores the
+pre-test balance, and the rule going forward is: **specs must leave the
+smoke wallet exactly as they found it** (write-then-restore, like
+pr8a-hotfix-2).
 
 These balances are load-bearing for any spec that asserts on Use Points
 verdict math. If the wallet is reset, drained, or balances diverge from
@@ -60,8 +68,8 @@ the values above, points-redemption assertions in current and future
 smoke specs will start failing for reasons unrelated to the code under
 test.
 
-If you re-seed the wallet, update this README and any spec that
-hard-codes balance-dependent assertions.
+If you deliberately re-seed the wallet, update this README and any spec
+that hard-codes balance-dependent assertions.
 
 ## Specs
 

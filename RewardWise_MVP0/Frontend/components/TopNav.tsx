@@ -100,9 +100,11 @@ export default function TopNav() {
 					{walletChips.length > 0 && (
 						<div
 							data-testid="nav-wallet-pill"
-							className="font-mtw hidden items-center gap-x-2 rounded-mtw-pill border border-black/10 bg-white/80 px-3 py-1.5 text-mtw-small shadow-sm sm:inline-flex"
+							className="font-mtw inline-flex items-center gap-x-2 rounded-mtw-pill border border-black/10 bg-white/80 px-2.5 py-1 text-mtw-small shadow-sm sm:px-3 sm:py-1.5"
 						>
-							<span className="font-semibold text-mtw-emerald">Your wallet</span>
+							{/* Prefix is the only part that doesn't fit at 375 — chip alone (~90px)
+							    does, so the pill renders at all widths and just drops the label. */}
+							<span className="hidden font-semibold text-mtw-emerald sm:inline">Your wallet</span>
 							{walletChips.map((c) => (
 								<span key={c.key} className="text-mtw-muted">
 									{c.label}
@@ -134,17 +136,6 @@ export default function TopNav() {
 								{user?.email && (
 									<div className="border-b border-black/5 px-4 py-2.5">
 										<p className="truncate text-mtw-small text-mtw-muted">{user.email}</p>
-									</div>
-								)}
-								{/* Wallet chips also appear here so mobile (pill hidden) still sees them. */}
-								{walletChips.length > 0 && (
-									<div className="flex flex-wrap gap-x-2 gap-y-1 border-b border-black/5 px-4 py-2.5 sm:hidden">
-										<span className="text-mtw-small font-semibold text-mtw-emerald">Wallet</span>
-										{walletChips.map((c) => (
-											<span key={c.key} className="text-mtw-small text-mtw-muted">
-												{c.label}
-											</span>
-										))}
 									</div>
 								)}
 								{menuItems.map((item, idx) => (

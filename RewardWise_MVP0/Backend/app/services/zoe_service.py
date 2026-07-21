@@ -87,6 +87,30 @@ def _compose_xpectrum_query(
     return "\n\n".join(preamble) + "\n\n[User] " + text
 
 
+TRIP_PARAM_FIELDS = {"origin", "destination", "date", "return_date", "travelers", "tripType"}
+
+
+def extract_trip_params_block(text: str) -> tuple[str, Optional[dict]]:
+    """Parse Xpectrum's [[TRIP_PARAMS]] {json} block out of a reply.
+
+    Returns (visible_text_without_block, whitelisted_prefill_or_None).
+    UNTESTED AGAINST A REAL VENDOR REPLY until the template ships the block —
+    the vendor's FIRST real delivery gets a live verification, not assumed.
+    """
+    m = re.search(r"\[\[TRIP_PARAMS\]\]\s*(\{.*?\})", text, re.S)
+    if not m:
+        return text, None
+    try:
+        candidate = json.loads(m.group(1))
+    except (ValueError, TypeError):
+        return text, None
+    if not isinstance(candidate, dict):
+        return text, None
+    prefill = {k: v for k, v in candidate.items() if k in TRIP_PARAM_FIELDS} or None
+    clean = (text[: m.start()] + text[m.end():]).strip()
+    return clean, prefill
+
+
 # ── Xpectrum conversation continuity (durable, Supabase-backed) ───────────────
 # The upstream Xpectrum conversation id is stored on the zoe_conversations row
 # (keyed by the frontend conversation_id) instead of Redis. Redis sessions were
@@ -279,20 +303,7 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
 
     message_text = reply.answer or "Something went wrong — give me a second."
 
-    # Future-proof consumer for Xpectrum's [[TRIP_PARAMS]] block: when the
-    # template ships it, the JSON is stripped from the visible reply and
-    # returned as structured `prefill` (the frontend prefers it over local
-    # extraction). Zero-cost until the vendor emits it.
-    prefill: Optional[dict] = None
-    m = re.search(r"\[\[TRIP_PARAMS\]\]\s*(\{.*?\})", message_text, re.S)
-    if m:
-        try:
-            candidate = json.loads(m.group(1))
-            allowed = {"origin", "destination", "date", "return_date", "travelers", "tripType"}
-            prefill = {k: v for k, v in candidate.items() if k in allowed} or None
-            message_text = (message_text[: m.start()] + message_text[m.end():]).strip()
-        except (ValueError, TypeError):
-            prefill = None
+    message_text, prefill = extract_trip_params_block(message_text)
 
     # ── STEP 4: Save session + log interaction ────────────────────────────────
     session.add_turn("user", text)

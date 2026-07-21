@@ -164,15 +164,22 @@ describe("TopNav — redesign nav model (avatar menu, no hamburger/bell)", () =>
     ).toBeLessThan(mocks.routerReplace.mock.invocationCallOrder[0]);
   });
 
-  it("wallet pill is desktop-only (hidden until sm) and shows the balance", () => {
+  it("wallet pill renders at ALL widths; only the 'Your wallet' prefix is sm+", () => {
     act(() => {
       root.render(<TopNav />);
     });
     const pill = container.querySelector('[data-testid="nav-wallet-pill"]');
     expect(pill, "wallet pill must be in DOM").not.toBeNull();
-    // Hidden on mobile, shown at sm+ via CSS (single source of truth for the fold).
-    expect(pill?.className).toContain("hidden");
-    expect(pill?.className).toContain("sm:inline-flex");
+    // Audit #6: the pill itself fits at 375 (single chip ≈90px); the "Your
+    // wallet" prefix is what didn't. Pill visible everywhere, prefix sm+ only.
+    expect(pill?.className).toContain("inline-flex");
+    expect(pill?.className).not.toMatch(/(^|\s)hidden(\s|$)/);
+    const prefix = Array.from(pill?.querySelectorAll("span") ?? []).find((s) =>
+      s.textContent?.includes("Your wallet"),
+    );
+    expect(prefix, "prefix span present").toBeTruthy();
+    expect(prefix?.className).toContain("hidden");
+    expect(prefix?.className).toContain("sm:inline");
     expect(pill?.textContent).toContain("80k Amex");
   });
 });
