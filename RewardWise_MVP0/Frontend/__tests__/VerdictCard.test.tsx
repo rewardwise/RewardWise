@@ -152,9 +152,8 @@ describe("VerdictCard — surface cleanup contract", () => {
 
   it("does not render the HowToBookSection (component removed)", () => {
     renderCard();
-    // The HowToBookSection rendered an "How to book" uppercase eyebrow header.
-    expect(container.textContent).not.toContain("How to book");
-    // And no stub should be present since the import was removed from VerdictCard.
+    // The v3 card has its own legitimate "How to book" block — assert only
+    // that the REMOVED legacy HowToBookSection component isn't mounted.
     expect(container.querySelector('[data-testid="how-to-book-stub"]')).toBeNull();
   });
 });

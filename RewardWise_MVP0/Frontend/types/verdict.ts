@@ -70,6 +70,8 @@ export interface Verdict {
 	headline?: string;
 	explanation?: string;
 	winner: VerdictWinner | null;
+	/** Engine's return-leg pick (step c single selector); card consumes it. */
+	return_winner?: (VerdictWinner & { points?: number | null; taxes?: number | null }) | null;
 	pay_cash: boolean;
 	confidence: Confidence;
 	confidence_reason?: string;
