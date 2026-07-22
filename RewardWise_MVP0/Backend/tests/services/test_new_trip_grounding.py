@@ -73,3 +73,17 @@ async def test_non_trip_turn_still_reaches_the_agent(monkeypatch):
     # Grounding context still rides the composed query on non-trip turns.
     assert "15,200" in called["query"]
     assert "USING THE NUMBERS ABOVE" in called["query"]
+
+
+def test_wallet_inputs_sums_per_program_not_per_card():
+    from app.services.zoe_service import _wallet_inputs
+    wallet = [
+        {"program": "Chase Ultimate Rewards", "points": 301},
+        {"program": "Chase Ultimate Rewards", "points": 0},
+        {"program": "Chase Ultimate Rewards", "points": 0},
+        {"program": "Amex Membership Rewards", "points": 0},
+    ]
+    out = _wallet_inputs(wallet)
+    assert out == "Chase Ultimate Rewards: 301; Amex Membership Rewards: 0"
+    assert out.count("Chase Ultimate Rewards") == 1
+    assert _wallet_inputs([]) == "No reward programs on file."
