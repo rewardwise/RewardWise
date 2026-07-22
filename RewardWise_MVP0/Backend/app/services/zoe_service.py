@@ -45,15 +45,19 @@ from app.services.zoe.xpectrum_caller import call_xpectrum
 # ── Context helpers ───────────────────────────────────────────────────────────
 
 def _wallet_inputs(wallet: list[dict]) -> str:
-    """Compact, model-friendly summary of the user's points wallet."""
+    """Compact, model-friendly summary of the user's points wallet.
+
+    One line PER PROGRAM (balances summed across cards), not per card —
+    multi-card programs used to render "Chase: 301; Chase: 0; Chase: 0",
+    which reads like three wallets. Insertion order preserved.
+    """
     if not wallet:
         return "No reward programs on file."
-    parts = []
+    by_program: dict[str, int] = {}
     for w in wallet:
         program = w.get("program") or "Unknown"
-        pts = w.get("points") or 0
-        parts.append(f"{program}: {pts:,}")
-    return "; ".join(parts)
+        by_program[program] = by_program.get(program, 0) + (w.get("points") or 0)
+    return "; ".join(f"{program}: {pts:,}" for program, pts in by_program.items())
 
 
 # Deterministic dual-source kill (prod incident 2026-07-21, second round):
