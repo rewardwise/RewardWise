@@ -56,8 +56,23 @@ def _wallet_inputs(wallet: list[dict]) -> str:
     return "; ".join(parts)
 
 
+NEW_TRIP_INSTRUCTION = (
+    "[Instructions] The user just stated a NEW trip in this message. The app is "
+    "already running a live engine search for it, and the verdict card next to "
+    "this chat will show exact cash and points pricing. Do NOT price this or any "
+    "trip yourself: no cash prices, award amounts, point costs, cents-per-point, "
+    "and no availability claims — not from tools, not from memory, not as "
+    "estimates. Reply with ONE short, friendly sentence telling them you're "
+    "pulling it up and the verdict will appear beside the chat. "
+    "No numbers of any kind in your reply."
+)
+
+
 def _compose_xpectrum_query(
-    text: str, wallet_summary: str, verdict_context: Optional[str]
+    text: str,
+    wallet_summary: str,
+    verdict_context: Optional[str],
+    is_new_trip: bool = False,
 ) -> str:
     """
     Fold per-user context into the query for the Xpectrum agent.
@@ -70,6 +85,11 @@ def _compose_xpectrum_query(
     preamble can be removed in favor of pure `inputs`.
     """
     preamble: list[str] = []
+    if is_new_trip:
+        # A new-trip message makes any on-screen verdict stale for THIS trip;
+        # suppress it and forbid agent-side pricing (dual-source guard).
+        preamble.append(NEW_TRIP_INSTRUCTION)
+        verdict_context = None
     if verdict_context:
         preamble.append(
             "[Live search result — the user is looking at this verdict right now]\n"
@@ -232,6 +252,7 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
     text:            str           = (payload.get("message") or "").strip()
     user_id:         Optional[str] = payload.get("user_id")
     verdict_context: Optional[str] = payload.get("verdict_context") or None
+    is_new_trip:     bool          = bool(payload.get("is_new_trip", False))
     is_voice:        bool          = bool(payload.get("is_voice", False))
     frontend_history: list[dict]   = payload.get("history") or []
     conversation_id: Optional[str] = payload.get("conversation_id")
@@ -277,12 +298,15 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
     # conversation memory after turn 1. verdict_context (Ask-Zoe) is per-turn.
     first_turn = xpectrum_conv is None
     inputs: dict[str, Any] = {"wallet": wallet_summary}
-    if verdict_context:
+    if verdict_context and not is_new_trip:
         inputs["verdict_context"] = verdict_context
 
     reply = await call_xpectrum(
         _compose_xpectrum_query(
-            text, wallet_summary if first_turn else "", verdict_context
+            text,
+            wallet_summary if first_turn else "",
+            verdict_context,
+            is_new_trip=is_new_trip,
         ),
         user=user_id,
         conversation_id=xpectrum_conv,

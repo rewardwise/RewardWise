@@ -230,3 +230,20 @@ body {
 .zoe-light .bg-slate-700,
 .zoe-light .bg-slate-900 { background-color: #f3f4f6; }
 .zoe-light .bg-slate-400 { background-color: #cbd5e1; }
+/* ── Verdict confetti burst (once per verdict, ~1.4s) ─────────────────────── */
+.mtw-confetti {
+	position: absolute;
+	top: 0;
+	width: 8px;
+	height: 12px;
+	border-radius: 2px;
+	opacity: 0;
+	animation: mtw-confetti-fall 1.4s ease-in forwards;
+}
+@keyframes mtw-confetti-fall {
+	0% { opacity: 1; transform: translateY(-12px) rotate(0deg); }
+	100% { opacity: 0; transform: translateY(240px) rotate(540deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+	.mtw-confetti { animation: none; display: none; }
+}

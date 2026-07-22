@@ -473,7 +473,11 @@ if (prefillRaw && onFillSearch) {
 			});
 			onFillSearch(params);
 		};
-		applyTripFill(extractTripParams(trimmed, new Date(), currentSearch), "local");
+		// Dual-source guard (prod incident 2026-07-21): when the typed message
+		// itself states a trip, the engine search is the ONLY pricing source —
+		// the flag below makes the backend forbid the agent from pricing it.
+		const extractedTrip = extractTripParams(trimmed, new Date(), currentSearch);
+		applyTripFill(extractedTrip, "local");
 
 		let convId = conversationId;
 		if (!convId && user) {
@@ -495,6 +499,7 @@ if (prefillRaw && onFillSearch) {
 					history: messages,
 					conversation_id: convId,
 					verdict_context: verdictContext || null,
+					is_new_trip: Boolean(extractedTrip),
 					wallet: (cards || []).map((c: any) => ({
 						program: c.program_name,
 						points: c.points_balance,
