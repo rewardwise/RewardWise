@@ -56,23 +56,19 @@ def _wallet_inputs(wallet: list[dict]) -> str:
     return "; ".join(parts)
 
 
-NEW_TRIP_INSTRUCTION = (
-    "[Instructions] The user just stated a NEW trip in this message. The app is "
-    "already running a live engine search for it, and the verdict card next to "
-    "this chat will show exact cash and points pricing. Do NOT price this or any "
-    "trip yourself: no cash prices, award amounts, point costs, cents-per-point, "
-    "and no availability claims — not from tools, not from memory, not as "
-    "estimates. Reply with ONE short, friendly sentence telling them you're "
-    "pulling it up and the verdict will appear beside the chat. "
-    "No numbers of any kind in your reply."
+# Deterministic dual-source kill (prod incident 2026-07-21, second round):
+# instructing the agent not to price ("NEW_TRIP_INSTRUCTION") was IGNORED in
+# live verification — its searchFlight tool priced the trip anyway. So a
+# new-trip turn never reaches the agent at all; the backend answers with this
+# fixed ack and the engine search stays the only pricing source.
+NEW_TRIP_ACK = (
+    "On it! ✈️ I'm pulling live cash and points prices for that trip right now — "
+    "your verdict will appear beside the chat in a few seconds."
 )
 
 
 def _compose_xpectrum_query(
-    text: str,
-    wallet_summary: str,
-    verdict_context: Optional[str],
-    is_new_trip: bool = False,
+    text: str, wallet_summary: str, verdict_context: Optional[str]
 ) -> str:
     """
     Fold per-user context into the query for the Xpectrum agent.
@@ -85,11 +81,6 @@ def _compose_xpectrum_query(
     preamble can be removed in favor of pure `inputs`.
     """
     preamble: list[str] = []
-    if is_new_trip:
-        # A new-trip message makes any on-screen verdict stale for THIS trip;
-        # suppress it and forbid agent-side pricing (dual-source guard).
-        preamble.append(NEW_TRIP_INSTRUCTION)
-        verdict_context = None
     if verdict_context:
         preamble.append(
             "[Live search result — the user is looking at this verdict right now]\n"
@@ -265,6 +256,24 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
             "Hey! Ask me anything about flights, routes, or how to use your points.",
         )
 
+    # ── Dual-source kill-switch ───────────────────────────────────────────────
+    # A typed NEW-trip message (deterministic extractor fired on the frontend)
+    # never reaches the Xpectrum agent: its searchFlight tool prices trips from
+    # a second data source and ignored the no-pricing instruction in live
+    # verification. Fixed ack only; the engine verdict is the single source.
+    if is_new_trip:
+        interaction_id = await log_interaction(
+            _session_id(payload),
+            user_id,
+            "new_trip_ack",
+            text,
+            NEW_TRIP_ACK,
+            conversation_id=conversation_id,
+            is_voice=is_voice,
+            feedback_signal=None,
+        )
+        return _reply(NEW_TRIP_ACK, interaction_id=interaction_id)
+
     # ── STEP 1: Load session ──────────────────────────────────────────────────
     sess_id = _session_id(payload)
     session = await session_store.load(sess_id)
@@ -298,15 +307,12 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
     # conversation memory after turn 1. verdict_context (Ask-Zoe) is per-turn.
     first_turn = xpectrum_conv is None
     inputs: dict[str, Any] = {"wallet": wallet_summary}
-    if verdict_context and not is_new_trip:
+    if verdict_context:
         inputs["verdict_context"] = verdict_context
 
     reply = await call_xpectrum(
         _compose_xpectrum_query(
-            text,
-            wallet_summary if first_turn else "",
-            verdict_context,
-            is_new_trip=is_new_trip,
+            text, wallet_summary if first_turn else "", verdict_context
         ),
         user=user_id,
         conversation_id=xpectrum_conv,
