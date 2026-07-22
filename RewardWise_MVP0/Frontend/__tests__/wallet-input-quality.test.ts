@@ -104,11 +104,12 @@ describe("validatePoints", () => {
     expect(validatePoints(-5).reason).toBe("Cannot be negative");
     expect(validatePoints(NaN).reason).toBe("Please enter a number");
   });
-  it("allows values up to the 10M cap (inclusive)", () => {
+  it("allows values below the cap (boundary is EXCLUSIVE)", () => {
     expect(validatePoints(250_000).ok).toBe(true);
-    expect(validatePoints(MAX_POINTS_BALANCE).ok).toBe(true); // exactly 10M
+    expect(validatePoints(MAX_POINTS_BALANCE - 1).ok).toBe(true);
   });
-  it("rejects values above 10M (the anti-inflation guard)", () => {
+  it("rejects the cap itself and above (exactly-50M garbage was observed in prod)", () => {
+    expect(validatePoints(MAX_POINTS_BALANCE).ok).toBe(false); // boundary bug fix
     expect(validatePoints(MAX_POINTS_BALANCE + 1).ok).toBe(false);
     expect(validatePoints(999_999_999).ok).toBe(false); // ~1B typo
     expect(validatePoints(1_902_000_000).ok).toBe(false); // the observed ~1.9B

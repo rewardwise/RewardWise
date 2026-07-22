@@ -48,10 +48,13 @@ export const MAX_POINTS_BALANCE = 50_000_000;
 export function validatePoints(value: number): PointsValidationResult {
   if (Number.isNaN(value)) return { ok: false, reason: "Please enter a number" };
   if (value < 0) return { ok: false, reason: "Cannot be negative" };
-  if (value > MAX_POINTS_BALANCE) {
+  // Inclusive boundary: exactly-50M slipped through the old `>` check (an
+  // exactly-50,000,000 garbage row was observed in production). The DB CHECK
+  // (cards_points_balance_range) mirrors this: balance < 50,000,000.
+  if (value >= MAX_POINTS_BALANCE) {
     return {
       ok: false,
-      reason: `That looks too high (over ${MAX_POINTS_BALANCE.toLocaleString()}). Enter total points, e.g. 250000 for 250K.`,
+      reason: `That looks too high (${MAX_POINTS_BALANCE.toLocaleString()} or more). Enter total points, e.g. 250000 for 250K.`,
     };
   }
   return { ok: true };
