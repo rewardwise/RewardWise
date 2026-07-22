@@ -103,3 +103,21 @@ describe("extractTripParams — incremental updates (form context)", () => {
 		expect(r?.travelers).toBe(2);
 	});
 });
+
+describe("extractTripParams — spoken number-word travelers", () => {
+	it("maps 'two travelers' (the common voice case) to 2", () => {
+		const r = extractTripParams(
+			"Can I go from Denver to Austin September 10 to 14 for two travelers?",
+			TODAY
+		);
+		expect(r?.travelers).toBe(2);
+	});
+	it("handles other words and synonyms", () => {
+		expect(extractTripParams("SEA to Tokyo Nov 25-29 for four people", TODAY)?.travelers).toBe(4);
+		expect(extractTripParams("one passenger from Boise to Spokane October 13", TODAY)?.travelers).toBe(1);
+	});
+	it("number words NOT followed by a traveler noun stay untouched", () => {
+		const r = extractTripParams("from Denver to Austin September 10 to 14", TODAY);
+		expect(r?.travelers).toBeUndefined();
+	});
+});
