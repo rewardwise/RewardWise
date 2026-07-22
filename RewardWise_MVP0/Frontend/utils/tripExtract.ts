@@ -185,7 +185,15 @@ export function extractTripParams(
 		}
 	}
 
-	const trav = msg.match(/\b(\d{1,2})\s*(?:travelers?|adults?|passengers?|people|pax)\b/);
+	// Voice turns arrive with number WORDS ("for two travelers") — STT keeps
+	// small counts as words, so the digit-only pattern missed the common
+	// spoken case. Normalize one–nine before matching.
+	const WORD_NUMS: Record<string, string> = { one: "1", two: "2", three: "3", four: "4", five: "5", six: "6", seven: "7", eight: "8", nine: "9" };
+	const travMsg = msg.replace(
+		/\b(one|two|three|four|five|six|seven|eight|nine)(?=\s*(?:travelers?|adults?|passengers?|people|pax)\b)/g,
+		(w) => WORD_NUMS[w],
+	);
+	const trav = travMsg.match(/\b(\d{1,2})\s*(?:travelers?|adults?|passengers?|people|pax)\b/);
 	if (trav) {
 		const n = parseInt(trav[1], 10);
 		if (n >= 1 && n <= 9) out.travelers = n;
