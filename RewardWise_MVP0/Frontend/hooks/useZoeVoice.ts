@@ -25,6 +25,10 @@ interface UseZoeVoiceOptions {
 	history: Array<{ role: string; content: string }>;
 	onTurn: (result: VoiceTurnResult) => void;
 	onError?: (msg: string) => void;
+	/** Dual-source kill-switch parity with the typed path: returns true when the
+	 *  transcript states a NEW trip, so the backend short-circuits before the
+	 *  agent (its searchFlight tool prices trips from a second source). */
+	isNewTrip?: (transcript: string) => boolean;
 }
 
 function decodeBase64Header(value: string | null): string {
@@ -43,6 +47,7 @@ export function useZoeVoice({
 	history,
 	onTurn,
 	onError,
+	isNewTrip,
 }: UseZoeVoiceOptions) {
 	const [voiceState, setVoiceState] = useState<VoiceState>("idle");
 	const [liveTranscript, setLiveTranscript] = useState("");
@@ -179,6 +184,7 @@ export function useZoeVoice({
 			form.append("transcript", cleaned);
 			form.append("conversation_id", conversationId || "");
 			form.append("history", JSON.stringify(history.slice(-10)));
+			form.append("is_new_trip", isNewTrip?.(cleaned) ? "true" : "false");
 
 			try {
 				const res = await fetch("/api/zoe/voice", {
@@ -222,7 +228,7 @@ export function useZoeVoice({
 				if (activeRef.current) scheduleRestart(450);
 			}
 		},
-		[conversationId, history, onTurn, onError, playAudio, browserTTS, scheduleRestart]
+		[conversationId, history, onTurn, onError, isNewTrip, playAudio, browserTTS, scheduleRestart]
 	);
 
 	const startRecognition = useCallback(() => {

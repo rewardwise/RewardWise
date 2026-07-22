@@ -140,6 +140,7 @@ async def zoe_voice(
     transcript: str = Form(...),
     conversation_id: str = Form(default=""),
     history: str = Form(default="[]"),
+    is_new_trip: str = Form(default="false"),
     auth_user_id: str = Depends(require_user),
 ):
     cleaned_transcript = transcript.strip()
@@ -159,6 +160,9 @@ async def zoe_voice(
         # Never trust user_id from the client/form. Use the verified Supabase user.
         "user_id": auth_user_id,
         "is_voice": True,
+        # Dual-source kill-switch parity with the typed path: a spoken NEW-trip
+        # request must short-circuit before the agent too.
+        "is_new_trip": is_new_trip.lower() == "true",
     }
 
     try:
