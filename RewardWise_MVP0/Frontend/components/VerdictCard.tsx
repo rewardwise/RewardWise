@@ -636,7 +636,11 @@ export default function VerdictCard({
       winningReturnDate,
     });
     return (
-      <div className="flex flex-col gap-5">
+      <div className="relative flex flex-col gap-5">
+        {/* Confetti celebrates verdict DELIVERY, not the outcome — the
+            pay_cash early-return is a delivered verdict too (missed in #253:
+            only the use_points root fired). */}
+        <ConfettiBurst fireKey={verdictId ?? searchId ?? null} />
         <EmptyWalletCTA />
         <FlightSection
           recommendation="pay_cash"
