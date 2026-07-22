@@ -41,10 +41,14 @@ test("typed new-trip turn is price-free; confetti fires on verdict", async ({ pa
 	const v = body?.verdict ?? {};
 	console.log("VERDICT", v.recommendation, "| winner", v.winner?.program, v.winner?.points, "| return_winner", v.return_winner?.program, v.return_winner?.points);
 
-	const confetti = page.getByTestId("confetti-burst");
-	await expect(confetti, "confetti burst appears with the verdict").toBeVisible({ timeout: 15_000 });
+	// The burst wrapper is h-0 by design (zero bounding box == "hidden" to
+	// Playwright) — assert the PIECES, which have real size.
+	const piece = page.locator(".mtw-confetti").first();
+	await expect(piece, "confetti pieces appear with the verdict").toBeVisible({ timeout: 15_000 });
+	const pieceCount = await page.locator(".mtw-confetti").count();
+	console.log("CONFETTI_PIECES", pieceCount);
 	await page.screenshot({ path: "playwright/.artifacts/newtrip-2-confetti.png" });
-	await expect(confetti, "confetti self-removes").toBeHidden({ timeout: 5_000 });
+	await expect(page.getByTestId("confetti-burst"), "confetti self-removes from the DOM").toHaveCount(0, { timeout: 5_000 });
 
 	// Queued fold-in: return-side zero divergence when data allows
 	if (v.recommendation === "use_points" && v.return_winner?.points) {
