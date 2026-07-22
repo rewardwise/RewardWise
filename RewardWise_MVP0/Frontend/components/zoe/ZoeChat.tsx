@@ -196,6 +196,7 @@ export default function ZoeChat({
 	// ── NVIDIA Voice Mode ─────────────────────────────────────────────────────
 	// ALL mic logic lives here — the old startListening/stopListening is removed.
 	const { voiceMode, voiceState, liveTranscript, toggleVoiceMode, interrupt } = useZoeVoice({
+		isNewTrip: (t) => Boolean(extractTripParams(t, new Date(), currentSearch)),
 		conversationId,
 		history: messages.map((m) => ({ role: m.role, content: m.content })),
 		onTurn: ({ transcript, reply, prefill: prefillRaw }) => {
