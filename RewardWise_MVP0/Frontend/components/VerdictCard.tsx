@@ -7,6 +7,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { cabinLabel } from "@/utils/cabin";
+import ConfettiBurst from "@/components/verdict/ConfettiBurst";
 import { trackAnalyticsEvent } from "@/utils/analytics/client";
 import { fmtMoney } from "@/utils/format";
 import { dedupeByProgram, filterByDate } from "@/utils/awardOptions";
@@ -707,7 +708,8 @@ export default function VerdictCard({
   }
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="relative flex flex-col gap-5">
+      <ConfettiBurst fireKey={verdictId ?? searchId ?? null} />
       <div className={`${theme === "light" ? "mtw-light font-mtw " : ""}rounded-3xl border border-white/10 bg-slate-950/95 p-5 shadow-2xl md:p-6 flex flex-col`}>
 
             {/* Header */}
