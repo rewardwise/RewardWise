@@ -24,20 +24,21 @@ def _provider_order() -> list[str]:
     """
     Choose cash-price providers in priority order.
 
-    Defaults to FlightAPI first because this branch migrates away from SerpAPI.
+    Defaults to SerpAPI (Google Flights) first; FlightAPI stays wired as the
+    fallback so it can be re-promoted via env without a code change.
     Set CASH_PRICE_USE_MOCKS=true (or CASH_PRICE_MODE=mock) to use local JSON
     fixtures instead of live API calls while keeping the selected provider shape.
     """
-    primary = (os.getenv("CASH_PRICE_PROVIDER") or "flightapi").strip().lower()
-    fallback = (os.getenv("CASH_PRICE_FALLBACK_PROVIDER") or "serpapi").strip().lower()
+    primary = (os.getenv("CASH_PRICE_PROVIDER") or "serpapi").strip().lower()
+    fallback = (os.getenv("CASH_PRICE_FALLBACK_PROVIDER") or "flightapi").strip().lower()
 
     if _env_is_truthy("CASH_PRICE_USE_MOCKS") or _env_is_truthy("USE_CASH_PRICE_MOCKS"):
-        mock_provider = (os.getenv("MOCK_CASH_PRICE_PROVIDER") or primary or "flightapi").strip().lower()
+        mock_provider = (os.getenv("MOCK_CASH_PRICE_PROVIDER") or primary or "serpapi").strip().lower()
         return [f"{mock_provider}_mock"]
 
     mode = (os.getenv("CASH_PRICE_MODE") or "live").strip().lower()
     if mode in {"mock", "mocks", "fixture", "fixtures"}:
-        mock_provider = (os.getenv("MOCK_CASH_PRICE_PROVIDER") or primary or "flightapi").strip().lower()
+        mock_provider = (os.getenv("MOCK_CASH_PRICE_PROVIDER") or primary or "serpapi").strip().lower()
         return [f"{mock_provider}_mock"]
 
     order: list[str] = []
