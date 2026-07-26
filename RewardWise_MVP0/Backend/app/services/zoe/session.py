@@ -73,6 +73,10 @@ class ZoeSession(BaseModel):
     history: list[dict] = Field(default_factory=list)
     conversation_mode: Literal["standard", "voice"] = "standard"
     xpectrum_conversation_id: str | None = None
+    # Trip statement captured by the is_new_trip kill-switch (which never goes
+    # upstream) — prepended to the NEXT non-flagged turn so the agent isn't
+    # blind to what trip is being discussed. Cleared once consumed.
+    pending_trip_statement: str | None = None
 
     MAX_HISTORY: int = 20
 
