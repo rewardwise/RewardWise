@@ -65,14 +65,20 @@ def _wallet_inputs(wallet: list[dict]) -> str:
 # live verification — its searchFlight tool priced the trip anyway. So a
 # new-trip turn never reaches the agent at all; the backend answers with this
 # fixed ack and the engine search stays the only pricing source.
+# Copy must be HONEST about fill-only: the old ack said "I'm pulling live
+# prices right now", promising a search that never starts without the user
+# clicking Search — users typed "ok" and waited (2026-07-26 incident).
 NEW_TRIP_ACK = (
-    "On it! ✈️ I'm pulling live cash and points prices for that trip right now — "
-    "your verdict will appear beside the chat in a few seconds."
+    "On it! ✈️ I've filled in your search — hit Search Flights and "
+    "I'll have your verdict."
 )
 
 
 def _compose_xpectrum_query(
-    text: str, wallet_summary: str, verdict_context: Optional[str]
+    text: str,
+    wallet_summary: str,
+    verdict_context: Optional[str],
+    pending_trip: Optional[str] = None,
 ) -> str:
     """
     Fold per-user context into the query for the Xpectrum agent.
@@ -97,6 +103,14 @@ def _compose_xpectrum_query(
         )
     if wallet_summary and wallet_summary != "No reward programs on file.":
         preamble.append(f"[User's points wallet] {wallet_summary}")
+    if pending_trip:
+        preamble.append(
+            "[The user's current trip request — they stated this in the app just "
+            "before this message]\n"
+            f"{pending_trip}\n"
+            "[Instructions] Treat that as the trip under discussion. The app's "
+            "verdict card handles all pricing for it — do NOT price it yourself."
+        )
     if not preamble:
         return text
     return "\n\n".join(preamble) + "\n\n[User] " + text
@@ -260,14 +274,25 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
             "Hey! Ask me anything about flights, routes, or how to use your points.",
         )
 
+    # ── STEP 1: Load session ──────────────────────────────────────────────────
+    sess_id = _session_id(payload)
+    session = await session_store.load(sess_id)
+
     # ── Dual-source kill-switch ───────────────────────────────────────────────
     # A typed NEW-trip message (deterministic extractor fired on the frontend)
     # never reaches the Xpectrum agent: its searchFlight tool prices trips from
     # a second data source and ignored the no-pricing instruction in live
     # verification. Fixed ack only; the engine verdict is the single source.
+    # The statement is PERSISTED so the next non-flagged turn can hand it to
+    # the agent — without this the upstream conversation never hears the trip
+    # and follow-ups get "please provide your details" (2026-07-26 incident).
     if is_new_trip:
+        session.pending_trip_statement = text
+        session.add_turn("user", text)
+        session.add_turn("assistant", NEW_TRIP_ACK)
+        await session_store.save(sess_id, session)
         interaction_id = await log_interaction(
-            _session_id(payload),
+            sess_id,
             user_id,
             "new_trip_ack",
             text,
@@ -277,10 +302,6 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
             feedback_signal=None,
         )
         return _reply(NEW_TRIP_ACK, interaction_id=interaction_id)
-
-    # ── STEP 1: Load session ──────────────────────────────────────────────────
-    sess_id = _session_id(payload)
-    session = await session_store.load(sess_id)
 
     # Bootstrap history from frontend if session is fresh
     if not session.history and frontend_history:
@@ -314,9 +335,17 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
     if verdict_context:
         inputs["verdict_context"] = verdict_context
 
+    # Hand the kill-switched trip statement to the agent exactly once, then
+    # clear it (cleared state persists via the STEP 4 session save).
+    pending_trip = session.pending_trip_statement
+    session.pending_trip_statement = None
+
     reply = await call_xpectrum(
         _compose_xpectrum_query(
-            text, wallet_summary if first_turn else "", verdict_context
+            text,
+            wallet_summary if first_turn else "",
+            verdict_context,
+            pending_trip=pending_trip,
         ),
         user=user_id,
         conversation_id=xpectrum_conv,

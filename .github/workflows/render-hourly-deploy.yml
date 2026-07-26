@@ -1,14 +1,23 @@
-name: Hourly Render Deploy
+name: Render Keep-Warm Ping
+
+# Was "Hourly Render Deploy": curl'd the Render DEPLOY HOOK on a */5 cron,
+# forcing a full rebuild + instance swap of an UNCHANGED commit over and over.
+# Each swap severed in-flight requests — root cause of the 2026-07-26
+# "Service temporarily unavailable" mid-conversation failure (the backend's
+# reply was logged in Supabase but never reached the browser). Real deploys
+# happen on push to main via Render's native auto-deploy; this workflow now
+# only keeps the free-tier instance warm with a plain health GET (no swap).
+# The RENDER_DEPLOY_HOOK_URL secret is intentionally no longer used.
 
 on:
   schedule:
-    - cron: "*/5 * * * *" # every hour at minute 17, UTC
+    - cron: "*/10 * * * *" # keep-warm cadence; free tier idles out at ~15m
   workflow_dispatch:
 
 jobs:
-  deploy:
+  ping:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Trigger Render deploy
-        run: curl -fsS "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
+      - name: Health ping (keep-warm, no instance swap)
+        run: curl -fsS --max-time 30 "https://mytravelwalletai-backend.onrender.com/api/health"
