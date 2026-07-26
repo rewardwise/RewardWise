@@ -141,6 +141,8 @@ async def zoe_voice(
     conversation_id: str = Form(default=""),
     history: str = Form(default="[]"),
     is_new_trip: str = Form(default="false"),
+    will_autorun: str = Form(default="false"),
+    missing: str = Form(default="[]"),
     auth_user_id: str = Depends(require_user),
 ):
     cleaned_transcript = transcript.strip()
@@ -163,6 +165,8 @@ async def zoe_voice(
         # Dual-source kill-switch parity with the typed path: a spoken NEW-trip
         # request must short-circuit before the agent too.
         "is_new_trip": is_new_trip.lower() == "true",
+        "will_autorun": will_autorun.lower() == "true",
+        "missing": json.loads(missing) if missing else [],
     }
 
     try:

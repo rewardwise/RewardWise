@@ -108,6 +108,8 @@ function extractDates(msg: string, today: Date): ExtractedDates {
 // ── Main extractor ──────────────────────────────────────────────────────────
 
 export interface CurrentTrip {
+	origin?: string | null;
+	destination?: string | null;
 	date?: string | null;
 	return_date?: string | null;
 }
@@ -211,4 +213,26 @@ export function extractTripParams(
 	);
 	if (!hasSignal) return null;
 	return out;
+}
+
+/** Post-merge completeness plan for a Zoe fill: what the home form will look
+ *  like after this fill lands, whether the auto-run will fire, and which
+ *  required fields are still missing (drives the backend ack copy). */
+export function planTripFill(
+	extracted: ExtractedTrip | null,
+	current: CurrentTrip | null,
+): { willAutorun: boolean; missing: string[] } {
+	if (!extracted) return { willAutorun: false, missing: [] };
+	const merged = {
+		origin: extracted.origin || current?.origin || null,
+		destination: extracted.destination || current?.destination || null,
+		date: extracted.date || current?.date || null,
+		return_date: extracted.return_date || current?.return_date || null,
+	};
+	const missing: string[] = [];
+	if (!merged.origin) missing.push("origin");
+	if (!merged.destination) missing.push("destination");
+	if (!merged.date) missing.push("date");
+	if (extracted.tripType === "roundtrip" && !merged.return_date) missing.push("return_date");
+	return { willAutorun: missing.length === 0, missing };
 }

@@ -378,6 +378,15 @@ export default function HomePage() {
 		}, 0);
 	};
 
+	// Auto-run on COMPLETE Zoe-initiated fills (operator call 2026-07-26,
+	// reversing fill-only for this one case): when a conversational fill leaves
+	// the form with origin + destination + depart date, the search fires itself
+	// (~1s debounce so multi-part fills coalesce into ONE search). Incomplete
+	// fills stay fill-only. Manual edits and page load never come through here,
+	// so they can never trigger it.
+	const zoeAutorunTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const ZOE_AUTORUN_DEBOUNCE_MS = 900;
+
 	const handleFillSearch = (data: any) => {
 		trackAnalyticsEvent("zoe_filled_search_form", {
 			event_type: "zoe",
@@ -390,6 +399,32 @@ export default function HomePage() {
 		if (data.date) setDepartDate(data.date);
 		if (data.tripType) setTripType(data.tripType);
 		if ("return_date" in data) setReturnDate(data.return_date || "");
+
+		// Completeness must be judged on the MERGED state (fill + what the form
+		// already had), not the fill alone.
+		const merged = {
+			origin: data.origin || origin,
+			destination: data.destination || destination,
+			date: data.date || departDate,
+			return_date: "return_date" in data ? data.return_date || "" : returnDate,
+			tripType: data.tripType || tripType,
+		};
+		const complete = Boolean(
+			merged.origin &&
+			merged.destination &&
+			merged.date &&
+			(merged.tripType !== "roundtrip" || merged.return_date),
+		);
+		if (zoeAutorunTimer.current) clearTimeout(zoeAutorunTimer.current);
+		if (!complete) return;
+		zoeAutorunTimer.current = setTimeout(() => {
+			zoeAutorunTimer.current = null;
+			trackAnalyticsEvent("zoe_autorun_search", {
+				event_type: "zoe",
+				metadata: { origin: merged.origin, destination: merged.destination },
+			});
+			handleTriggerSearch();
+		}, ZOE_AUTORUN_DEBOUNCE_MS);
 	};
 
 	// Stable reference — ZoeChat holds this without re-renders causing issues.
@@ -922,7 +957,12 @@ export default function HomePage() {
 										)
 									: null
 							}
-							currentSearch={{ date: departDate || null, return_date: returnDate || null }}
+							currentSearch={{
+								origin: origin || null,
+								destination: destination || null,
+								date: departDate || null,
+								return_date: returnDate || null,
+							}}
 							welcome={zoeWelcome()}
 						/>
 					</div>

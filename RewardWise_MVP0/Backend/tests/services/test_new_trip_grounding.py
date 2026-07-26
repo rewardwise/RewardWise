@@ -26,9 +26,10 @@ async def test_new_trip_short_circuits_before_the_agent(no_upstream):
         "user_id": "u-1",
         "conversation_id": "c-1",
         "is_new_trip": True,
+        "will_autorun": True,
         "verdict_context": "stale DXB verdict $612 / 42,000 points",
     })
-    assert resp["message"] == zs.NEW_TRIP_ACK
+    assert resp["message"] == zs.NEW_TRIP_ACK_RUNNING
     assert resp["interaction_id"] == "interaction-123"
 
 
@@ -123,9 +124,9 @@ async def test_pending_trip_reaches_agent_on_next_turn_then_clears(monkeypatch):
     # Turn 1: kill-switched trip statement (never goes upstream)
     r1 = await zs.handle_zoe({
         "message": TRIP_MSG, "user_id": "u-p1", "conversation_id": conv,
-        "is_new_trip": True,
+        "is_new_trip": True, "will_autorun": True,
     })
-    assert r1["message"] == zs.NEW_TRIP_ACK
+    assert r1["message"] == zs.NEW_TRIP_ACK_RUNNING
     assert queries == []  # agent untouched
 
     # Turn 2: "ok" — upstream query must include the trip statement
@@ -156,18 +157,32 @@ async def test_kill_switch_records_the_exchange_in_session_history(monkeypatch):
     conv = "conv-pending-2"
     await zs.handle_zoe({
         "message": TRIP_MSG, "user_id": "u-p2", "conversation_id": conv,
-        "is_new_trip": True,
+        "is_new_trip": True, "will_autorun": True,
     })
     from app.services.zoe import session as session_store
     sess = await session_store.load(f"user:u-p2:conv:{conv}")
     assert sess.pending_trip_statement == TRIP_MSG
     assert sess.history[-2:] == [
         {"role": "user", "content": TRIP_MSG},
-        {"role": "assistant", "content": zs.NEW_TRIP_ACK},
+        {"role": "assistant", "content": zs.NEW_TRIP_ACK_RUNNING},
     ]
 
 
-def test_honest_ack_copy_never_promises_a_running_search():
-    assert "hit Search Flights" in zs.NEW_TRIP_ACK
-    for overpromise in ("right now", "few seconds", "pulling live"):
-        assert overpromise not in zs.NEW_TRIP_ACK
+def test_ack_copy_matches_what_actually_happens():
+    # Auto-run ack: the search really fires now, so "running it now" is honest.
+    assert "running it now" in zs.NEW_TRIP_ACK_RUNNING
+    assert "hit Search Flights" not in zs.NEW_TRIP_ACK_RUNNING
+    # Nudge ack: no run happening; asks for exactly the missing fields.
+    nudge = zs.new_trip_ack(False, ["date"])
+    assert "what dates" in nudge
+    assert "running it now" not in nudge
+    both = zs.new_trip_ack(False, ["origin", "date"])
+    assert "flying from" in both and "what dates" in both
+    # Unknown/empty missing list still yields a sane sentence.
+    assert "missing details" in zs.new_trip_ack(False, [])
+
+
+def test_ack_copy_price_free():
+    import re
+    for ack in (zs.NEW_TRIP_ACK_RUNNING, zs.new_trip_ack(False, ["date"])):
+        assert re.search(r"\$\s?\d|\d[\d,]{2,}\s*(points|pts|miles)", ack) is None

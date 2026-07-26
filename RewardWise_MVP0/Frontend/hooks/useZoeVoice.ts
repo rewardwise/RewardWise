@@ -29,6 +29,9 @@ interface UseZoeVoiceOptions {
 	 *  transcript states a NEW trip, so the backend short-circuits before the
 	 *  agent (its searchFlight tool prices trips from a second source). */
 	isNewTrip?: (transcript: string) => boolean;
+	/** Completeness plan for the transcript's fill — mirrors the typed path's
+	 *  will_autorun/missing so the spoken ack copy is honest too. */
+	fillPlan?: (transcript: string) => { willAutorun: boolean; missing: string[] };
 }
 
 function decodeBase64Header(value: string | null): string {
@@ -48,6 +51,7 @@ export function useZoeVoice({
 	onTurn,
 	onError,
 	isNewTrip,
+	fillPlan,
 }: UseZoeVoiceOptions) {
 	const [voiceState, setVoiceState] = useState<VoiceState>("idle");
 	const [liveTranscript, setLiveTranscript] = useState("");
@@ -185,6 +189,9 @@ export function useZoeVoice({
 			form.append("conversation_id", conversationId || "");
 			form.append("history", JSON.stringify(history.slice(-10)));
 			form.append("is_new_trip", isNewTrip?.(cleaned) ? "true" : "false");
+			const plan = fillPlan?.(cleaned);
+			form.append("will_autorun", plan?.willAutorun ? "true" : "false");
+			form.append("missing", JSON.stringify(plan?.missing ?? []));
 
 			try {
 				const res = await fetch("/api/zoe/voice", {
@@ -228,7 +235,7 @@ export function useZoeVoice({
 				if (activeRef.current) scheduleRestart(450);
 			}
 		},
-		[conversationId, history, onTurn, onError, isNewTrip, playAudio, browserTTS, scheduleRestart]
+		[conversationId, history, onTurn, onError, isNewTrip, fillPlan, playAudio, browserTTS, scheduleRestart]
 	);
 
 	const startRecognition = useCallback(() => {

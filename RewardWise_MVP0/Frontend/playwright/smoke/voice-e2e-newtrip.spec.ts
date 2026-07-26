@@ -62,8 +62,8 @@ test("spoken new-trip request: real STT, deterministic ack, form filled", async 
 	expect(sttTranscript.toLowerCase()).toContain("austin");
 	// 2. Classifier flagged it on the wire
 	expect(voiceFlag, "is_new_trip must ride the voice form").toBe("true");
-	// 3. Deterministic ack — no dual-source pricing
-	expect(reply).toContain("pulling live cash and points prices");
+	// 3. Deterministic ack — auto-run copy (complete spoken trip fires the search)
+	expect(reply).toContain("running it now");
 	expect(reply.match(/\$\s?\d|\d[\d,]{2,}\s*(points|pts|miles)/i), "reply must not price").toBeNull();
 	// 4. Extractor filled the form FROM THE TRANSCRIPT
 	await page.waitForTimeout(1500);
@@ -73,8 +73,10 @@ test("spoken new-trip request: real STT, deterministic ack, form filled", async 
 	await expect(airports.nth(1)).toHaveValue(/AUS/i);
 	await expect(dates.nth(0)).toHaveValue("2026-09-10");
 	await expect(dates.nth(1)).toHaveValue("2026-09-14");
-	// 5. Fill-only: zero engine searches triggered
-	expect(upstreamSearches, "no upstream search spend").toEqual([]);
-	console.log("ASSERTIONS_RAN: stt, flag, ack, form-fill, zero-upstream");
+	// 5. AUTO-RUN (operator call 2026-07-26): a complete spoken trip fires
+	// exactly ONE search — debounce holds, no duplicates.
+	await page.waitForTimeout(3000); // debounce (900ms) + request start
+	expect(upstreamSearches.length, "exactly one auto-run search").toBe(1);
+	console.log("ASSERTIONS_RAN: stt, flag, ack, form-fill, single-autorun");
 	await page.screenshot({ path: "playwright/.artifacts/voice-1-newtrip.png" });
 });
