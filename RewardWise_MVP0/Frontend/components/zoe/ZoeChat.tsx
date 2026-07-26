@@ -29,7 +29,7 @@ import {
 import { createClient } from "@/utils/supabase/client";
 import { useZoeVoice, VoiceState } from "@/hooks/useZoeVoice";
 import { trackAnalyticsEvent } from "@/utils/analytics/client";
-import { extractTripParams, type CurrentTrip, type ExtractedTrip } from "@/utils/tripExtract";
+import { extractTripParams, planTripFill, type CurrentTrip, type ExtractedTrip } from "@/utils/tripExtract";
 import type { ZoeNarration, ZoeChip, ZoeWelcome } from "@/utils/zoeNarration";
 
 const supabase = createClient();
@@ -197,6 +197,7 @@ export default function ZoeChat({
 	// ALL mic logic lives here — the old startListening/stopListening is removed.
 	const { voiceMode, voiceState, liveTranscript, toggleVoiceMode, interrupt } = useZoeVoice({
 		isNewTrip: (t) => Boolean(extractTripParams(t, new Date(), currentSearch)),
+		fillPlan: (t) => planTripFill(extractTripParams(t, new Date(), currentSearch), currentSearch),
 		conversationId,
 		history: messages.map((m) => ({ role: m.role, content: m.content })),
 		onTurn: ({ transcript, reply, prefill: prefillRaw }) => {
@@ -479,6 +480,7 @@ if (prefillRaw && onFillSearch) {
 		// the flag below makes the backend forbid the agent from pricing it.
 		const extractedTrip = extractTripParams(trimmed, new Date(), currentSearch);
 		applyTripFill(extractedTrip, "local");
+		const fillPlan = planTripFill(extractedTrip, currentSearch);
 
 		let convId = conversationId;
 		if (!convId && user) {
@@ -501,6 +503,8 @@ if (prefillRaw && onFillSearch) {
 					conversation_id: convId,
 					verdict_context: verdictContext || null,
 					is_new_trip: Boolean(extractedTrip),
+					will_autorun: fillPlan.willAutorun,
+					missing: fillPlan.missing,
 					wallet: (cards || []).map((c: any) => ({
 						program: c.program_name,
 						points: c.points_balance,

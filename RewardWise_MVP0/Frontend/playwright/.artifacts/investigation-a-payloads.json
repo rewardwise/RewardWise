@@ -1,0 +1,31 @@
+[
+  {
+    "message": "What would this trip cost me in points vs cash?",
+    "history": [],
+    "conversation_id": "449ed8e9-2f4d-46d9-9c05-b24f5b000199",
+    "verdict_context": null,
+    "wallet": [
+      {
+        "program": "Amex Membership Rewards",
+        "points": 250000
+      }
+    ]
+  },
+  {
+    "message": "Same question with the verdict attached please",
+    "history": [
+      {
+        "role": "assistant",
+        "content": "I can see the result from your search. The search returned a verdict for SFO,OAK,SJC → SEA on 2026-08-15 returning 2026-08-18, 1 traveler, economy class. Verdict: Pay Cash. Cash fare: $217. Best award: 32,200 points via qantas. Value: 0.64 cents per point. Using points would save saving roughly $206 vs cash. Confidence: high. Live cash pricing is low relative to the best award option available. Cash is only $217, while the best award I found is 16,100 points plus about $6 in taxes. Your points are likely worth more on a different trip. What would you like to know about it?"
+      }
+    ],
+    "conversation_id": "e0dde768-afa5-4b68-87b3-74cf6761b6d5",
+    "verdict_context": "The search returned a verdict for SFO,OAK,SJC → SEA on 2026-08-15 returning 2026-08-18, 1 traveler, economy class. Verdict: Pay Cash. Cash fare: $217. Best award: 32,200 points via qantas. Value: 0.64 cents per point. Using points would save saving roughly $206 vs cash. Confidence: high. Live cash pricing is low relative to the best award option available. Cash is only $217, while the best award I found is 16,100 points plus about $6 in taxes. Your points are likely worth more on a different trip.",
+    "wallet": [
+      {
+        "program": "Amex Membership Rewards",
+        "points": 250000
+      }
+    ]
+  }
+]

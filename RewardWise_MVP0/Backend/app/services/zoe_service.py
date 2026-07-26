@@ -65,13 +65,35 @@ def _wallet_inputs(wallet: list[dict]) -> str:
 # live verification — its searchFlight tool priced the trip anyway. So a
 # new-trip turn never reaches the agent at all; the backend answers with this
 # fixed ack and the engine search stays the only pricing source.
-# Copy must be HONEST about fill-only: the old ack said "I'm pulling live
-# prices right now", promising a search that never starts without the user
-# clicking Search — users typed "ok" and waited (2026-07-26 incident).
-NEW_TRIP_ACK = (
-    "On it! ✈️ I've filled in your search — hit Search Flights and "
-    "I'll have your verdict."
+# Ack copy tracks what ACTUALLY happens (2026-07-26 operator call: complete
+# Zoe fills auto-run the search; incomplete fills stay fill-only + nudge).
+# The frontend computes will_autorun/missing from the post-merge form state —
+# the backend just says the honest sentence for that outcome.
+NEW_TRIP_ACK_RUNNING = (
+    "On it — I filled in your search and I'm running it now. "
+    "Verdict in a few seconds. ✈️"
 )
+
+_MISSING_LABELS = {
+    "origin": "where you're flying from",
+    "destination": "where you're headed",
+    "date": "what dates",
+    "return_date": "your return date",
+}
+
+
+def new_trip_ack(will_autorun: bool, missing: list[str] | None = None) -> str:
+    if will_autorun:
+        return NEW_TRIP_ACK_RUNNING
+    asks = [_MISSING_LABELS[m] for m in (missing or []) if m in _MISSING_LABELS]
+    ask = " and ".join(asks) if asks else "the missing details"
+    return (
+        "Filled in what I got — {}? I'll run it the second you tell me. ✈️".format(ask)
+    )
+
+
+# Kept as the auto-run ack alias: the voice route and tests import NEW_TRIP_ACK.
+NEW_TRIP_ACK = NEW_TRIP_ACK_RUNNING
 
 
 def _compose_xpectrum_query(
@@ -262,6 +284,8 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
     user_id:         Optional[str] = payload.get("user_id")
     verdict_context: Optional[str] = payload.get("verdict_context") or None
     is_new_trip:     bool          = bool(payload.get("is_new_trip", False))
+    will_autorun:    bool          = bool(payload.get("will_autorun", False))
+    missing_fields:  list          = payload.get("missing") or []
     is_voice:        bool          = bool(payload.get("is_voice", False))
     frontend_history: list[dict]   = payload.get("history") or []
     conversation_id: Optional[str] = payload.get("conversation_id")
@@ -287,21 +311,22 @@ async def handle_zoe(payload: Dict[str, Any], request=None) -> Dict[str, Any]:
     # the agent — without this the upstream conversation never hears the trip
     # and follow-ups get "please provide your details" (2026-07-26 incident).
     if is_new_trip:
+        ack = new_trip_ack(will_autorun, missing_fields)
         session.pending_trip_statement = text
         session.add_turn("user", text)
-        session.add_turn("assistant", NEW_TRIP_ACK)
+        session.add_turn("assistant", ack)
         await session_store.save(sess_id, session)
         interaction_id = await log_interaction(
             sess_id,
             user_id,
             "new_trip_ack",
             text,
-            NEW_TRIP_ACK,
+            ack,
             conversation_id=conversation_id,
             is_voice=is_voice,
             feedback_signal=None,
         )
-        return _reply(NEW_TRIP_ACK, interaction_id=interaction_id)
+        return _reply(ack, interaction_id=interaction_id)
 
     # Bootstrap history from frontend if session is fresh
     if not session.history and frontend_history:

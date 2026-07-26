@@ -103,6 +103,10 @@ describe("typed turn carries grounding payload", () => {
 		});
 
 		expect(zoeBody, "typed turn must hit /api/zoe").toBeTruthy();
+		// Auto-run contract: complete trip statement -> will_autorun true, no
+		// missing fields (backend picks the "running it now" ack).
+		expect(zoeBody.will_autorun).toBe(true);
+		expect(zoeBody.missing).toEqual([]);
 		// The flag is what makes the backend compose the no-pricing preamble
 		// (NEW_TRIP_INSTRUCTION) and drop the stale context — asserted on the
 		// backend in test_new_trip_grounding.py. Frontend contract: flag on.
