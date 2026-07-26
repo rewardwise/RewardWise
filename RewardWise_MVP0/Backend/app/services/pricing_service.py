@@ -3,10 +3,6 @@ from typing import Optional
 
 from dotenv import load_dotenv
 
-from app.services.flight_pricing.flightapi_provider import (
-    get_flightapi_cash_for_metro,
-    get_flightapi_cash_price,
-)
 from app.services.flight_pricing.mock_provider import get_mock_cash_price
 from app.services.flight_pricing.serpapi_provider import get_serpapi_cash_price
 
@@ -22,29 +18,18 @@ def _env_is_truthy(name: str) -> bool:
 
 def _provider_order() -> list[str]:
     """
-    Choose cash-price providers in priority order.
-
-    Defaults to FlightAPI first because this branch migrates away from SerpAPI.
-    Set CASH_PRICE_USE_MOCKS=true (or CASH_PRICE_MODE=mock) to use local JSON
-    fixtures instead of live API calls while keeping the selected provider shape.
+    SerpAPI is the SOLE cash-price provider (FlightAPI subscription canceled
+    and ripped out 2026-07-26). Mock mode keeps the serpapi fixture shape.
+    On SerpAPI failure the caller receives a clean no-cash-price error dict
+    and the verdict degrades to the partial-data "wait" branch — there is no
+    second provider to fall through to.
     """
-    primary = (os.getenv("CASH_PRICE_PROVIDER") or "flightapi").strip().lower()
-    fallback = (os.getenv("CASH_PRICE_FALLBACK_PROVIDER") or "serpapi").strip().lower()
-
     if _env_is_truthy("CASH_PRICE_USE_MOCKS") or _env_is_truthy("USE_CASH_PRICE_MOCKS"):
-        mock_provider = (os.getenv("MOCK_CASH_PRICE_PROVIDER") or primary or "flightapi").strip().lower()
-        return [f"{mock_provider}_mock"]
-
+        return ["serpapi_mock"]
     mode = (os.getenv("CASH_PRICE_MODE") or "live").strip().lower()
     if mode in {"mock", "mocks", "fixture", "fixtures"}:
-        mock_provider = (os.getenv("MOCK_CASH_PRICE_PROVIDER") or primary or "flightapi").strip().lower()
-        return [f"{mock_provider}_mock"]
-
-    order: list[str] = []
-    for provider in (primary, fallback):
-        if provider and provider not in DISABLED_VALUES and provider not in order:
-            order.append(provider)
-    return order
+        return ["serpapi_mock"]
+    return ["serpapi"]
 
 
 async def _fetch_from_provider(
@@ -57,20 +42,9 @@ async def _fetch_from_provider(
     return_date: Optional[str],
     max_stops: str = "any",
 ) -> dict:
-    if provider == "flightapi":
-        # FlightAPI's positional URL schema can't carry comma-separated
-        # multi-airport. Route metro CSVs (`"SFO,OAK,SJC"`) through the
-        # fan-out helper; single airports stay on the fast path. seats.aero
-        # has no equivalent issue (its query-string API accepts commas
-        # natively), so only the FlightAPI branch needs this split.
-        if "," in origin or "," in destination:
-            return await get_flightapi_cash_for_metro(origin, destination, date, cabin, travelers, return_date, max_stops=max_stops)
-        return await get_flightapi_cash_price(origin, destination, date, cabin, travelers, return_date, max_stops=max_stops)
     if provider in {"serpapi", "google_flights"}:
         return await get_serpapi_cash_price(origin, destination, date, cabin, travelers, return_date, max_stops=max_stops)
-    if provider in {"mock", "flightapi_mock", "flight_api_mock"}:
-        return await get_mock_cash_price(origin, destination, date, cabin, travelers, return_date, provider="flightapi", max_stops=max_stops)
-    if provider in {"serpapi_mock", "serp_api_mock", "google_flights_mock"}:
+    if provider in {"mock", "serpapi_mock", "serp_api_mock", "google_flights_mock"}:
         return await get_mock_cash_price(origin, destination, date, cabin, travelers, return_date, provider="serpapi", max_stops=max_stops)
 
     return {
@@ -94,9 +68,8 @@ async def get_cash_price(
     """
     Fetch live or mocked cash flight prices through the configured provider.
 
-    The return shape intentionally matches the original SerpAPI-powered contract
-    consumed by search/Zoe, so FlightAPI can replace SerpAPI without frontend or
-    verdict-engine changes.
+    The return shape is the long-standing SerpAPI-powered contract consumed by
+    search/Zoe.
     """
     errors: list[str] = []
     provider_order = _provider_order()

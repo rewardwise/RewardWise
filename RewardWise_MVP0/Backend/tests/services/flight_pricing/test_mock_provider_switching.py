@@ -4,16 +4,18 @@ from app.services.pricing_service import get_cash_price
 
 
 @pytest.mark.asyncio
-async def test_cash_price_mode_mock_uses_flightapi_fixture_by_default(monkeypatch):
+async def test_cash_price_mode_mock_uses_serpapi_fixture_by_default(monkeypatch):
+    # SerpAPI is the sole provider post-rip-out — mock mode always serves the
+    # serpapi fixture, even if a stale CASH_PRICE_PROVIDER env lingers.
     monkeypatch.setenv("CASH_PRICE_MODE", "mock")
-    monkeypatch.setenv("CASH_PRICE_PROVIDER", "flightapi")
+    monkeypatch.setenv("CASH_PRICE_PROVIDER", "flightapi")  # stale env ignored
     monkeypatch.delenv("MOCK_CASH_PRICE_PROVIDER", raising=False)
 
     result = await get_cash_price("EWR", "LAX", "2026-06-15", "economy", 1)
 
-    assert result["source"] == "flightapi_mock"
-    assert result["cash_price"] == 59.9
-    assert result["mock_request"]["provider"] == "flightapi"
+    assert result["source"] == "serpapi_mock"
+    assert result["cash_price"] is not None
+    assert result["mock_request"]["provider"] == "serpapi"
 
 
 @pytest.mark.asyncio

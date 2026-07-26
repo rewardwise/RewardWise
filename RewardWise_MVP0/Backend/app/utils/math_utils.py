@@ -5,7 +5,7 @@ def calculate_cpp(cash_price: float, taxes: float, points: int) -> float:
     Formula: (cash_price - taxes) / points * 100
 
     Unit contract at callers in `app/api/search.py`:
-        cash_price = one-way, per-date, TOTAL across `travelers` (FlightAPI shape).
+        cash_price = one-way, per-date, TOTAL across `travelers` (provider shape).
         taxes      = per-pax dollars (seats.aero shape).
         points     = per-pax mileage for one leg (seats.aero shape).
 

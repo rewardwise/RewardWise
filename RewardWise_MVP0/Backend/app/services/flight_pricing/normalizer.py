@@ -85,7 +85,7 @@ def _get_place_code(place: dict[str, Any] | None, fallback_code: str | None = No
     #      place dicts almost always carry "name" even when IATA fields are
     #      missing, so this turns the unrenderable id-only case into a
     #      legible city/airport label instead of None.
-    #   3. A caller-provided IATA fallback (segment.origin in the FlightAPI
+    #   3. A caller-provided IATA fallback (segment.origin in the provider
     #      shape, or the user-typed search-param IATA). Gated on ^[A-Z]{3}$
     #      so a metro CSV like "SFO,OAK,SJC" never leaks through.
     # "id" is intentionally NOT in the chain — it is the bug source.
@@ -368,94 +368,3 @@ def _itinerary_price(
         "quote_age": _first_present(price_payload, ["quote_age", "quoteAge"]),
     })
     return best_price, details
-
-
-def normalize_flightapi_response(data: dict[str, Any], *, is_roundtrip: bool, currency: str = "USD") -> dict:
-    """
-    Convert FlightAPI's richer response into the app's existing cash-price contract.
-
-    FlightAPI responses can expose itineraries, legs, segments, places, carriers, and
-    pricing options. This normalizer is intentionally defensive so small provider
-    schema differences do not leak into Zoe/search.
-    """
-    if not isinstance(data, dict):
-        return {"cash_price": None, "currency": currency, "source": "flightapi", "flights": []}
-
-    payload = data.get("data") if isinstance(data.get("data"), dict) else data
-    content = payload.get("content") if isinstance(payload.get("content"), dict) else payload
-
-    lookups = {
-        "places": _index_by_id(_first_present(content, ["places", "placeMap"], {})),
-        "carriers": _index_by_id(_first_present(content, ["carriers", "carrierMap"], {})),
-        "legs": _index_by_id(_first_present(content, ["legs", "legMap"], {})),
-        "segments": _index_by_id(_first_present(content, ["segments", "segmentMap"], {})),
-        "agents": _index_by_id(_first_present(content, ["agents", "agentMap"], {})),
-    }
-
-    itineraries = _as_list(_first_present(content, ["itineraries", "results", "flights"], []))
-    normalized_flights: list[dict] = []
-
-    for itinerary in itineraries:
-        if not isinstance(itinerary, dict):
-            continue
-
-        price, pricing_details = _itinerary_price(itinerary, lookups["agents"])
-        if price is None:
-            continue
-
-        leg_refs = _as_list(_first_present(itinerary, ["legIds", "legs", "leg_ids"], []))
-        parsed_legs = [_normalize_leg(leg_ref, lookups) for leg_ref in leg_refs]
-        parsed_legs = [leg for leg in parsed_legs if leg]
-
-        outbound = parsed_legs[0] if parsed_legs else {}
-        inbound = parsed_legs[1] if is_roundtrip and len(parsed_legs) > 1 else None
-
-        normalized_flights.append(
-            {
-                "price": price,
-                "total_duration": outbound.get("total_duration"),
-                "carbon_emissions": None,
-                "departure_airport": outbound.get("departure_airport"),
-                "departure_iata": outbound.get("departure_iata"),
-                "departure_time": outbound.get("departure_time"),
-                "arrival_airport": outbound.get("arrival_airport"),
-                "arrival_iata": outbound.get("arrival_iata"),
-                "arrival_time": outbound.get("arrival_time"),
-                "stops": outbound.get("stops", 0),
-                "legs": outbound.get("legs", []),
-                "return_flight": inbound,
-                "booking_url": pricing_details.get("booking_url"),
-                "raw_booking_url": pricing_details.get("raw_booking_url"),
-                "vendor": pricing_details.get("vendor"),
-                "agent_ids": pricing_details.get("agent_ids", []),
-                "pricing_option_id": pricing_details.get("pricing_option_id"),
-                "transfer_type": pricing_details.get("transfer_type"),
-                "score": pricing_details.get("score"),
-                "unpriced_type": pricing_details.get("unpriced_type"),
-                "booking_proposition": pricing_details.get("booking_proposition"),
-                "transfer_protection": pricing_details.get("transfer_protection"),
-                "max_redirect_age": pricing_details.get("max_redirect_age"),
-                "fare_basis_codes": pricing_details.get("fare_basis_codes", []),
-                "booking_codes": pricing_details.get("booking_codes", []),
-                "fare_families": pricing_details.get("fare_families", []),
-                "ticket_attributes": pricing_details.get("ticket_attributes", []),
-                "flight_attributes": pricing_details.get("flight_attributes", []),
-                "price_update_status": pricing_details.get("price_update_status"),
-                "price_last_updated": pricing_details.get("price_last_updated"),
-                "quote_age": pricing_details.get("quote_age"),
-            }
-        )
-
-    normalized_flights.sort(key=lambda flight: flight.get("price", float("inf")))
-    top_flights = normalized_flights[:5]
-    lowest_price = top_flights[0]["price"] if top_flights else None
-
-    return {
-        "cash_price": lowest_price,
-        "currency": currency,
-        "source": "flightapi",
-        "flights": top_flights,
-        "price_level": None,
-        "typical_price_range": None,
-        "is_roundtrip": is_roundtrip,
-    }
