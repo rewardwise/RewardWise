@@ -4,16 +4,12 @@ import json
 from pathlib import Path
 from typing import Optional
 
-from app.services.flight_pricing.normalizer import normalize_flightapi_response
 from app.services.flight_pricing.serpapi_provider import normalize_serpapi_response
 
 MOCK_DATA_DIR = Path(__file__).resolve().parent / "mock_data"
 
 PROVIDER_ALIASES = {
-    "flightapi_mock": "flightapi",
-    "flight_api_mock": "flightapi",
-    "flightapi": "flightapi",
-    "mock": "flightapi",
+    "mock": "serpapi",
     "serpapi_mock": "serpapi",
     "serp_api_mock": "serpapi",
     "google_flights_mock": "serpapi",
@@ -23,7 +19,7 @@ PROVIDER_ALIASES = {
 
 
 def _normalized_mock_provider(provider: str | None) -> str:
-    key = (provider or "flightapi").strip().lower()
+    key = (provider or "serpapi").strip().lower()
     return PROVIDER_ALIASES.get(key, key)
 
 
@@ -45,7 +41,7 @@ async def get_mock_cash_price(
     cabin: str,
     travelers: int = 1,
     return_date: Optional[str] = None,
-    provider: str = "flightapi",
+    provider: str = "serpapi",
     max_stops: str = "any",
 ) -> dict:
     """
@@ -58,9 +54,7 @@ async def get_mock_cash_price(
     is_roundtrip = return_date is not None
     raw = _load_fixture(mock_provider, return_date)
 
-    if mock_provider == "flightapi":
-        normalized = normalize_flightapi_response(raw, is_roundtrip=is_roundtrip, currency="USD")
-    elif mock_provider == "serpapi":
+    if mock_provider == "serpapi":
         normalized = normalize_serpapi_response(raw, is_roundtrip=is_roundtrip, currency="USD")
     else:
         return {

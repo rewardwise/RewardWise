@@ -1,6 +1,9 @@
 import os
 from typing import Optional
 
+import asyncio
+import time
+
 import httpx
 
 SERPAPI_BASE_URL = "https://serpapi.com/search"
@@ -186,16 +189,80 @@ async def get_serpapi_cash_price(
     if stops_int is not None:
         params["stops"] = stops_int
 
+    started = time.monotonic()
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(SERPAPI_BASE_URL, params=params, timeout=15.0)
-            response.raise_for_status()
-            data = response.json()
-
-        return normalize_serpapi_response(data, is_roundtrip=is_roundtrip, currency="USD")
+        data = await _serpapi_get_with_retry(params)
+        result = normalize_serpapi_response(data, is_roundtrip=is_roundtrip, currency="USD")
+        print(f"serpapi_cash ms={int((time.monotonic() - started) * 1000)} route={origin}-{destination} ok={result.get('cash_price') is not None}")
+        if result.get("cash_price") is not None:
+            _cash_cache_put(params_key := _cash_cache_key(origin, destination, date, return_date, cabin, travelers, max_stops), result)
+        return result
 
     except Exception as e:
+        print(f"serpapi_cash ms={int((time.monotonic() - started) * 1000)} route={origin}-{destination} ERROR={str(e)[:120]}")
+        # Hiccup fallback: serve the last-good price for this exact query
+        # (short TTL) instead of an empty state.
+        cached = _cash_cache_get(_cash_cache_key(origin, destination, date, return_date, cabin, travelers, max_stops))
+        if cached is not None:
+            stale = dict(cached)
+            stale["source"] = f"{stale.get('source', 'serpapi')}_recent"
+            stale["stale_cash"] = True
+            return stale
         return _empty_response(error=str(e))
+
+
+# ── Hardening (2026-07-26): retry + short-TTL last-good cache ────────────────
+# Retry ONCE on 5xx / connection errors only — NEVER on timeout (retrying a
+# timeout doubles the user's wait). Timeout stays at 15s pending the p95
+# measurement from the serpapi_cash log lines; adjust only above measured p95.
+
+CASH_CACHE_TTL_SECONDS = 30 * 60
+_cash_cache: dict[str, tuple[float, dict]] = {}
+
+
+def _cash_cache_key(origin, destination, date, return_date, cabin, travelers, max_stops) -> str:
+    return "|".join(str(x).upper() for x in (origin, destination, date, return_date, cabin, travelers, max_stops))
+
+
+def _cash_cache_put(key: str, result: dict) -> None:
+    _cash_cache[key] = (time.monotonic(), result)
+    if len(_cash_cache) > 500:
+        oldest = min(_cash_cache, key=lambda k: _cash_cache[k][0])
+        _cash_cache.pop(oldest, None)
+
+
+def _cash_cache_get(key: str):
+    rec = _cash_cache.get(key)
+    if not rec:
+        return None
+    ts, result = rec
+    if time.monotonic() - ts > CASH_CACHE_TTL_SECONDS:
+        _cash_cache.pop(key, None)
+        return None
+    return result
+
+
+async def _serpapi_get_with_retry(params: dict) -> dict:
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(SERPAPI_BASE_URL, params=params, timeout=15.0)
+            response.raise_for_status()
+            return response.json()
+        except httpx.TimeoutException:
+            raise  # never retry a timeout
+        except (httpx.ConnectError, httpx.RemoteProtocolError) as first_err:
+            await asyncio.sleep(0.4)
+            response = await client.get(SERPAPI_BASE_URL, params=params, timeout=15.0)
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as first_err:
+            if first_err.response.status_code < 500:
+                raise  # 4xx is deterministic — retrying burns quota for nothing
+            await asyncio.sleep(0.4)
+            response = await client.get(SERPAPI_BASE_URL, params=params, timeout=15.0)
+            response.raise_for_status()
+            return response.json()
+
 
 async def get_serpapi_return_flights(
     origin: str,
