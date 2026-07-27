@@ -1,6 +1,7 @@
 /** @format */
 
 import { createServerClient } from "@supabase/ssr";
+import { isExemptFromPrivateGate } from "@/utils/auth/private-mode";
 import { NextResponse, type NextRequest } from "next/server";
 
 const publicRoutes = [
@@ -71,6 +72,21 @@ export async function middleware(request: NextRequest) {
     url.pathname = "/login";
     url.search = "";
 
+    const redirectResponse = NextResponse.redirect(url);
+    copyCookies(supabaseResponse, redirectResponse);
+    return redirectResponse;
+  }
+
+  // Private invitation-only backstop (2026-07-27): password-flow signups
+  // never traverse /auth/callback, so the gate also runs here on every
+  // authed request. Zero extra API calls — all fields ride the getUser()
+  // response above. Blocks (signs out + banner); deletion happens only in
+  // the callback. Rules: utils/auth/private-mode.ts.
+  if (user && !isExemptFromPrivateGate(user)) {
+    await supabase.auth.signOut();
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    url.search = "?error=private";
     const redirectResponse = NextResponse.redirect(url);
     copyCookies(supabaseResponse, redirectResponse);
     return redirectResponse;

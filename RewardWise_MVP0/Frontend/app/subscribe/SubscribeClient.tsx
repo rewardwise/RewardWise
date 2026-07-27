@@ -5,7 +5,6 @@ import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthProvider";
 import TropicalBackground from "@/components/TropicalBackground";
-import ZoePricingCards from "@/components/ZoePricingCards";
 import { createClient } from "@/utils/supabase/client";
 import { CheckCircle, CreditCard, Loader2 } from "lucide-react";
 import { Suspense } from "react";
@@ -202,17 +201,24 @@ function SubscribeInner({ isThankYou }: { isThankYou: boolean }) {
 						Checkout was canceled. You can choose a plan again anytime.
 					</p>
 				)}
-				<ZoePricingCards
-					searchId={searchId}
-					showHeader
-					className=""
-					showDayPassCard={!hasActiveDayPass}
-					showMonthlyCard={subscription !== "pro"}
-					showConciergeCard
-				/>
-				<p className="text-center text-xs text-stone-500 mt-8 flex items-center justify-center gap-1.5">
-					<span>Secured by Stripe.</span>
-				</p>
+				{/* Private mode (2026-07-27): payments are disabled entirely — the
+				    checkout API mints nothing (wind-down) and the pricing cards are
+				    unmounted so no pay flow is reachable from the UI either. */}
+				<div
+					data-testid="payments-disabled-notice"
+					className="mx-auto max-w-lg rounded-xl border border-stone-200 bg-white p-6 text-center shadow-sm"
+				>
+					<p className="font-semibold text-stone-800">
+						MyTravelWallet is free for invited users.
+					</p>
+					<p className="mt-2 text-sm text-stone-600">
+						Payments are disabled. To request access, email{" "}
+						<a className="font-semibold underline" href="mailto:mytravelwalletai@gmail.com">
+							mytravelwalletai@gmail.com
+						</a>
+						.
+					</p>
+				</div>
 			</div>
 		</div>
 	);

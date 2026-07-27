@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
+import { createClient as createAdminClient } from "@supabase/supabase-js";
+import { isExemptFromPrivateGate } from "@/utils/auth/private-mode";
 
 export async function GET(request: Request) {
 	const { searchParams, origin } = new URL(request.url);
@@ -23,6 +25,25 @@ export async function GET(request: Request) {
 			if (!user) {
 				await supabase.auth.signOut();
 				return NextResponse.redirect(`${origin}/login?error=auth_callback_error`);
+			}
+
+			// Private invitation-only gate (2026-07-27): a freshly-provisioned
+			// account that is not invited, not allowlisted, and not grandfathered
+			// is DELETED here — the provision is undone server-side, so the
+			// public-signup block cannot be bypassed via the API. Exemption
+			// rules + guardrails documented in utils/auth/private-mode.ts.
+			if (!isExemptFromPrivateGate(user)) {
+				try {
+					const admin = createAdminClient(
+						process.env.NEXT_PUBLIC_SUPABASE_URL!,
+						process.env.SUPABASE_SERVICE_ROLE_KEY!,
+					);
+					await admin.auth.admin.deleteUser(user.id);
+				} catch (err) {
+					console.error("private-gate delete failed:", err);
+				}
+				await supabase.auth.signOut();
+				return NextResponse.redirect(`${origin}/login?error=private`);
 			}
 
 			const next = searchParams.get("next");

@@ -113,6 +113,43 @@ export default function SignupPage() {
 		return <AuthLoading />;
 	}
 
+	// Private invitation-only (2026-07-27): public signup is closed. The form
+	// below is intentionally unreachable — the server-side gates (auth
+	// callback + middleware) are the real enforcement; this is the honest UI.
+	return (
+		<div className="font-mtw relative isolate min-h-screen overflow-hidden text-mtw-ink">
+			<AuthBackdrop />
+			<div className="relative z-10 flex min-h-screen items-center justify-center px-6 py-10">
+				<div
+					data-testid="private-banner"
+					className="w-full max-w-md rounded-mtw-lg border border-mtw-border bg-white p-8 text-center shadow-mtw-ambient"
+				>
+					<h1 className="text-xl font-bold text-mtw-ink">
+						MyTravelWallet is now private
+					</h1>
+					<p className="mt-3 text-mtw-body text-mtw-muted">
+						We&apos;re invitation-only for now. To request access, email{" "}
+						<a
+							href="mailto:mytravelwalletai@gmail.com"
+							className="font-semibold text-mtw-emerald underline"
+						>
+							mytravelwalletai@gmail.com
+						</a>
+						.
+					</p>
+					<p className="mt-4 text-mtw-small text-mtw-muted">
+						Already have an account?{" "}
+						<a href="/login" className="font-semibold text-mtw-emerald underline">
+							Log in
+						</a>
+						{" "}— existing accounts are unaffected.
+					</p>
+				</div>
+			</div>
+		</div>
+	);
+
+	// eslint-disable-next-line no-unreachable
 	return (
 		<div className="font-mtw relative isolate min-h-screen overflow-hidden text-mtw-ink">
 			<AuthBackdrop />
