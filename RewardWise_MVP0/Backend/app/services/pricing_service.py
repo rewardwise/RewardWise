@@ -41,9 +41,10 @@ async def _fetch_from_provider(
     travelers: int,
     return_date: Optional[str],
     max_stops: str = "any",
+    cache_first: bool = False,
 ) -> dict:
     if provider in {"serpapi", "google_flights"}:
-        return await get_serpapi_cash_price(origin, destination, date, cabin, travelers, return_date, max_stops=max_stops)
+        return await get_serpapi_cash_price(origin, destination, date, cabin, travelers, return_date, max_stops=max_stops, cache_first=cache_first)
     if provider in {"mock", "serpapi_mock", "serp_api_mock", "google_flights_mock"}:
         return await get_mock_cash_price(origin, destination, date, cabin, travelers, return_date, provider="serpapi", max_stops=max_stops)
 
@@ -64,6 +65,7 @@ async def get_cash_price(
     travelers: int = 1,
     return_date: Optional[str] = None,
     max_stops: str = "any",
+    cache_first: bool = False,
 ) -> dict:
     """
     Fetch live or mocked cash flight prices through the configured provider.
@@ -84,6 +86,7 @@ async def get_cash_price(
             travelers,
             return_date,
             max_stops=max_stops,
+            cache_first=cache_first,
         )
 
         if result.get("cash_price") is not None:

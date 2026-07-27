@@ -164,12 +164,28 @@ async def get_serpapi_cash_price(
     travelers: int = 1,
     return_date: Optional[str] = None,
     max_stops: str = "any",
+    cache_first: bool = False,
 ) -> dict:
     api_key = os.getenv("SERPAPI_KEY")
     if not api_key:
         return _empty_response()
 
     is_roundtrip = return_date is not None
+
+    # Cache-first mode (date-sampler only; the main quote stays live-always):
+    # a <=30-min last-good price for the EXACT same query serves without an
+    # HTTP call. Sampler calls are 2 of the 3 SerpAPI draws per search, so on
+    # repeat routes this removes two shots at the latency tail. Bonus dedup:
+    # on ONE-WAY searches the sampler's anchor-date query is byte-identical
+    # to the main quote (which ran just before and populated this cache), so
+    # the search drops to ONE SerpAPI call with zero verdict change.
+    if cache_first:
+        cached = _cash_cache_get(_cash_cache_key(origin, destination, date, return_date, cabin, travelers, max_stops))
+        if cached is not None:
+            print(f"serpapi_cash cache_hit route={origin}-{destination} date={date}")
+            hit = dict(cached)
+            hit["cash_cache_hit"] = True
+            return hit
 
     params = {
         "engine": "google_flights",

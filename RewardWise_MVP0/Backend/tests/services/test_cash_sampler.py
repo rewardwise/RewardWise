@@ -16,7 +16,7 @@ def patch_cash(monkeypatch):
 
     def install(side_effect):
         async def fake_get_cash_price(
-            origin, destination, date, cabin, travelers, return_date=None, max_stops="any"
+            origin, destination, date, cabin, travelers, return_date=None, max_stops="any", cache_first=False
         ):
             calls.append(
                 {
@@ -160,7 +160,7 @@ def test_concurrency_bound_caps_in_flight(monkeypatch):
     lock = asyncio.Lock()
 
     async def fake_get_cash_price(
-        origin, destination, date, cabin, travelers, return_date=None, max_stops="any"
+        origin, destination, date, cabin, travelers, return_date=None, max_stops="any", cache_first=False
     ):
         nonlocal in_flight, peak
         async with lock:
