@@ -85,6 +85,13 @@ _MISSING_LABELS = {
 def new_trip_ack(will_autorun: bool, missing: list[str] | None = None) -> str:
     if will_autorun:
         return NEW_TRIP_ACK_RUNNING
+    if "unresolved_place" in (missing or []):
+        # The user named a city we could not resolve — the form still holds
+        # the previous route, so running would search the WRONG trip. Ask.
+        return (
+            "I didn't catch that city — where to exactly? "
+            "I've held off searching so we don't run the wrong trip. ✈️"
+        )
     asks = [_MISSING_LABELS[m] for m in (missing or []) if m in _MISSING_LABELS]
     ask = " and ".join(asks) if asks else "the missing details"
     return (
