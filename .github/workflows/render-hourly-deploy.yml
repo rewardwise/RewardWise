@@ -20,4 +20,8 @@ jobs:
 
     steps:
       - name: Health ping (keep-warm, no instance swap)
-        run: curl -fsS --max-time 30 "https://mytravelwalletai-backend.onrender.com/api/health"
+        # GitHub throttles this cron to ~hourly in practice, so the free-tier
+        # instance often idles out between pings. Hitting a COLD instance is
+        # this job doing its job — allow the full cold-start (~60s) and retry
+        # so it doesn't false-fail and email the operator (2026-07-26).
+        run: curl -fsS --max-time 90 --retry 2 --retry-all-errors --retry-delay 10 "https://mytravelwalletai-backend.onrender.com/api/health"
