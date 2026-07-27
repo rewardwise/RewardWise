@@ -853,7 +853,7 @@ export default function HomePage() {
 						<button
 							onClick={runSearch}
 							disabled={searching}
-							className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-500 py-3 font-semibold text-white transition-colors hover:bg-emerald-600 disabled:bg-gray-700"
+							className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-500 py-3 font-semibold text-white transition-colors hover:bg-emerald-600 disabled:bg-emerald-200 disabled:text-emerald-900"
 						>
 							{searching ? (
 								<>
@@ -947,6 +947,7 @@ export default function HomePage() {
 							onFillSearch={handleFillSearch}
 							onAutoSearch={handleTriggerSearch}
 							verdictContext={verdictContext}
+							searching={searching}
 							variant="docked"
 							narration={
 								results?.verdict

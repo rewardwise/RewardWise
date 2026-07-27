@@ -22,13 +22,13 @@ afterEach(() => {
 });
 
 describe("ConfettiBurst — once per verdict, motion-respecting", () => {
-	it("fires on a fresh key and self-removes after the animation window", async () => {
+	it("fires 3 waves (120 pieces) and self-removes after ~5s", async () => {
 		vi.useFakeTimers();
 		setMotion(false);
 		act(() => root.render(<ConfettiBurst fireKey="v-fresh-1" />));
 		expect(container.querySelector('[data-testid="confetti-burst"]')).not.toBeNull();
-		expect(container.querySelectorAll(".mtw-confetti").length).toBe(24);
-		act(() => { vi.advanceTimersByTime(1700); });
+		expect(container.querySelectorAll(".mtw-confetti").length).toBe(120); // 3 waves x 40
+		act(() => { vi.advanceTimersByTime(5300); });
 		expect(container.querySelector('[data-testid="confetti-burst"]'), "cleans up").toBeNull();
 		vi.useRealTimers();
 	});

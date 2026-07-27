@@ -8,7 +8,9 @@ import { useEffect, useState } from "react";
 const firedKeys = new Set<string>();
 
 const COLORS = ["#10b981", "#f59e0b", "#3b82f6", "#ef4444", "#8b5cf6"];
-const PIECES = 24;
+// Three bursts over ~3.5s (delays 0 / 1.6s / 3.2s), 40 pieces each.
+const WAVES = [0, 1600, 3200];
+const PIECES_PER_WAVE = 40;
 
 /**
  * Brief celebratory burst when a verdict lands — the card-side match for
@@ -26,7 +28,7 @@ export default function ConfettiBurst({ fireKey }: { fireKey: string | null | un
 		}
 		firedKeys.add(fireKey);
 		setVisible(true);
-		const t = setTimeout(() => setVisible(false), 1600);
+		const t = setTimeout(() => setVisible(false), 5200);
 		return () => clearTimeout(t);
 	}, [fireKey]);
 
@@ -37,17 +39,19 @@ export default function ConfettiBurst({ fireKey }: { fireKey: string | null | un
 			data-testid="confetti-burst"
 			className="pointer-events-none absolute inset-x-0 top-0 z-10 h-0 overflow-visible"
 		>
-			{Array.from({ length: PIECES }, (_, i) => (
-				<span
-					key={i}
-					className="mtw-confetti"
-					style={{
-						left: `${(i * 41) % 100}%`,
-						animationDelay: `${(i % 6) * 70}ms`,
-						backgroundColor: COLORS[i % COLORS.length],
-					}}
-				/>
-			))}
+			{WAVES.flatMap((waveDelay, w) =>
+				Array.from({ length: PIECES_PER_WAVE }, (_, i) => (
+					<span
+						key={`${w}-${i}`}
+						className="mtw-confetti"
+						style={{
+							left: `${(i * 41 + w * 13) % 100}%`,
+							animationDelay: `${waveDelay + (i % 8) * 70}ms`,
+							backgroundColor: COLORS[(i + w) % COLORS.length],
+						}}
+					/>
+				)),
+			)}
 		</div>
 	);
 }
