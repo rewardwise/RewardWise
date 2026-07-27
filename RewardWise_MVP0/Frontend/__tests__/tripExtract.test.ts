@@ -1,6 +1,6 @@
 /** @format */
 import { describe, expect, it } from "vitest";
-import { extractTripParams } from "../utils/tripExtract";
+import { extractTripParams, planTripFill } from "../utils/tripExtract";
 
 const TODAY = new Date(2026, 6, 20); // 2026-07-20
 
@@ -119,5 +119,56 @@ describe("extractTripParams — spoken number-word travelers", () => {
 	it("number words NOT followed by a traveler noun stay untouched", () => {
 		const r = extractTripParams("from Denver to Austin September 10 to 14", TODAY);
 		expect(r?.travelers).toBeUndefined();
+	});
+});
+
+describe("P0 wrong-trip guard (2026-07-27 incident)", () => {
+	const CUR2 = { origin: "SEA", destination: "SFO", date: "2026-08-19", return_date: "2026-08-28" };
+
+	it("THE incident message now fully resolves (bare 'X to Y', no 'from')", () => {
+		const r = extractTripParams(
+			"How about Seattle to Tokyo next year, March 15 to 31st, round trip, one travel?",
+			TODAY, CUR2,
+		);
+		expect(r?.origin).toBe("SEA");
+		expect(r?.destination).toBe("NRT,HND");
+		expect(r?.date).toBe("2027-03-15");
+		expect(r?.return_date).toBe("2027-03-31");
+		expect(r?.unresolved_place).toBeUndefined();
+	});
+
+	it("bare pair without verb or 'from' resolves (Denver to Austin)", () => {
+		const r = extractTripParams("Denver to Austin September 10 to 14", TODAY);
+		expect(r?.origin).toBe("DEN");
+		expect(r?.destination).toBe("AUS");
+	});
+
+	it("garbled destination -> unresolved_place, route NOT filled", () => {
+		const r = extractTripParams("How about Seattle to Tokyoo next year, March 15 to 31st?", TODAY, CUR2);
+		expect(r?.unresolved_place).toBe(true);
+		expect(r?.destination).toBeUndefined();
+		expect(planTripFill(r, CUR2)).toEqual({ willAutorun: false, missing: ["unresolved_place"] });
+	});
+
+	it("garbled origin -> unresolved_place", () => {
+		const r = extractTripParams("Tokyoo to Seattle March 15", TODAY, CUR2);
+		expect(r?.unresolved_place).toBe(true);
+	});
+
+	it("explicit 'from X to <unresolvable>' -> unresolved_place even with partial fill", () => {
+		const r = extractTripParams("from Seattle to Xanaduville March 15 to 31", TODAY, CUR2);
+		expect(r?.origin).toBe("SEA");
+		expect(r?.unresolved_place).toBe(true);
+		expect(planTripFill(r, CUR2).willAutorun).toBe(false);
+	});
+
+	it("idioms where NEITHER side resolves stay quiet (no false ask)", () => {
+		const r = extractTripParams("flying blue to delta transfers August 3", TODAY, CUR2);
+		expect(r?.unresolved_place).toBeUndefined();
+	});
+
+	it("incremental + non-trip behavior unchanged", () => {
+		expect(extractTripParams("what about the 20th instead?", TODAY, CUR2)?.date).toBe("2026-08-20");
+		expect(extractTripParams("how do transfer ratios work?", TODAY, CUR2)).toBeNull();
 	});
 });

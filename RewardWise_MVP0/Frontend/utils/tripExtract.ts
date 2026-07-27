@@ -19,6 +19,12 @@ export interface ExtractedTrip {
 	return_date?: string;
 	travelers?: number;
 	tripType?: "roundtrip" | "oneway";
+	/** A route-shaped phrase ("X to Y", "from X", "fly to X") matched
+	 *  textually but a named place FAILED to resolve. The auto-run must
+	 *  never fire on this — the user explicitly changed a field we could
+	 *  not apply; searching the stale value would produce a confident
+	 *  verdict for the WRONG TRIP (P0 incident 2026-07-27). */
+	unresolved_place?: boolean;
 }
 
 const MONTHS: Record<string, number> = {
@@ -129,33 +135,56 @@ export function extractTripParams(
 	const stop =
 		"(?=\\s+(?:on|in|for|from|between|leaving|departing|around|next|this|with)\\b|\\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\\b|\\s*(?:,|\\.|!|\\?|$)|\\s+\\d)";
 
+	// P0 guard state (2026-07-27 wrong-trip incident): remember when a
+	// route-shaped phrase matched but a place failed to resolve.
+	let routeShapeSeen = false;
+	let routeResolved = false;
+
 	const tryFromTo = (): Partial<ExtractedTrip> | null => {
 		const m = msg.match(new RegExp(`\\bfrom\\s+([a-z][a-z .'-]{1,28}?)\\s+to\\s+([a-z][a-z .'-]{1,28}?)${stop}`));
 		if (!m) return null;
+		routeShapeSeen = true;
 		const o = resolvePlace(m[1]);
 		const d = resolvePlace(m[2]);
 		if (!o && !d) return null;
+		if (o && d) routeResolved = true;
 		return { ...(o ? { origin: o } : {}), ...(d ? { destination: d } : {}) };
 	};
 	const tryBareTo = (): Partial<ExtractedTrip> | null => {
-		const patterns = [
-			new RegExp(`\\b(?:fly|flying|flight|trip|go|going|travel(?:ing)?)\\s+([a-z][a-z .'-]{1,28}?)\\s+to\\s+([a-z][a-z .'-]{1,28}?)${stop}`),
-			new RegExp(`\\b([a-z]{3})\\s+to\\s+([a-z][a-z .'-]{1,28}?)${stop}`),
-		];
-		for (const re of patterns) {
-			const m = msg.match(re);
-			if (!m) continue;
-			const o = resolvePlace(m[1]);
+		// Generalized bare pair: "Seattle to Tokyo", "How about Seattle to
+		// Tokyo…", "SEA to Tokyo". The left phrase may start mid-sentence, so
+		// scan progressively shorter word-suffixes of the left capture until
+		// one resolves ("how about seattle" -> "about seattle" -> "seattle").
+		// BOTH sides must resolve — resolution-based fallthrough keeps date
+		// ranges ("March 15 to 31") and idioms ("flying blue to delta") from
+		// filling anything.
+		const re = new RegExp(`\\b([a-z][a-z .'-]{1,40}?)\\s+to\\s+([a-z][a-z .'-]{1,28}?)${stop}`, "g");
+		for (const m of msg.matchAll(re)) {
 			const d = resolvePlace(m[2]);
-			// Bare "X to Y" is riskier — require BOTH to resolve before filling.
-			if (o && d) return { origin: o, destination: d };
+			const leftWords = m[1].trim().split(/\s+/);
+			let o: string | null = null;
+			for (let i = 0; i < leftWords.length && !o; i++) {
+				o = resolvePlace(leftWords.slice(i).join(" "));
+			}
+			if (o && d) {
+				routeShapeSeen = true;
+				routeResolved = true;
+				return { origin: o, destination: d };
+			}
+			// Exactly ONE side resolving = a route attempt with a place we
+			// couldn't apply ("Seattle to Tokyoo") — flag it. NEITHER side
+			// resolving is an idiom ("points to cash", "flying blue to
+			// delta") — stay quiet.
+			if (Boolean(o) !== Boolean(d)) routeShapeSeen = true;
 		}
 		return null;
 	};
 	const tryDestOnly = (): Partial<ExtractedTrip> | null => {
 		const m = msg.match(new RegExp(`\\b(?:fly|flying|flight|trip|go|going|travel(?:ing)?)\\s+to\\s+([a-z][a-z .'-]{1,28}?)${stop}`));
 		if (!m) return null;
+		routeShapeSeen = true;
 		const d = resolvePlace(m[1]);
+		if (d) routeResolved = true;
 		return d ? { destination: d } : null;
 	};
 
@@ -208,7 +237,15 @@ export function extractTripParams(
 	// Non-trip guard: nothing confidently extracted -> null (form untouched).
 	// return_date-only (incremental "come back on the 25th") and travelers-only
 	// ("make it 2 travelers") are valid partial updates.
+	// The user named a route we could not fully apply — mark it so the
+	// consumer HOLDS the auto-run and asks, instead of searching stale
+	// origin/destination with fresh dates (the P0 wrong-trip disaster).
+	if (routeShapeSeen && !routeResolved && !(out.origin && out.destination)) {
+		out.unresolved_place = true;
+	}
+
 	const hasSignal = Boolean(
+		out.unresolved_place ||
 		out.origin || out.destination || out.date || out.return_date || out.travelers
 	);
 	if (!hasSignal) return null;
@@ -223,6 +260,10 @@ export function planTripFill(
 	current: CurrentTrip | null,
 ): { willAutorun: boolean; missing: string[] } {
 	if (!extracted) return { willAutorun: false, missing: [] };
+	if (extracted.unresolved_place) {
+		// Never auto-run when the user's stated place didn't apply.
+		return { willAutorun: false, missing: ["unresolved_place"] };
+	}
 	const merged = {
 		origin: extracted.origin || current?.origin || null,
 		destination: extracted.destination || current?.destination || null,

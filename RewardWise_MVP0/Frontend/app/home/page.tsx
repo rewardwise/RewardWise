@@ -416,6 +416,10 @@ export default function HomePage() {
 			(merged.tripType !== "roundtrip" || merged.return_date),
 		);
 		if (zoeAutorunTimer.current) clearTimeout(zoeAutorunTimer.current);
+		// P0 guard: the user explicitly named a place the extractor could not
+		// resolve — the merged form still holds the STALE value. Auto-running
+		// would search the wrong trip with full confidence. Hold; Zoe asks.
+		if (data.unresolved_place) return;
 		if (!complete) return;
 		zoeAutorunTimer.current = setTimeout(() => {
 			zoeAutorunTimer.current = null;

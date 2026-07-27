@@ -186,3 +186,10 @@ def test_ack_copy_price_free():
     import re
     for ack in (zs.NEW_TRIP_ACK_RUNNING, zs.new_trip_ack(False, ["date"])):
         assert re.search(r"\$\s?\d|\d[\d,]{2,}\s*(points|pts|miles)", ack) is None
+
+
+def test_unresolved_place_ack_holds_and_asks():
+    ack = zs.new_trip_ack(False, ["unresolved_place"])
+    assert "didn't catch that city" in ack
+    assert "held off searching" in ack
+    assert "running it now" not in ack
