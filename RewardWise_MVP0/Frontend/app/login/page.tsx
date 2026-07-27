@@ -42,6 +42,10 @@ function LoginPageInner() {
 			return "We couldn’t complete sign in. Please try again.";
 		}
 
+		if (callbackError === "private") {
+			return "MyTravelWallet is now private — invitation only. To request access, email mytravelwalletai@gmail.com.";
+		}
+
 		if (accessDenied) {
 			return "That account is not approved for access right now.";
 		}
