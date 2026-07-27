@@ -75,6 +75,8 @@ interface ZoeChatProps {
 	variant?: "floating" | "docked";
 	/** Deterministic verdict narration (lead + chips) for the docked pane. */
 	narration?: ZoeNarration | null;
+	/** Engine search in flight — shows the in-chat working indicator. */
+	searching?: boolean;
 	/**
 	 * Deterministic empty-state welcome (lead + chips) for the docked pane, shown
 	 * only when there's no `narration` yet. Once a verdict arrives, narration
@@ -126,6 +128,7 @@ export default function ZoeChat({
 	verdictContext,
 	variant = "floating",
 	narration = null,
+	searching = false,
 	welcome = null,
 }: ZoeChatProps) {
 	const { user } = useAuth();
@@ -135,6 +138,18 @@ export default function ZoeChat({
 	// Client-only narration replies (chip Q&A). NOT sent to the LLM / persisted —
 	// keeps the free-form chat clean and the deterministic narration drift-free.
 	const [forkMsgs, setForkMsgs] = useState<Message[]>([]);
+
+	// Chronological delivery (2026-07-27 chat-flow fix): a NEW narration is
+	// APPENDED to the thread after the ack — never floated above it. Dedupe
+	// by lead text so re-renders can't repeat it.
+	const lastNarrationRef = useRef<string | null>(null);
+	useEffect(() => {
+		if (variant !== "docked" || !narration?.lead) return;
+		if (lastNarrationRef.current === narration.lead) return;
+		lastNarrationRef.current = narration.lead;
+		setMessages((prev) => [...prev, { role: "assistant", content: narration.lead, narration: true } as Message]);
+	// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [narration?.lead, variant]);
 
 	useEffect(() => {
 		setForkMsgs([]); // reset chip replies when the verdict changes
@@ -275,7 +290,7 @@ if (prefillRaw && onFillSearch) {
 		}
 		// forkMsgs added (audit #5): chip replies and narration Q&A previously
 		// didn't trigger the scroll, so replies landed below the visible pane.
-	}, [messages, forkMsgs, typing]);
+	}, [messages, forkMsgs, typing, searching]);
 
 	// ── Welcome message (floating variant only) ───────────────────────────────
 	// The docked pane uses the deterministic `welcome` prop (lead + chips), so
@@ -521,13 +536,19 @@ if (prefillRaw && onFillSearch) {
 			const prefill = data.prefill || null;
 			const interaction_id = data.interaction_id || null;
  
-			setMessages(prev => [...prev, {
-				role: "assistant",
-				content: reply,
-				prefilled: !!prefill,
-				interaction_id,
-				thumbs: null,
-			}]);
+			setMessages(prev => {
+				// Collapse consecutive identical assistant replies (resent user
+				// messages produced stacked duplicate acks).
+				const last = [...prev].reverse().find((m) => m.role === "assistant");
+				if (last && last.content === reply) return prev;
+				return [...prev, {
+					role: "assistant",
+					content: reply,
+					prefilled: !!prefill,
+					interaction_id,
+					thumbs: null,
+				}];
+			});
  
 			if (prefill && onFillSearch) {
 				onFillSearch({
@@ -895,14 +916,7 @@ className={`flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rou
 					renderVoiceOrb()
 				) : (
 					<div className="font-mtw flex-1 space-y-3 overflow-y-auto p-4 text-sm">
-						{narration ? (
-							<div
-								data-testid="zoe-lead"
-								className="w-fit max-w-[92%] rounded-2xl rounded-tl-sm border border-mtw-border bg-white p-3 text-mtw-ink shadow-sm"
-							>
-								{narration.lead}
-							</div>
-						) : welcome ? (
+						{welcome ? (
 							<div
 								data-testid="zoe-welcome"
 								className="w-fit max-w-[92%] rounded-2xl rounded-tl-sm border border-mtw-border bg-white p-3 text-mtw-ink shadow-sm"
@@ -910,6 +924,7 @@ className={`flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rou
 								{welcome.lead}
 							</div>
 						) : null}
+						{/* narration renders inside `messages`, chronologically */}
 						{forkMsgs.map((m, i) => (
 							<div
 								key={`fork-${i}`}
@@ -924,6 +939,12 @@ className={`flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rou
 						))}
 						{messages.map((msg, i) => renderMessage(msg, i, true))}
 						{typing && renderTypingDots(false)}
+						{searching && !typing && (
+							<div data-testid="zoe-working" className="flex items-center gap-2 text-mtw-small text-mtw-muted">
+								{renderTypingDots(false)}
+								<span>analyzing your trip…</span>
+							</div>
+						)}
 						<div ref={endRef} />
 					</div>
 				)}
