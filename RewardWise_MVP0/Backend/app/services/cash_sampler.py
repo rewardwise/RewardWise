@@ -54,6 +54,9 @@ async def sample_cash_prices_by_date(
                     travelers,
                     return_date=None,
                     max_stops=max_stops,
+                    # Sampler is 2 of the 3 SerpAPI draws per search; a fresh
+                    # <=30-min last-good price is verdict-equivalent here.
+                    cache_first=True,
                 )
                 return date, result.get("cash_price")
             except Exception as exc:

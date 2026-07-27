@@ -86,3 +86,70 @@ async def test_failure_serves_recent_price_with_stale_marker(monkeypatch):
     assert result["cash_price"] == 157
     assert result["stale_cash"] is True
     assert result["source"].endswith("_recent")
+
+
+@pytest.mark.asyncio
+async def test_cache_first_serves_recent_price_without_http(monkeypatch):
+    """Sampler mode: a fresh cached price for the EXACT query short-circuits
+    the HTTP call entirely (2 of 3 SerpAPI draws per search removed on
+    repeat routes)."""
+    key = sp._cash_cache_key("PDX", "BOI", "2026-10-13", None, "ECONOMY", 1, "ANY")
+    sp._cash_cache_put(key, {"cash_price": 129, "source": "serpapi", "flights": []})
+
+    async def _no_http(*a, **k):  # noqa: ANN001
+        raise AssertionError("cache_first hit must not call SerpAPI")
+
+    monkeypatch.setenv("SERPAPI_KEY", "test-key")
+    monkeypatch.setattr(sp, "_serpapi_get_with_retry", _no_http)
+    result = await sp.get_serpapi_cash_price("PDX", "BOI", "2026-10-13", "economy", 1, None, max_stops="any", cache_first=True)
+    assert result["cash_price"] == 129
+    assert result["cash_cache_hit"] is True
+
+
+@pytest.mark.asyncio
+async def test_cache_first_miss_falls_through_to_live(monkeypatch):
+    called = {}
+
+    async def _live(params):  # noqa: ANN001
+        called["yes"] = True
+        return {"best_flights": [], "other_flights": [], "price_insights": {"lowest_price": 88}}
+
+    monkeypatch.setenv("SERPAPI_KEY", "test-key")
+    monkeypatch.setattr(sp, "_serpapi_get_with_retry", _live)
+    result = await sp.get_serpapi_cash_price("PDX", "GEG", "2026-10-14", "economy", 1, None, cache_first=True)
+    assert called.get("yes") is True
+    assert result["cash_price"] == 88.0
+
+
+@pytest.mark.asyncio
+async def test_main_quote_ignores_cache_even_when_fresh(monkeypatch):
+    """Default (cache_first=False) MUST stay live-always — the headline cash
+    price is never served stale on the initial fetch."""
+    key = sp._cash_cache_key("PDX", "BOI", "2026-10-13", None, "ECONOMY", 1, "ANY")
+    sp._cash_cache_put(key, {"cash_price": 999, "source": "serpapi", "flights": []})
+    called = {}
+
+    async def _live(params):  # noqa: ANN001
+        called["yes"] = True
+        return {"best_flights": [], "other_flights": [], "price_insights": {"lowest_price": 131}}
+
+    monkeypatch.setenv("SERPAPI_KEY", "test-key")
+    monkeypatch.setattr(sp, "_serpapi_get_with_retry", _live)
+    result = await sp.get_serpapi_cash_price("PDX", "BOI", "2026-10-13", "economy", 1, None)
+    assert called.get("yes") is True
+    assert result["cash_price"] == 131.0
+
+
+@pytest.mark.asyncio
+async def test_sampler_requests_cache_first(monkeypatch):
+    import app.services.cash_sampler as cs
+    captured = {}
+
+    async def _fake(*a, **k):  # noqa: ANN001
+        captured.update(k)
+        return {"cash_price": 100}
+
+    monkeypatch.setattr(cs, "get_cash_price", _fake)
+    out = await cs.sample_cash_prices_by_date("PDX", "BOI", ["2026-10-13"], "economy", 1)
+    assert out == {"2026-10-13": 100}
+    assert captured["cache_first"] is True
