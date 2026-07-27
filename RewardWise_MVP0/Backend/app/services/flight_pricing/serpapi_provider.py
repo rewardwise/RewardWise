@@ -199,7 +199,7 @@ async def get_serpapi_cash_price(
         return result
 
     except Exception as e:
-        print(f"serpapi_cash ms={int((time.monotonic() - started) * 1000)} route={origin}-{destination} ERROR={str(e)[:120]}")
+        print(f"serpapi_cash ms={int((time.monotonic() - started) * 1000)} route={origin}-{destination} ERROR={type(e).__name__}:{str(e)[:100]}")
         # Hiccup fallback: serve the last-good price for this exact query
         # (short TTL) instead of an empty state.
         cached = _cash_cache_get(_cash_cache_key(origin, destination, date, return_date, cabin, travelers, max_stops))
@@ -213,9 +213,12 @@ async def get_serpapi_cash_price(
 
 # ── Hardening (2026-07-26): retry + short-TTL last-good cache ────────────────
 # Retry ONCE on 5xx / connection errors only — NEVER on timeout (retrying a
-# timeout doubles the user's wait). Timeout stays at 15s pending the p95
-# measurement from the serpapi_cash log lines; adjust only above measured p95.
+# timeout doubles the user's wait). Timeout history: 15s chosen from the
+# afternoon p95 (~11.4s, n=15); that SAME evening a valid main-quote call was
+# cut at 15.4s while sibling calls succeeded at 12.4s — SerpAPI's tail moves
+# with load. 20s clears every success observed to date; adjust only on data.
 
+SERPAPI_TIMEOUT_S = 20.0
 CASH_CACHE_TTL_SECONDS = 30 * 60
 _cash_cache: dict[str, tuple[float, dict]] = {}
 
@@ -245,21 +248,21 @@ def _cash_cache_get(key: str):
 async def _serpapi_get_with_retry(params: dict) -> dict:
     async with httpx.AsyncClient() as client:
         try:
-            response = await client.get(SERPAPI_BASE_URL, params=params, timeout=15.0)
+            response = await client.get(SERPAPI_BASE_URL, params=params, timeout=SERPAPI_TIMEOUT_S)
             response.raise_for_status()
             return response.json()
         except httpx.TimeoutException:
             raise  # never retry a timeout
         except (httpx.ConnectError, httpx.RemoteProtocolError) as first_err:
             await asyncio.sleep(0.4)
-            response = await client.get(SERPAPI_BASE_URL, params=params, timeout=15.0)
+            response = await client.get(SERPAPI_BASE_URL, params=params, timeout=SERPAPI_TIMEOUT_S)
             response.raise_for_status()
             return response.json()
         except httpx.HTTPStatusError as first_err:
             if first_err.response.status_code < 500:
                 raise  # 4xx is deterministic — retrying burns quota for nothing
             await asyncio.sleep(0.4)
-            response = await client.get(SERPAPI_BASE_URL, params=params, timeout=15.0)
+            response = await client.get(SERPAPI_BASE_URL, params=params, timeout=SERPAPI_TIMEOUT_S)
             response.raise_for_status()
             return response.json()
 
@@ -301,7 +304,7 @@ async def get_serpapi_return_flights(
 
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(SERPAPI_BASE_URL, params=params, timeout=15.0)
+            response = await client.get(SERPAPI_BASE_URL, params=params, timeout=SERPAPI_TIMEOUT_S)
             response.raise_for_status()
             data = response.json()
 
