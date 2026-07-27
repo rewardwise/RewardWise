@@ -112,8 +112,48 @@ function titleCaseProgramKey(key: string): string {
 		.join(" ");
 }
 
-export function getProgramHandoffInfo(programKey: string): { url: string; displayName: string } {
+export interface AwardTripContext {
+	origin?: string | null;
+	destination?: string | null;
+	/** ISO yyyy-mm-dd */
+	departDate?: string | null;
+	returnDate?: string | null;
+	travelers?: number | null;
+	cabin?: string | null;
+}
+
+/** United fsr award deep link from the VERIFIED param template
+ *  (?f=&t=&d=&r=&px=&sc=, params honored — see file header). tqp=A puts the
+ *  search in award (miles) mode. Only United is verified deep-linkable;
+ *  other programs stay on their homepages. */
+export function unitedAwardDeepLink(trip: AwardTripContext): string | null {
+	if (!trip.origin || !trip.destination || !trip.departDate) return null;
+	const params = new URLSearchParams({
+		f: trip.origin.toUpperCase(),
+		t: trip.destination.toUpperCase(),
+		d: trip.departDate,
+		px: String(Math.max(1, trip.travelers ?? 1)),
+		sc: (trip.cabin ?? "economy").toLowerCase(),
+		tqp: "A",
+	});
+	if (trip.returnDate) params.set("r", trip.returnDate);
+	return `https://www.united.com/en/us/fsr/choose-flights?${params.toString()}`;
+}
+
+export function getProgramHandoffInfo(
+	programKey: string,
+	trip?: AwardTripContext | null,
+): { url: string; displayName: string } {
 	const normalized = programKey.toLowerCase().trim();
+	if (trip && isDeepLinkable(normalized)) {
+		const deep = unitedAwardDeepLink(trip);
+		if (deep) {
+			return {
+				url: deep,
+				displayName: PROGRAM_DISPLAY_NAMES[normalized] || titleCaseProgramKey(programKey),
+			};
+		}
+	}
 	const mappedUrl = PROGRAM_HOMEPAGE_URLS[normalized];
 	// Mirror backend _get_airline_url: synthesize https://www.{slug}.com/ when
 	// the explicit map misses. The slug strips non-alphanumerics so keys with

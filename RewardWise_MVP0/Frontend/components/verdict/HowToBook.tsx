@@ -2,7 +2,7 @@
 "use client";
 
 import { ArrowRight } from "lucide-react";
-import { getProgramHandoffInfo } from "@/utils/airlines";
+import { getProgramHandoffInfo, type AwardTripContext } from "@/utils/airlines";
 import { TRANSFER_PARTNERS } from "@/utils/transferPartners";
 import { fmtMoney } from "@/utils/format";
 
@@ -17,6 +17,8 @@ export interface HowToBookLeg {
 type Props = {
 	legs: HowToBookLeg[];
 	verifyNote?: string | null;
+	/** Route/date/pax context — enables the United award deep link. */
+	trip?: AwardTripContext | null;
 };
 
 /**
@@ -32,7 +34,7 @@ type Props = {
  * its deep link (both deep links stay). Light-native styling — no dependence
  * on the .mtw-light remap.
  */
-export default function HowToBook({ legs, verifyNote = null }: Props) {
+export default function HowToBook({ legs, verifyNote = null, trip = null }: Props) {
 	const valid = legs.filter((l) => l.program && l.points > 0);
 	if (valid.length === 0) return null;
 
@@ -74,7 +76,7 @@ export default function HowToBook({ legs, verifyNote = null }: Props) {
 				})}
 
 				{valid.map((leg) => {
-					const { url, displayName } = getProgramHandoffInfo(leg.program);
+					const { url, displayName } = getProgramHandoffInfo(leg.program, trip);
 					const hasHref = url !== "#";
 					const cost = `${leg.points.toLocaleString()} pts${
 						leg.taxes != null && leg.taxes > 0 ? ` + ${fmtMoney(leg.taxes, 2)}` : ""
