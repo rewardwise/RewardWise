@@ -131,6 +131,8 @@ interface VerdictCardProps {
   awardOptions?: AwardOption[];
   returnAwardOptions?: AwardOption[];
   flights?: CashFlight[];
+  /** SerpAPI's canonical Google Flights link for the exact cash search. */
+  cashGoogleFlightsUrl?: string | null;
   userPrograms?: string[];
   userCards?: string[];
   verdictId?: string | null;
@@ -286,6 +288,7 @@ export default function VerdictCard({
   awardOptions: rawAwardOptions = [],
   returnAwardOptions: rawReturnAwardOptions = [],
   flights = [],
+  cashGoogleFlightsUrl = null,
   userPrograms = [],
   userCards = [],
   verdictId,
@@ -553,6 +556,7 @@ export default function VerdictCard({
         // MultiHandoffGrid resolves the cash carrier's own site, then the
         // route-resolved Google Flights fallback.
         bookingUrl: bestCashFlight.booking_url ?? null,
+        googleFlightsUrl: cashGoogleFlightsUrl,
       }
     : null;
   // Raw origin/destination are the user's metro CSV ("SFO,OAK,SJC"); the
@@ -861,6 +865,7 @@ export default function VerdictCard({
                     recommendation="pay_cash"
                     cashAirline={cashHandoff}
                     bestDate={bestDate}
+                    returnDateLabel={winningReturnDate ?? returnDate ?? null}
                     routeLabel={routeLabel}
                     travelersLabel={travelersLabel}
                   />

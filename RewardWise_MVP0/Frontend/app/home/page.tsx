@@ -905,6 +905,7 @@ export default function HomePage() {
 											awardOptions={results.award_options}
 											returnAwardOptions={results.return_award_options}
 											flights={results.flights}
+											cashGoogleFlightsUrl={(results as any).cash_google_flights_url ?? null}
 											userPrograms={userPrograms}
 											userCards={results.user_cards ?? []}
 											verdictId={results.verdict_id}

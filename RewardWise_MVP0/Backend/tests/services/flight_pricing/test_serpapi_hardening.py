@@ -153,3 +153,20 @@ async def test_sampler_requests_cache_first(monkeypatch):
     out = await cs.sample_cash_prices_by_date("PDX", "BOI", ["2026-10-13"], "economy", 1)
     assert out == {"2026-10-13": 100}
     assert captured["cache_first"] is True
+
+
+@pytest.mark.asyncio
+async def test_google_flights_url_surfaces_from_search_metadata(monkeypatch):
+    """The pay_cash booking card links to SerpAPI's canonical URL for the
+    exact search — it must ride the provider result (and thus the cache)."""
+    async def _live(params):  # noqa: ANN001
+        return {
+            "search_metadata": {"google_flights_url": "https://www.google.com/travel/flights?tfs=CANON"},
+            "best_flights": [], "other_flights": [],
+            "price_insights": {"lowest_price": 500},
+        }
+
+    monkeypatch.setenv("SERPAPI_KEY", "test-key")
+    monkeypatch.setattr(sp, "_serpapi_get_with_retry", _live)
+    result = await sp.get_serpapi_cash_price("SEA", "NRT", "2027-03-15", "economy", 1, "2027-03-30")
+    assert result["google_flights_url"] == "https://www.google.com/travel/flights?tfs=CANON"

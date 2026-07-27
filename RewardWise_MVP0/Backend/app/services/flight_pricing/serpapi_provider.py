@@ -209,6 +209,10 @@ async def get_serpapi_cash_price(
     try:
         data = await _serpapi_get_with_retry(params)
         result = normalize_serpapi_response(data, is_roundtrip=is_roundtrip, currency="USD")
+        # Canonical Google Flights link for THIS exact search (both dates in
+        # tfs=). The pay_cash booking card links here — it is guaranteed to
+        # show the same fare we quoted, since the quote came from this search.
+        result["google_flights_url"] = (data.get("search_metadata") or {}).get("google_flights_url")
         print(f"serpapi_cash ms={int((time.monotonic() - started) * 1000)} route={origin}-{destination} ok={result.get('cash_price') is not None}")
         if result.get("cash_price") is not None:
             _cash_cache_put(params_key := _cash_cache_key(origin, destination, date, return_date, cabin, travelers, max_stops), result)
