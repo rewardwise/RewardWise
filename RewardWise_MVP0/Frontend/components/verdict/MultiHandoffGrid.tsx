@@ -15,6 +15,8 @@ export interface MultiHandoffCashAirline {
   airline: string;
   cashPrice: number | null;
   bookingUrl?: string | null;
+  /** SerpAPI's canonical Google Flights URL for the exact cash search. */
+  googleFlightsUrl?: string | null;
 }
 
 type Props = {
@@ -22,6 +24,7 @@ type Props = {
   programs?: MultiHandoffProgram[];
   cashAirline?: MultiHandoffCashAirline | null;
   bestDate: string;
+  returnDateLabel?: string | null;
   routeLabel: string;
   travelersLabel: string;
   legLabel?: string;
@@ -38,47 +41,12 @@ function fmtMoneyShort(amount: number) {
   return `$${amount % 1 === 0 ? amount.toFixed(0) : amount.toFixed(2)}`;
 }
 
-// Curated map for US carriers whose canonical domain isn't {slug}.com.
-// Slug synthesis would produce a wrong-or-redirecting URL (e.g.
-// "americanairlines.com" instead of "aa.com"). When in doubt, prefer
-// the airline's marketing/booking root over a vanity slug.
-const KNOWN_AIRLINE_DOMAINS: Record<string, string> = {
-  "united airlines": "united.com",
-  "delta air lines": "delta.com",
-  "american airlines": "aa.com",
-  "southwest airlines": "southwest.com",
-  "jetblue airways": "jetblue.com",
-  "alaska airlines": "alaskaair.com",
-  "spirit airlines": "spirit.com",
-  "frontier airlines": "flyfrontier.com",
-  "hawaiian airlines": "hawaiianairlines.com",
-  "allegiant air": "allegiantair.com",
-};
-
-function synthesizeAirlineHomepage(airline: string | null | undefined): string | null {
-  if (!airline) return null;
-  const norm = airline.toLowerCase().trim();
-  if (KNOWN_AIRLINE_DOMAINS[norm]) {
-    return `https://www.${KNOWN_AIRLINE_DOMAINS[norm]}`;
-  }
-  // Providers often send the SHORT carrier name ("Alaska", "Frontier"). Match
-  // it against the known keys before slug-guessing — the naive slug produced
-  // alaska.com (the state tourism site) for an Alaska Airlines itinerary.
-  const partial = Object.keys(KNOWN_AIRLINE_DOMAINS).find(
-    (k) => k.startsWith(`${norm} `) || k === norm || k.split(" ")[0] === norm
-  );
-  if (partial) {
-    return `https://www.${KNOWN_AIRLINE_DOMAINS[partial]}`;
-  }
-  const slug = norm.replace(/[^a-z0-9]+/g, "");
-  return slug ? `https://www.${slug}.com` : null;
-}
-
 export default function MultiHandoffGrid({
   recommendation,
   programs,
   cashAirline,
   bestDate,
+  returnDateLabel = null,
   routeLabel,
   travelersLabel,
   legLabel,
@@ -196,23 +164,35 @@ export default function MultiHandoffGrid({
 
   if (!cashAirline) return null;
   const airlineName = cashAirline.airline || "the airline";
-  // Cash-source resolution order: the flight's own booking URL -> the cash
-  // carrier's homepage -> Google Flights for the resolved route+date. All three
-  // are CASH booking sources; an award-program link must never appear here.
-  const googleFlightsFallback = `https://www.google.com/travel/flights?q=${encodeURIComponent(
-    `Flights ${routeLabel.replace(/[⇄→]/g, "to")} ${bestDate}`.replace(/\s+/g, " ")
+  // Cash-source resolution order (2026-07-27, homepage ELIMINATED — a bare
+  // carrier homepage isn't a booking link and may not even sell this fare):
+  //   1. bookingUrl — a real per-itinerary deeplink if a provider ever
+  //      supplies one (SerpAPI's search response never does; null today).
+  //   2. SerpAPI's canonical google_flights_url for the EXACT search — both
+  //      dates encoded in tfs=, guaranteed to show the fare we quoted.
+  //   3. Labeled best-effort ?q= link (undocumented format; only if the
+  //      canonical URL is absent from the payload).
+  const dateLabel = returnDateLabel ? `${bestDate} – ${returnDateLabel}` : bestDate;
+  const bestEffortFallback = `https://www.google.com/travel/flights?q=${encodeURIComponent(
+    `Flights ${routeLabel.replace(/[⇄→]/g, "to")} ${dateLabel}`.replace(/\s+/g, " ")
   )}`;
   const url =
     cashAirline.bookingUrl ||
-    synthesizeAirlineHomepage(cashAirline.airline) ||
-    googleFlightsFallback;
+    cashAirline.googleFlightsUrl ||
+    bestEffortFallback;
+  const usingCanonical = !cashAirline.bookingUrl && Boolean(cashAirline.googleFlightsUrl);
   const linkDomain = domainFromUrl(url);
+  const linkLabel = cashAirline.bookingUrl
+    ? `Visit ${linkDomain}`
+    : usingCanonical
+      ? "See this fare on Google Flights"
+      : "Search this route on Google Flights";
 
   const cardContent = (
     <div className="flex flex-col gap-4 rounded-2xl border border-emerald-400/20 bg-emerald-500/[0.06] p-5 md:flex-row md:items-center md:justify-between">
       <div className="min-w-0">
         <p className="text-base font-extrabold text-white">
-          Visit {linkDomain}
+          {linkLabel}
           <ExternalLink className="ml-2 inline h-4 w-4 align-text-bottom text-emerald-300" />
         </p>
         {cashAirline.cashPrice != null ? (
@@ -221,7 +201,7 @@ export default function MultiHandoffGrid({
           </p>
         ) : null}
         <p className="mt-1 text-xs text-slate-500">
-          {routeLabel} · {bestDate} · {travelersLabel}
+          {routeLabel} · {dateLabel} · {travelersLabel}
         </p>
       </div>
     </div>

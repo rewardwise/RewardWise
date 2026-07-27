@@ -409,6 +409,7 @@ async def search(
         "travelers": travelers,
         "is_roundtrip": return_date is not None,
         "cash_price": cash_price,
+        "cash_google_flights_url": cash_data.get("google_flights_url"),
         "price_level": cash_data.get("price_level"),
         "typical_price_range": cash_data.get("typical_price_range"),
         "flights": cash_data.get("flights", []),

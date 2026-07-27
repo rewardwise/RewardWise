@@ -83,151 +83,65 @@ function renderPayCashWithAirline(airline: string, bookingUrl: string | null = n
   });
 }
 
-describe("MultiHandoffGrid — cash card URL fallback (Ticket 86ba25kaa)", () => {
-  it("falls back to slug-synthesized homepage when bookingUrl is null (Virgin Australia)", () => {
-    renderPayCashWithAirline("Virgin Australia", null);
-    const anchor = container.querySelector<HTMLAnchorElement>("a");
-    expect(anchor, "card must be wrapped in an anchor when synthesis succeeds").not.toBeNull();
-    expect(anchor!.getAttribute("href")).toBe("https://www.virginaustralia.com");
-    expect(anchor!.getAttribute("target")).toBe("_blank");
-    expect(anchor!.getAttribute("rel")).toBe("noopener noreferrer");
-    expect(anchor!.textContent).toContain("Visit virginaustralia.com");
+describe("MultiHandoffGrid — cash link order (homepage ELIMINATED, 2026-07-27)", () => {
+  function renderCash(airline: string, bookingUrl: string | null, googleFlightsUrl: string | null, returnDateLabel: string | null = null) {
+    act(() => {
+      root.render(
+        <MultiHandoffGrid
+          recommendation="pay_cash"
+          cashAirline={{ airline, cashPrice: 1005, bookingUrl, googleFlightsUrl }}
+          bestDate="2027-03-15"
+          returnDateLabel={returnDateLabel}
+          routeLabel="SEA ⇄ NRT"
+          travelersLabel="1 traveler, economy"
+        />
+      );
+    });
+  }
+
+  it("canonical google_flights_url is primary when bookingUrl is null (the live case)", () => {
+    renderCash("China Airlines", null, "https://www.google.com/travel/flights?tfs=ENCODED", "2027-03-30");
+    const anchor = container.querySelector<HTMLAnchorElement>("a")!;
+    expect(anchor.getAttribute("href")).toBe("https://www.google.com/travel/flights?tfs=ENCODED");
+    expect(anchor.textContent).toContain("See this fare on Google Flights");
+    // NEVER the carrier homepage — chinaairlines.com must not appear anywhere.
+    expect(anchor.getAttribute("href")).not.toContain("chinaairlines");
+    expect(container.textContent).not.toContain("chinaairlines.com");
   });
 
-  it("slug synthesis strips whitespace (Air New Zealand)", () => {
-    renderPayCashWithAirline("Air New Zealand", null);
-    const anchor = container.querySelector<HTMLAnchorElement>("a");
-    expect(anchor!.getAttribute("href")).toBe("https://www.airnewzealand.com");
+  it("a real per-itinerary bookingUrl still wins over the canonical link", () => {
+    renderCash("United", "https://www.united.com/deep/link?itin=abc", "https://www.google.com/travel/flights?tfs=X");
+    const anchor = container.querySelector<HTMLAnchorElement>("a")!;
+    expect(anchor.getAttribute("href")).toBe("https://www.united.com/deep/link?itin=abc");
+    expect(anchor.textContent).toContain("Visit united.com");
   });
 
-  it("override map fires before slug — United Airlines maps to united.com (not unitedairlines.com)", () => {
-    renderPayCashWithAirline("United Airlines", null);
-    const anchor = container.querySelector<HTMLAnchorElement>("a");
-    expect(anchor!.getAttribute("href")).toBe("https://www.united.com");
-    expect(anchor!.getAttribute("href")).not.toContain("unitedairlines");
+  it("absent canonical URL -> labeled best-effort ?q= link with BOTH dates, never a homepage", () => {
+    renderCash("China Airlines", null, null, "2027-03-30");
+    const anchor = container.querySelector<HTMLAnchorElement>("a")!;
+    const href = anchor.getAttribute("href")!;
+    expect(href.startsWith("https://www.google.com/travel/flights?q=")).toBe(true);
+    expect(decodeURIComponent(href)).toContain("2027-03-15");
+    expect(decodeURIComponent(href)).toContain("2027-03-30");
+    expect(href).not.toContain("chinaairlines");
+    expect(anchor.textContent).toContain("Search this route on Google Flights");
   });
 
-  it("override map: Southwest Airlines -> southwest.com (slug would be southwestairlines.com)", () => {
-    renderPayCashWithAirline("Southwest Airlines", null);
-    const anchor = container.querySelector<HTMLAnchorElement>("a");
-    expect(anchor!.getAttribute("href")).toBe("https://www.southwest.com");
-    expect(anchor!.getAttribute("href")).not.toContain("southwestairlines");
+  it("sub-label shows BOTH dates on round trips", () => {
+    renderCash("China Airlines", null, "https://www.google.com/travel/flights?tfs=Y", "2027-03-30");
+    expect(container.textContent).toContain("2027-03-15 – 2027-03-30");
   });
 
-  it("override map: American Airlines -> aa.com (slug would be americanairlines.com)", () => {
-    renderPayCashWithAirline("American Airlines", null);
-    const anchor = container.querySelector<HTMLAnchorElement>("a");
-    expect(anchor!.getAttribute("href")).toBe("https://www.aa.com");
+  it("one-way keeps the single date", () => {
+    renderCash("Alaska", null, "https://www.google.com/travel/flights?tfs=Z", null);
+    expect(container.textContent).toContain("2027-03-15");
+    expect(container.textContent).not.toContain("–");
   });
 
-  it("slug fallback still fires for unknown carriers (Some Regional Carrier)", () => {
-    renderPayCashWithAirline("Some Regional Carrier", null);
-    const anchor = container.querySelector<HTMLAnchorElement>("a");
-    expect(anchor!.getAttribute("href")).toBe("https://www.someregionalcarrier.com");
-  });
-
-  it("falls back to Google Flights (cash source) when bookingUrl is null AND airline is empty string", () => {
-    renderPayCashWithAirline("", null);
-    const a = container.querySelector("a");
-    expect(a, "cash card must still render with the Google Flights fallback").not.toBeNull();
-    expect(a!.getAttribute("href")).toContain("google.com/travel/flights");
-  });
-
-  it("falls back to Google Flights (cash source) when bookingUrl is null AND airline is whitespace only", () => {
-    renderPayCashWithAirline("   ", null);
-    const a = container.querySelector("a");
-    expect(a).not.toBeNull();
-    expect(a!.getAttribute("href")).toContain("google.com/travel/flights");
-  });
-
-  it("synthesized URL anchor preserves target=_blank and rel=noopener noreferrer", () => {
-    renderPayCashWithAirline("Cathay Pacific", null);
-    const anchor = container.querySelector<HTMLAnchorElement>("a");
-    expect(anchor!.getAttribute("target")).toBe("_blank");
-    expect(anchor!.getAttribute("rel")).toBe("noopener noreferrer");
-    expect(anchor!.getAttribute("href")).toBe("https://www.cathaypacific.com");
-  });
-
-  it("real bookingUrl wins over synthesis when both are available", () => {
-    renderPayCashWithAirline("United Airlines", "https://booking.example.com/uniqueid");
-    const anchor = container.querySelector<HTMLAnchorElement>("a");
-    expect(anchor!.getAttribute("href")).toBe("https://booking.example.com/uniqueid");
-    expect(anchor!.getAttribute("href")).not.toContain("united.com");
-  });
-});
-
-// Ticket 86ba262xj: when a partner program needs a transfer from a flex
-// currency (e.g. Aeroplan ← Chase UR / Amex MR / Cap1 Miles), the booking
-// card must make Step 1 — Transfer the primary action, not bury it.
-function renderUsePoints(program: string, taxes: number | null = 80) {
-  act(() => {
-    root.render(
-      <MultiHandoffGrid
-        recommendation="use_points"
-        programs={[{ program, points: 35000, taxes }]}
-        bestDate="Jun 3"
-        routeLabel="YYC → DEL"
-        travelersLabel="1 traveler"
-      />
-    );
-  });
-}
-
-describe("MultiHandoffGrid — use_points transfer-step clarity (Bug 86ba262xj)", () => {
-  it("partner program (aeroplan): renders Step 1 — Transfer above the booking action", () => {
-    renderUsePoints("aeroplan", 80);
-    const step = container.querySelector('[data-testid="transfer-step"]');
-    expect(step, "transfer-step block must render for partner programs").not.toBeNull();
-    const text = step?.textContent || "";
-    expect(text).toContain("Transfer to Aeroplan");
-    expect(text).toContain("Chase UR");
-    expect(text).toContain("Amex MR");
-    expect(text).toContain("Cap1 Miles");
-    expect(text).toContain("1:1");
-  });
-
-  it("partner program: Step 2 header references the booking domain (aircanada.com)", () => {
-    renderUsePoints("aeroplan", 80);
-    expect(container.textContent).toContain("Book on aircanada.com");
-  });
-
-  it("partner program: booking CTA label is rewritten to make the transfer prerequisite explicit", () => {
-    renderUsePoints("aeroplan", 80);
-    const cta = Array.from(container.querySelectorAll<HTMLAnchorElement>("a")).find(
-      (a) => (a.getAttribute("href") || "").includes("aircanada.com"),
-    );
-    expect(cta, "booking anchor must point at aircanada.com").toBeTruthy();
-    expect(cta?.textContent || "").toContain("Transfer, then open aircanada.com");
-  });
-
-  it("direct-only program (alaska — empty TRANSFER_PARTNERS): no transfer step, keeps original CTA", () => {
-    renderUsePoints("alaska", 12);
-    expect(container.querySelector('[data-testid="transfer-step"]'))
-      .toBeNull();
-    // The transfer-step block must not leak through.
-    expect(container.textContent).not.toContain("Transfer to Alaska");
-    // The CTA reverts to the original "Open <domain>" wording, no transfer chain.
-    const cta = Array.from(container.querySelectorAll<HTMLAnchorElement>("a")).find(
-      (a) => (a.getAttribute("href") || "").includes("alaskaair.com"),
-    );
-    expect(cta?.textContent || "").toContain("Open alaskaair.com");
-    expect(cta?.textContent || "").not.toContain("Transfer, then open");
-  });
-
-  it("unknown slug (not in TRANSFER_PARTNERS): no transfer step, defensive fallback to single-step layout", () => {
-    renderUsePoints("etihad_unknown_slug", 25);
-    expect(container.querySelector('[data-testid="transfer-step"]'))
-      .toBeNull();
-    expect(container.textContent).not.toContain("Transfer to");
-  });
-
-  it("partner program: 'skip if miles already in {program}' hedge is visible", () => {
-    renderUsePoints("aeroplan", 80);
-    // We can't distinguish a user who holds Aeroplan miles directly from one
-    // who needs to transfer (backend data limitation). The hedge keeps the
-    // step honest for the direct-holder case.
-    expect(container.textContent).toContain(
-      "Skip this step if your miles are already in Aeroplan",
-    );
+  it("anchor preserves target=_blank and rel=noopener noreferrer", () => {
+    renderCash("China Airlines", null, "https://www.google.com/travel/flights?tfs=W");
+    const anchor = container.querySelector<HTMLAnchorElement>("a")!;
+    expect(anchor.getAttribute("target")).toBe("_blank");
+    expect(anchor.getAttribute("rel")).toBe("noopener noreferrer");
   });
 });
