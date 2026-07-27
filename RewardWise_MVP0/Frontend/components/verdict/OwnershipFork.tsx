@@ -4,7 +4,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ExternalLink } from "lucide-react";
-import { getProgramHandoffInfo } from "@/utils/airlines";
+import { getProgramHandoffInfo, type AwardTripContext } from "@/utils/airlines";
 import { transferFreshness, type Freshness } from "@/utils/transferFreshness";
 import { trackAnalyticsEvent } from "@/utils/analytics/client";
 import type { Ownership, ReachablePartner } from "@/types/verdict";
@@ -13,6 +13,8 @@ interface OwnershipForkProps {
 	ownership: Ownership;
 	searchId?: string | null;
 	verdictId?: string | null;
+	/** Route/date/pax context — enables the United award deep link. */
+	trip?: AwardTripContext | null;
 }
 
 function fmtPts(n: number): string {
@@ -58,7 +60,7 @@ function PartnerList({
 	);
 }
 
-export default function OwnershipFork({ ownership, searchId, verdictId }: OwnershipForkProps) {
+export default function OwnershipFork({ ownership, searchId, verdictId, trip = null }: OwnershipForkProps) {
 	const o = ownership;
 	const router = useRouter();
 	const [dismissed, setDismissed] = useState(false);
@@ -102,7 +104,7 @@ export default function OwnershipFork({ ownership, searchId, verdictId }: Owners
 	const label = o.program_label || o.program;
 	const fresh = transferFreshness(o.transfers_as_of);
 	const partners = o.reachable_partners ?? [];
-	const { url } = getProgramHandoffInfo(o.program);
+	const { url } = getProgramHandoffInfo(o.program, trip);
 	const hasHref = url !== "#";
 
 	// ── b2: owned_sufficient ────────────────────────────────────────────────

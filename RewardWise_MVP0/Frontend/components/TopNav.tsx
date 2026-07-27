@@ -54,10 +54,32 @@ export default function TopNav() {
 		};
 	}, [menuOpen]);
 
+	// ALL per-program chips (not just top-1) — the pill rotates through them.
 	const walletChips = useMemo(
-		() => computeWalletChips(hasWallet ? cards : []),
+		() => computeWalletChips(hasWallet ? cards : [], 99),
 		[cards, hasWallet],
 	);
+
+	// Pill rotation (5s cycle). WCAG 2.2.2: auto-updating content must be
+	// pausable — rotation pauses on hover AND keyboard focus. Under
+	// prefers-reduced-motion we do not auto-rotate at all (top program shown
+	// statically). A single program never rotates.
+	const [chipIndex, setChipIndex] = useState(0);
+	const [rotationPaused, setRotationPaused] = useState(false);
+	const reducedMotion =
+		typeof window !== "undefined" &&
+		window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+	useEffect(() => {
+		setChipIndex(0);
+		if (walletChips.length < 2 || reducedMotion) return;
+		if (rotationPaused) return;
+		const t = setInterval(
+			() => setChipIndex((i) => (i + 1) % walletChips.length),
+			5000,
+		);
+		return () => clearInterval(t);
+	}, [walletChips.length, rotationPaused, reducedMotion]);
+	const activeChip = walletChips[chipIndex] ?? walletChips[0];
 
 	const initial = (user?.email?.[0] ?? "?").toUpperCase();
 
@@ -100,16 +122,26 @@ export default function TopNav() {
 					{walletChips.length > 0 && (
 						<div
 							data-testid="nav-wallet-pill"
+							tabIndex={0}
+							onMouseEnter={() => setRotationPaused(true)}
+							onMouseLeave={() => setRotationPaused(false)}
+							onFocus={() => setRotationPaused(true)}
+							onBlur={() => setRotationPaused(false)}
+							aria-live="off"
 							className="font-mtw inline-flex items-center gap-x-2 rounded-mtw-pill border border-black/10 bg-white/80 px-2.5 py-1 text-mtw-small shadow-sm sm:px-3 sm:py-1.5"
 						>
 							{/* Prefix is the only part that doesn't fit at 375 — chip alone (~90px)
 							    does, so the pill renders at all widths and just drops the label. */}
 							<span className="hidden font-semibold text-mtw-emerald sm:inline">Your wallet</span>
-							{walletChips.map((c) => (
-								<span key={c.key} className="text-mtw-muted">
-									{c.label}
+							{activeChip ? (
+								<span
+									key={activeChip.key}
+									data-testid="nav-wallet-chip"
+									className="mtw-pill-chip text-mtw-muted"
+								>
+									{activeChip.label}
 								</span>
-							))}
+							) : null}
 						</div>
 					)}
 

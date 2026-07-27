@@ -247,3 +247,8 @@ body {
 @media (prefers-reduced-motion: reduce) {
 	.mtw-confetti { animation: none; display: none; }
 }
+
+/* Wallet-pill chip swap (rotation) — subtle fade-in per chip. */
+.mtw-pill-chip { animation: mtw-chip-fade 400ms ease; }
+@keyframes mtw-chip-fade { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .mtw-pill-chip { animation: none; } }

@@ -807,6 +807,14 @@ export default function VerdictCard({
                   ownership={verdict.ownership}
                   searchId={searchId ?? null}
                   verdictId={verdictId ?? null}
+                  trip={{
+                    origin: displayOrigin,
+                    destination: displayDestination,
+                    departDate: bestDate,
+                    returnDate: isRoundtrip ? bestReturnDate || null : null,
+                    travelers,
+                    cabin,
+                  }}
                 />
               ) : null}
 
@@ -823,6 +831,14 @@ export default function VerdictCard({
                 />
                 {recommendation === "use_points" ? (
                   <HowToBook
+                    trip={{
+                      origin: displayOrigin,
+                      destination: displayDestination,
+                      departDate: bestDate,
+                      returnDate: isRoundtrip ? bestReturnDate || null : null,
+                      travelers,
+                      cabin,
+                    }}
                     legs={[
                       ...(handoffPrograms[0]
                         ? [{

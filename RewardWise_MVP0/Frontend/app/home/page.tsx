@@ -467,7 +467,18 @@ export default function HomePage() {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [prefsLoaded, prefsDefaults, searchFill]);
 
+	// Latest-wins supersede guard (2026-07-28): auto-run can start a new
+	// search while one is in flight (fast/duplicate messages). The newest run
+	// owns all state; superseded runs abort their fetch and never touch
+	// progress/results — no orphaned 98% bar, no racing state writes.
+	const searchRunIdRef = useRef(0);
+	const searchAbortRef = useRef<AbortController | null>(null);
+
 	const runSearch = async () => {
+		const myRun = ++searchRunIdRef.current;
+		searchAbortRef.current?.abort();
+		const abort = new AbortController();
+		searchAbortRef.current = abort;
 		const isZoeTrigger = zoeTriggerRef.current;
 		const triggerSource = isZoeTrigger ? "zoe" : "manual";
 		const searchStartedAt = Date.now();
@@ -567,7 +578,9 @@ export default function HomePage() {
 				headers: {
 					Authorization: `Bearer ${session.access_token}`,
 				},
+				signal: abort.signal,
 			});
+			if (myRun !== searchRunIdRef.current) return; // superseded
 
 			if (!res.ok) {
 				const errData = await res.json().catch(() => null);
@@ -610,6 +623,9 @@ export default function HomePage() {
 				},
 			});
 		} catch (err: any) {
+			// A superseded run aborting is not an error — and it must never
+			// touch state that now belongs to the newest run.
+			if (myRun !== searchRunIdRef.current || err?.name === "AbortError") return;
 			const message = err.message || "Something went wrong. Try again.";
 			setSearchError(message);
 			trackAnalyticsEvent("search_failed", {
@@ -622,7 +638,8 @@ export default function HomePage() {
 				metadata: { ...currentSearchAnalyticsPayload(triggerSource).metadata, error_name: err?.name || null },
 			});
 		} finally {
-			setSearching(false);
+			// Only the CURRENT run may clear the searching state.
+			if (myRun === searchRunIdRef.current) setSearching(false);
 		}
 	};
 
