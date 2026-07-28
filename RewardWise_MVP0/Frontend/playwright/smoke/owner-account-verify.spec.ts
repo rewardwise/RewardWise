@@ -9,7 +9,7 @@ const BASE = "https://www.mytravelwallet.ai";
 
 test("owner: gate passage, wallet, b2 verdict over seeded points", async ({ browser }) => {
 	test.setTimeout(360_000);
-	const context = await browser.newContext();
+	const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
 	await mintSessionViaServiceRole(context, { email: "mytravelwalletai@gmail.com", baseUrl: BASE } as any);
 	const page = await context.newPage();
 

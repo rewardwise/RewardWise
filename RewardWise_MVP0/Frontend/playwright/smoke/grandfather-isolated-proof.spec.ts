@@ -16,7 +16,7 @@ test("existing non-internal account is grandfathered through", async ({ browser 
 	const email = secrets.MTW_CONTROL_TEST_EMAIL;
 	expect(email, "control account configured").toBeTruthy();
 
-	const context = await browser.newContext();
+	const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
 	await mintSessionViaServiceRole(context, {
 		email,
 		baseUrl: "https://www.mytravelwallet.ai",
