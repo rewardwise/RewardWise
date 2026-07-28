@@ -4,6 +4,7 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from app.api.validators import SearchParams, limiter  # RW-047
 from app.cache import find_search_verdict_in_db, get_search_memory_cache
+from app.cache.payload_cache import get_cached_payload, put_cached_payload
 from app.cache.types import SearchParams as CacheSearchParams
 from app.db import get_server_supabase, insert_one, insert_one_return_id
 from app.services.cash_sampler import sample_cash_prices_by_date
@@ -247,8 +248,15 @@ async def search(
     cached_verdict_details: dict | None = None
     cached_verdict_row = None
 
+    # 1. SHARED payload cache (params-keyed, 30-min, user-agnostic): a hit
+    #    skips ALL provider calls; per-user verdict recomputes on top.
+    provider_payload = get_cached_payload(supabase, cache_params)
+
+    # 2. SAME-USER verdict reuse (L1 memory / L2 Supabase). User-scoped since
+    #    2026-07-28: wallet-fit selection makes verdicts wallet-dependent, so
+    #    cross-user reuse served user B a winner picked for user A's wallet.
     try:
-        cached_payload = memory_cache.get(cache_params)
+        cached_payload = memory_cache.get(cache_params, user_id)
     except Exception:
         cached_payload = None
 
@@ -256,7 +264,7 @@ async def search(
         cached_verdict_row = cached_payload.get("verdict") or None
     else:
         try:
-            db_hit = find_search_verdict_in_db(supabase, cache_params)
+            db_hit = find_search_verdict_in_db(supabase, cache_params, user_id)
             if db_hit:
                 cached_verdict_row = db_hit.verdict
                 try:
@@ -264,6 +272,7 @@ async def search(
                         cache_params,
                         search_id=str(db_hit.search["id"]),
                         verdict=db_hit.verdict,
+                        user_id=user_id,
                     )
                 except Exception as exc:
                     print(f"l1_cache set failed (non-fatal): {str(exc)[:120]}")
@@ -304,11 +313,18 @@ async def search(
         )
         return _clean_awards(raw)
 
-    outbound_awards, cash_data, return_awards = await asyncio.gather(
-        outbound_task(),
-        get_cash_price(origin, destination, departure_date, cabin, travelers, return_date, max_stops=max_stops),
-        return_task(),
-    )
+    if provider_payload is not None:
+        # Payload-cache hit: ZERO provider calls. Cash + awards + samplers all
+        # come from the cached fetch (<=30 min old, shared across users).
+        outbound_awards = provider_payload.get("outbound_awards") or []
+        return_awards = provider_payload.get("return_awards") or []
+        cash_data = provider_payload.get("cash_data") or {}
+    else:
+        outbound_awards, cash_data, return_awards = await asyncio.gather(
+            outbound_task(),
+            get_cash_price(origin, destination, departure_date, cabin, travelers, return_date, max_stops=max_stops),
+            return_task(),
+        )
 
     cash_price = cash_data.get("cash_price")
 
@@ -316,14 +332,26 @@ async def search(
     # own date's cash, not the anchor-date cash (ClickUp 86b9x8qr2).
     outbound_dates = [a.get("date") for a in outbound_awards if a.get("date")]
     return_dates = [a.get("date") for a in return_awards if a.get("date")]
-    cash_out_by_date, cash_ret_by_date = await asyncio.gather(
-        sample_cash_prices_by_date(
-            origin, destination, outbound_dates, cabin, travelers, max_stops=max_stops
-        ),
-        sample_cash_prices_by_date(
-            destination, origin, return_dates, cabin, travelers, max_stops=max_stops
-        ),
-    )
+    if provider_payload is not None:
+        cash_out_by_date = provider_payload.get("cash_out_by_date") or {}
+        cash_ret_by_date = provider_payload.get("cash_ret_by_date") or {}
+    else:
+        cash_out_by_date, cash_ret_by_date = await asyncio.gather(
+            sample_cash_prices_by_date(
+                origin, destination, outbound_dates, cabin, travelers, max_stops=max_stops
+            ),
+            sample_cash_prices_by_date(
+                destination, origin, return_dates, cabin, travelers, max_stops=max_stops
+            ),
+        )
+        # Populate the shared payload cache for the next searcher (any user).
+        put_cached_payload(supabase, cache_params, {
+            "cash_data": cash_data,
+            "outbound_awards": outbound_awards,
+            "return_awards": return_awards,
+            "cash_out_by_date": cash_out_by_date,
+            "cash_ret_by_date": cash_ret_by_date,
+        })
 
     award_options = _build_award_options_with_per_date_cash(
         outbound_awards, cash_out_by_date, include_endpoint_airports=True
@@ -371,6 +399,66 @@ async def search(
             user_programs=user_programs or None,
         )
 
+    # --- 1-seat refetch dial (payload-cache hits only, operator-approved) ---
+    # A cached award with remaining_seats == 1 is the row most likely to be
+    # stale-wrong ("you can book this" on a seat someone just took). When the
+    # SELECTED winner (either leg) is a 1-seater from cache, refetch just the
+    # award legs fresh and re-select; cash stays cached.
+    def _winner_seats(winner: dict | None, options: list[dict]) -> int | None:
+        if not winner:
+            return None
+        for a in options:
+            if (
+                a.get("program") == winner.get("program")
+                and a.get("points") == winner.get("points")
+                and (winner.get("date") is None or a.get("date") == winner.get("date"))
+            ):
+                seats = a.get("remaining_seats")
+                return int(seats) if seats is not None else None
+        return None
+
+    if provider_payload is not None:
+        w_seats = _winner_seats((verdict_details or {}).get("winner"), award_options)
+        rw_seats = _winner_seats((verdict_details or {}).get("return_winner"), return_award_options)
+        if w_seats == 1 or rw_seats == 1:
+            print(f"payload_cache 1seat_refetch: winner seats={w_seats} return_seats={rw_seats} — refreshing award legs (cash stays cached)")
+            outbound_awards, return_awards = await asyncio.gather(outbound_task(), return_task())
+            outbound_dates = [a.get("date") for a in outbound_awards if a.get("date")]
+            return_dates = [a.get("date") for a in return_awards if a.get("date")]
+            # Samplers run cache_first — dates already priced in the last 30
+            # minutes serve from the cash cache, so the cash side stays cached.
+            cash_out_by_date, cash_ret_by_date = await asyncio.gather(
+                sample_cash_prices_by_date(
+                    origin, destination, outbound_dates, cabin, travelers, max_stops=max_stops
+                ),
+                sample_cash_prices_by_date(
+                    destination, origin, return_dates, cabin, travelers, max_stops=max_stops
+                ),
+            )
+            award_options = _build_award_options_with_per_date_cash(
+                outbound_awards, cash_out_by_date, include_endpoint_airports=True
+            )
+            return_award_options = _build_award_options_with_per_date_cash(
+                return_awards, cash_ret_by_date, include_endpoint_airports=True
+            )
+            if award_options:
+                winning_date = award_options[0].get("date")
+            if return_award_options:
+                winning_return_date = return_award_options[0].get("date")
+            verdict_details = await generate_verdict(
+                origin=origin,
+                destination=destination,
+                date=departure_date,
+                cabin=cabin,
+                travelers=travelers,
+                is_roundtrip=return_date is not None,
+                return_date=return_date,
+                cash_price=cash_price,
+                award_options=award_options,
+                return_award_options=return_award_options,
+                user_programs=user_programs or None,
+            )
+
     # --- Persist search + verdict into Supabase ---
     try:
         raw_query = str(getattr(request.url, "query", "")).strip() or None
@@ -408,7 +496,7 @@ async def search(
         verdict_id = inserted_verdict.get("id")
 
         try:
-            memory_cache.set(cache_params, search_id=search_id, verdict=inserted_verdict)
+            memory_cache.set(cache_params, search_id=search_id, verdict=inserted_verdict, user_id=user_id)
         except Exception as exc:
             print(f"l1_cache post-compute set failed (non-fatal): {str(exc)[:120]}")
 

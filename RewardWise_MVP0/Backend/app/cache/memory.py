@@ -12,7 +12,7 @@ from datetime import date, timedelta
 from typing import Any
 
 from app.cache.config import FLIGHT_CACHE, SEARCH_CACHE
-from app.cache.keys import build_flight_cache_key, build_search_cache_key
+from app.cache.keys import build_flight_cache_key, build_search_cache_key, build_user_verdict_cache_key
 from app.cache.normalize import to_departure_ms
 from app.cache.types import (
     CachedVerdictPayload,
@@ -70,10 +70,11 @@ _search_store = _LRUStore(SEARCH_CACHE["MAX_SIZE"])
 
 
 class SearchMemoryCache:
-    def get(self, params: SearchParams) -> CachedVerdictPayload | None:
-        return _search_store.get(build_search_cache_key(params))
+    def get(self, params: SearchParams, user_id: str) -> CachedVerdictPayload | None:
+        # User-scoped (cross-user wallet-fit leak fix, 2026-07-28).
+        return _search_store.get(build_user_verdict_cache_key(params, user_id))
 
-    def set(self, params: SearchParams, search_id: str, verdict: VerdictRow) -> None:
+    def set(self, params: SearchParams, search_id: str, verdict: VerdictRow, user_id: str) -> None:
         dep = params.get("departure_date") or ""
         try:
             if date.fromisoformat(dep) < date.today() - timedelta(days=1):
@@ -87,7 +88,7 @@ class SearchMemoryCache:
             "from_cache": True,
         }
         _search_store.put(
-            build_search_cache_key(params),
+            build_user_verdict_cache_key(params, user_id),
             payload,
             time.time() * 1000 + SEARCH_CACHE["TTL_MS"],
         )
