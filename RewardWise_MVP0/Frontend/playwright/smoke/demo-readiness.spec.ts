@@ -7,18 +7,18 @@
 // inputs legible (white bg / dark text), no Concierge CTA, invite-only landing.
 // All contexts are minted fresh (explicit empty storageState — never inherit
 // the project smoke cookies).
-import { test, expect, type BrowserContext, type Page } from "@playwright/test";
+import { test, expect, type Browser, type BrowserContext } from "@playwright/test";
 import { mintSessionViaServiceRole } from "../auth/mint-session";
 
 const BASE = "https://www.mytravelwallet.ai";
 const ART = "playwright/.artifacts/demo";
 
-async function ownerContext(browser: any, viewport: { width: number; height: number }): Promise<BrowserContext> {
+async function ownerContext(browser: Browser, viewport: { width: number; height: number }): Promise<BrowserContext> {
 	const context = await browser.newContext({
 		storageState: { cookies: [], origins: [] },
 		viewport,
 	});
-	await mintSessionViaServiceRole(context, { email: "mytravelwalletai@gmail.com", baseUrl: BASE } as any);
+	await mintSessionViaServiceRole(context, { email: "mytravelwalletai@gmail.com", baseUrl: BASE } as Parameters<typeof mintSessionViaServiceRole>[1]);
 	return context;
 }
 
