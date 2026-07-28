@@ -265,9 +265,13 @@ async def search(
                         search_id=str(db_hit.search["id"]),
                         verdict=db_hit.verdict,
                     )
-                except Exception:
-                    pass
-        except Exception:
+                except Exception as exc:
+                    print(f"l1_cache set failed (non-fatal): {str(exc)[:120]}")
+        except Exception as exc:
+            # The INNER function logs query errors itself; this catches crashes
+            # in the call/plumbing. Never let it read as a silent miss — a bare
+            # version of this except hid a 100% L2 failure (2026-07-28).
+            print(f"l2_cache lookup crashed (treating as miss): {str(exc)[:160]}")
             cached_verdict_row = None
 
     if cached_verdict_row and cached_verdict_row.get("details"):
@@ -405,8 +409,8 @@ async def search(
 
         try:
             memory_cache.set(cache_params, search_id=search_id, verdict=inserted_verdict)
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"l1_cache post-compute set failed (non-fatal): {str(exc)[:120]}")
 
     except Exception as e:
         raise HTTPException(

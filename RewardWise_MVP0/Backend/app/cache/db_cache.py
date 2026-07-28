@@ -6,6 +6,7 @@ InsertCachedFlightsResult / insert_cached_flights_only_new - upsert flight rows.
 
 from __future__ import annotations
 
+import logging
 import time
 from datetime import datetime, timezone
 from typing import Any
@@ -22,6 +23,8 @@ from app.cache.normalize import (
 )
 from app.cache.types import FlightCacheInput, SearchParams, VerdictRow
 from app.db.errors import DbError, wrap_supabase_error
+
+logger = logging.getLogger(__name__)
 
 
 
@@ -51,32 +54,38 @@ def find_search_verdict_in_db(
         cabin,
     ) = normalize_search_params(params)
 
+    # The searches table has NO flex-end columns (departure_date_end /
+    # return_date_end were never persisted), so flex-window searches cannot
+    # be distinguished in L2 — matching a flex search to an exact-date row
+    # would reuse the WRONG verdict. Skip L2 for flex searches instead of
+    # backfilling schema to satisfy what was dead code.
+    #
+    # History (2026-07-28): the previous query selected/filtered those
+    # nonexistent columns — PostgREST 42703 on EVERY call, swallowed by a
+    # bare `except: return None`. L2 hit rate was silently 0% for the
+    # feature's whole life. Hence the loud logging below: a query/schema
+    # error must never again read as a cache miss.
+    if departure_date_end or return_date_end:
+        return None
+
     since_ms = (time.time() * 1000) - SEARCH_DB_CACHE["MAX_AGE_MS"]
     since_iso = datetime.fromtimestamp(since_ms / 1000, tz=timezone.utc).isoformat()
 
     try:
-        query = (
+        response = (
             supabase.table("searches")
-            .select(
-                "id, origin, destination, departure_date, departure_date_end, "
-                "return_date, passengers, cabin"
-            )
+            .select("id, origin, destination, departure_date, return_date, passengers, cabin")
             .eq("origin", origin)
             .eq("destination", destination)
             .eq("departure_date", departure)
-        )
-        if departure_date_end:
-            query = query.eq("departure_date_end", departure_date_end)
-        else:
-            query = query.is_("departure_date_end", "null")
-        response = (
-            query
             .gte("created_at", since_iso)
             .order("created_at", desc=True)
             .limit(10)
             .execute()
         )
-    except Exception:
+    except Exception as exc:
+        logger.error("l2_cache searches query FAILED (treating as miss): %s", exc)
+        print(f"l2_cache ERROR searches query failed: {str(exc)[:160]}")
         return None
 
     searches = response.data or []
@@ -89,9 +98,7 @@ def find_search_verdict_in_db(
             normalize(row.get("origin") or "") == origin
             and normalize(row.get("destination") or "") == destination
             and normalize_date(row.get("departure_date") or "") == departure
-            and normalize_date(row.get("departure_date_end") or "") == departure_date_end
             and normalize_date(row.get("return_date") or "") == return_date
-            and normalize_date(row.get("return_date_end") or "") == return_date_end
             and int(row.get("passengers") or 0) == passengers
             and normalize_cabin(row.get("cabin")) == cabin
         ):
@@ -110,12 +117,15 @@ def find_search_verdict_in_db(
             .limit(1)
             .execute()
         )
-    except Exception:
+    except Exception as exc:
+        logger.error("l2_cache verdicts query FAILED (treating as miss): %s", exc)
+        print(f"l2_cache ERROR verdicts query failed: {str(exc)[:160]}")
         return None
 
     verdict_data = verdict_response.data
     if not verdict_data:
         return None
+    print(f"l2_cache verdict_hit search_id={matching['id']}")
     return SearchDbLookupResult(search=matching, verdict=verdict_data[0])
 
 
