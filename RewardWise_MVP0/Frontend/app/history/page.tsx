@@ -135,12 +135,21 @@ type BookedSearchRow = {
 	created_at: string;
 };
 
+// Date-only strings (YYYY-MM-DD) must be parsed in LOCAL tz, not UTC:
+// new Date("2026-12-08") is UTC midnight and renders as Dec 7 in Pacific —
+// the audit-#2 off-by-one that shifted EVERY history row a day early.
+// Same pattern as FlightSection's parser.
+function parseDateOnlyLocal(dateStr: string): Date {
+	const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(dateStr);
+	if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+	return new Date(dateStr);
+}
 function formatMonthYear(dateStr: string) {
-	return new Date(dateStr).toLocaleDateString("en-US", { month: "short", year: "numeric" });
+	return parseDateOnlyLocal(dateStr).toLocaleDateString("en-US", { month: "short", year: "numeric" });
 }
 function formatDateNice(dateStr?: string | null) {
 	if (!dateStr) return "";
-	return new Date(dateStr).toLocaleDateString("en-US", {
+	return parseDateOnlyLocal(dateStr).toLocaleDateString("en-US", {
 		month: "short",
 		day: "numeric",
 		year: "numeric",

@@ -37,7 +37,14 @@ describe("light-surface guard", () => {
 			const src = readFileSync(f, "utf8");
 			for (const m of src.matchAll(DARK_BG)) used.add(m[0]);
 		}
-		const missing = [...used].filter((cls) => !CSS.includes(`.mtw-light .${cssEscape(cls)}`));
+		// Boundary-aware match: `.mtw-light .bg-gray-900` must NOT be satisfied
+		// by the substring prefix of `.mtw-light .bg-gray-900\/90` — that
+		// collision let the bare wallet-setup input class through (audit #2).
+		const missing = [...used].filter((cls) => {
+			const sel = `.mtw-light .${cssEscape(cls)}`;
+			const re = new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*[{,\n]");
+			return !re.test(CSS);
+		});
 		expect(missing, `add .mtw-light remaps to globals.css for: ${missing.join(", ")}`).toEqual([]);
 	});
 

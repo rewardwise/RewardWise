@@ -252,3 +252,13 @@ body {
 .mtw-pill-chip { animation: mtw-chip-fade 400ms ease; }
 @keyframes mtw-chip-fade { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .mtw-pill-chip { animation: none; } }
+
+/* Bare dark-bg remaps — the guard previously false-passed bare classes via
+   substring collision with the opacity-variant rules (audit-#2 wallet-setup
+   inputs). Bare forms get explicit rules. */
+.mtw-light .bg-gray-900 { background-color: #ffffff; }
+.mtw-light .bg-gray-800 { background-color: #f8fafc; }
+.mtw-light .bg-slate-900 { background-color: #ffffff; }
+.mtw-light .bg-slate-800 { background-color: #f8fafc; }
+.mtw-light .bg-slate-950 { background-color: #ffffff; }
+.mtw-light .bg-gray-950 { background-color: #ffffff; }

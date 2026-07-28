@@ -727,7 +727,7 @@ export default function WalletSetupPage() {
                             }
                           }}
                           onChange={liveOnChange}
-                          className={`min-w-0 flex-1 bg-gray-900 border rounded-lg py-2 px-3 text-white text-sm focus:outline-none focus:ring-2 ${
+                          className={`min-w-0 flex-1 bg-white border border-gray-300 rounded-lg py-2 px-3 text-gray-900 text-sm focus:outline-none focus:ring-2 ${
                             rowErrors[card.id]
                               ? "border-red-500 focus:ring-red-500"
                               : "border-gray-700 focus:ring-emerald-500"
