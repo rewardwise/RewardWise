@@ -388,6 +388,7 @@ export default function HomePage() {
 	const ZOE_AUTORUN_DEBOUNCE_MS = 900;
 
 	const handleFillSearch = (data: any) => {
+		formTouchedRef.current = true;
 		trackAnalyticsEvent("zoe_filled_search_form", {
 			event_type: "zoe",
 			metadata: { ...data },
@@ -454,13 +455,18 @@ export default function HomePage() {
 	// there's no explicit deep-link / Zoe fill (which always wins). Precedence:
 	// searchFill/Zoe > saved prefs > hardcoded defaults.
 	const prefsSeededRef = useRef(false);
+	// Prefs load async — if the user (or Zoe) already changed cabin/travelers/
+	// trip-type before the fetch resolves, seeding would stomp their edit back
+	// to the saved default (the "verdict says premium economy, dropdown says
+	// Economy" bug). A touched form is never seeded.
+	const formTouchedRef = useRef(false);
 	useEffect(() => {
 		if (!prefsLoaded || prefsSeededRef.current) return;
 		prefsSeededRef.current = true;
 		const hasFill = Boolean(
 			searchFill && (searchFill.cabin || searchFill.travelers || searchFill.tripType),
 		);
-		if (hasFill) return;
+		if (hasFill || formTouchedRef.current) return;
 		setCabin(prefsDefaults.cabin);
 		setTravelers(prefsDefaults.travelers);
 		setTripType(prefsDefaults.trip_type);
@@ -598,6 +604,10 @@ export default function HomePage() {
 				await sleep(remainingLoadingMs);
 			}
 			setResults(data);
+			// The form must mirror what was actually searched — a late prefs
+			// seed (or any future reset) can leave the cabin dropdown showing a
+			// different cabin than the verdict on screen.
+			if (data.cabin) setCabin(data.cabin);
 			trackAnalyticsEvent("search_completed", {
 				event_type: "search",
 				...currentSearchAnalyticsPayload(triggerSource),
@@ -811,6 +821,7 @@ export default function HomePage() {
 										<button
 											key={type}
 											onClick={() => {
+												formTouchedRef.current = true;
 												setTripType(type);
 												if (type === "oneway") setReturnDate("");
 											}}
@@ -835,7 +846,7 @@ export default function HomePage() {
 								<div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
 									<div>
 										<label className="mb-1 flex items-center gap-1 text-xs text-mtw-muted"><User className="h-3 w-3" /> TRAVELERS</label>
-										<select value={travelers} onChange={(e) => setTravelers(Number(e.target.value))} className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+										<select value={travelers} onChange={(e) => { formTouchedRef.current = true; setTravelers(Number(e.target.value)); }} className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
 											{/* 1-9 to match the backend validator + saved Preferences default
 											    (a saved 7-9 must have a matching option, not render blank). */}
 											{[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
@@ -856,7 +867,7 @@ export default function HomePage() {
 									</div>
 									<div>
 										<label className="mb-1 flex items-center gap-1 text-xs text-mtw-muted"><Plane className="h-3 w-3" /> CABIN</label>
-										<select value={cabin} onChange={(e) => setCabin(e.target.value)} className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+										<select value={cabin} onChange={(e) => { formTouchedRef.current = true; setCabin(e.target.value); }} className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
 											<option value="economy">Economy</option>
 											<option value="premium_economy">Premium Economy</option>
 											<option value="business">Business</option>
