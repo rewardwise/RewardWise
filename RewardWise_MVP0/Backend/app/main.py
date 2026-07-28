@@ -10,6 +10,12 @@ from app.admin.zoe_eval_routes import router as zoe_admin_router
 from app.api.zoe_stt import router as zoe_stt_router
 from app.api.zoe_voice import router as zoe_voice_router
 from app.cors_config import ALLOWED_ORIGINS, ALLOWED_ORIGIN_REGEX
+from app.startup_checks import run_startup_checks
+
+# Fail-fast BEFORE the server starts accepting traffic: must-load static data
+# (transfer table etc.) is validated at import time so a broken deploy dies
+# loudly here instead of silently serving reachability-blind verdicts.
+run_startup_checks()
 
 app = FastAPI(title="MyTravelWallet Backend")
 
