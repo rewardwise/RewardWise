@@ -172,3 +172,45 @@ describe("P0 wrong-trip guard (2026-07-27 incident)", () => {
 		expect(extractTripParams("how do transfer ratios work?", TODAY, CUR2)).toBeNull();
 	});
 });
+
+describe("cabin extraction (search-business incident 2026-07-28)", () => {
+	const CUR3 = { origin: "SEA", destination: "NRT,HND", date: "2027-03-15", return_date: "2027-03-31" };
+
+	it("command phrasings map to cabin and auto-run on a complete form", () => {
+		for (const msg of ["search business", "search it in business", "what about business", "make it business"]) {
+			const e = extractTripParams(msg, TODAY, CUR3);
+			expect(e?.cabin, msg).toBe("business");
+			expect(planTripFill(e, CUR3).willAutorun, msg).toBe(true);
+		}
+	});
+
+	it("all cabin vocabularies", () => {
+		expect(extractTripParams("premium economy please", TODAY, CUR3)?.cabin).toBe("premium_economy");
+		expect(extractTripParams("switch to first class", TODAY, CUR3)?.cabin).toBe("first");
+		expect(extractTripParams("back to economy", TODAY, CUR3)?.cabin).toBe("economy");
+		expect(extractTripParams("in coach is fine", TODAY, CUR3)?.cabin).toBe("economy");
+	});
+
+	it("'business trip' phrasing never sets cabin", () => {
+		const e = extractTripParams("going on a business trip to Tokyo March 15 to 20", TODAY);
+		expect(e?.cabin).toBeUndefined();
+	});
+
+	it("bare 'first' (non-class) never sets cabin", () => {
+		expect(extractTripParams("the first option looks good", TODAY, CUR3)?.cabin).toBeUndefined();
+	});
+
+	it("cabin word with an incomplete trip HOLDS (P0 discipline)", () => {
+		const e = extractTripParams("search business", TODAY, null);
+		expect(e?.cabin).toBe("business");
+		const p = planTripFill(e, null);
+		expect(p.willAutorun).toBe(false);
+		expect(p.missing).toContain("origin");
+	});
+
+	it("full statement with inline cabin runs with cabin set", () => {
+		const e = extractTripParams("Denver to Austin September 10 to 14 in business", TODAY);
+		expect(e?.cabin).toBe("business");
+		expect(planTripFill(e, null).willAutorun).toBe(true);
+	});
+});

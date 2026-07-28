@@ -19,6 +19,7 @@ export interface ExtractedTrip {
 	return_date?: string;
 	travelers?: number;
 	tripType?: "roundtrip" | "oneway";
+	cabin?: "economy" | "premium_economy" | "business" | "first";
 	/** A route-shaped phrase ("X to Y", "from X", "fly to X") matched
 	 *  textually but a named place FAILED to resolve. The auto-run must
 	 *  never fire on this — the user explicitly changed a field we could
@@ -237,6 +238,22 @@ export function extractTripParams(
 	// Non-trip guard: nothing confidently extracted -> null (form untouched).
 	// return_date-only (incremental "come back on the 25th") and travelers-only
 	// ("make it 2 travelers") are valid partial updates.
+	// Cabin detection ("search business", "make it business", "in first
+	// class", "premium economy"). Closed vocabulary — no resolution risk —
+	// but conservative on ambiguous words: "business" is excluded when it
+	// heads a phrase like "business trip", and bare "first" only counts as
+	// "first class" / "in first" (never "the first of March", which the date
+	// parser owns anyway).
+	if (/\bpremium\s+econ(?:omy)?\b/.test(msg)) {
+		out.cabin = "premium_economy";
+	} else if (/\bbusiness\b(?!\s+(?:trip|meeting|travel|traveler))/.test(msg)) {
+		out.cabin = "business";
+	} else if (/\bfirst\s+class\b|\bin\s+first\b/.test(msg)) {
+		out.cabin = "first";
+	} else if (/\b(?:economy|coach)\b/.test(msg)) {
+		out.cabin = "economy";
+	}
+
 	// The user named a route we could not fully apply — mark it so the
 	// consumer HOLDS the auto-run and asks, instead of searching stale
 	// origin/destination with fresh dates (the P0 wrong-trip disaster).
@@ -246,7 +263,7 @@ export function extractTripParams(
 
 	const hasSignal = Boolean(
 		out.unresolved_place ||
-		out.origin || out.destination || out.date || out.return_date || out.travelers
+		out.origin || out.destination || out.date || out.return_date || out.travelers || out.cabin
 	);
 	if (!hasSignal) return null;
 	return out;
