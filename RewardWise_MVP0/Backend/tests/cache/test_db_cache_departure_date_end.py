@@ -102,19 +102,19 @@ _ROW = {"id": "s-1", "origin": "SEA", "destination": "NRT,HND",
 
 def test_flex_search_skips_l2_entirely():
     client = _FakeSupabase([_ROW], [_verdict_row(search_id="s-1")])
-    assert find_search_verdict_in_db(client, _params(departure_date_end="2027-03-18")) is None
-    assert find_search_verdict_in_db(client, _params(return_date_end="2027-04-02")) is None
+    assert find_search_verdict_in_db(client, _params(departure_date_end="2027-03-18"), user_id="u-1") is None
+    assert find_search_verdict_in_db(client, _params(return_date_end="2027-04-02"), user_id="u-1") is None
 
 
 def test_exact_date_search_hits_on_real_columns():
     client = _FakeSupabase([_ROW], [_verdict_row(search_id="s-1")])
-    hit = find_search_verdict_in_db(client, _params())
+    hit = find_search_verdict_in_db(client, _params(), user_id="u-1")
     assert hit is not None and hit.search["id"] == "s-1"
 
 
 def test_query_never_references_phantom_flex_columns():
     client = _FakeSupabase([_ROW], [_verdict_row(search_id="s-1")])
-    find_search_verdict_in_db(client, _params())
+    find_search_verdict_in_db(client, _params(), user_id="u-1")
     q = client.search_query
     assert "departure_date_end" not in q.filters
     assert "departure_date_end" not in q.is_filters
@@ -122,4 +122,10 @@ def test_query_never_references_phantom_flex_columns():
 
 def test_exact_date_does_not_match_different_return_date():
     client = _FakeSupabase([_ROW], [_verdict_row(search_id="s-1")])
-    assert find_search_verdict_in_db(client, _params(return_date="2027-03-30")) is None
+    assert find_search_verdict_in_db(client, _params(return_date="2027-03-30"), user_id="u-1") is None
+
+
+def test_l2_query_filters_by_user():
+    client = _FakeSupabase([_ROW], [_verdict_row(search_id="s-1")])
+    find_search_verdict_in_db(client, _params(), user_id="u-42")
+    assert client.search_query.filters.get("user_id") == "u-42"

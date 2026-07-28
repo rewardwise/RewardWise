@@ -56,7 +56,7 @@ ROW = {"id": "s-1", "origin": "SEA", "destination": "NRT,HND",
 
 def test_hits_on_matching_row_with_real_columns_only():
     client = _Client(searches=[ROW], verdicts=[{"id": "v-1", "search_id": "s-1", "details": {"x": 1}}])
-    hit = find_search_verdict_in_db(client, dict(PARAMS))
+    hit = find_search_verdict_in_db(client, dict(PARAMS), user_id="u-1")
     assert hit is not None
     assert hit.verdict["id"] == "v-1"
     # The query must never reference the nonexistent flex-end columns.
@@ -68,18 +68,26 @@ def test_hits_on_matching_row_with_real_columns_only():
 def test_flex_end_params_skip_l2_no_false_hit():
     client = _Client(searches=[ROW], verdicts=[{"id": "v-1", "search_id": "s-1", "details": {}}])
     flex = dict(PARAMS, departure_date_end="2027-03-18")
-    assert find_search_verdict_in_db(client, flex) is None
+    assert find_search_verdict_in_db(client, flex, user_id="u-1") is None
 
 
 def test_mismatched_return_date_misses():
     client = _Client(searches=[ROW], verdicts=[{"id": "v-1", "search_id": "s-1", "details": {}}])
-    assert find_search_verdict_in_db(client, dict(PARAMS, return_date="2027-03-30")) is None
+    assert find_search_verdict_in_db(client, dict(PARAMS, return_date="2027-03-30"), user_id="u-1") is None
 
 
 def test_query_error_LOGS_and_misses(capsys, caplog):
     client = _Client(raise_exc=RuntimeError("42703 column does not exist"))
-    out = find_search_verdict_in_db(client, dict(PARAMS))
+    out = find_search_verdict_in_db(client, dict(PARAMS), user_id="u-1")
     assert out is None
     captured = capsys.readouterr().out
     assert "l2_cache ERROR" in captured, "a query error must be LOUD, never a silent miss"
     assert "42703" in captured
+
+
+def test_no_user_id_never_reuses_a_verdict():
+    """Cross-user wallet-fit leak fix (2026-07-28): verdict reuse is
+    same-user ONLY. Without a user, the lookup must refuse."""
+    client = _Client(searches=[ROW], verdicts=[{"id": "v-1", "search_id": "s-1", "details": {}}])
+    assert find_search_verdict_in_db(client, dict(PARAMS)) is None
+    assert find_search_verdict_in_db(client, dict(PARAMS), user_id=None) is None

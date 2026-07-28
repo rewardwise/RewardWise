@@ -42,6 +42,7 @@ class SearchDbLookupResult:
 def find_search_verdict_in_db(
     supabase: Client,
     params: SearchParams,
+    user_id: str | None = None,
 ) -> SearchDbLookupResult | None:
     (
         origin,
@@ -68,6 +69,12 @@ def find_search_verdict_in_db(
     if departure_date_end or return_date_end:
         return None
 
+    # Same-user only (cross-user wallet-fit leak fix, 2026-07-28): verdicts
+    # embed wallet-dependent selection; reuse must never cross users. The
+    # shared layer is the payload cache, not this one.
+    if not user_id:
+        return None
+
     since_ms = (time.time() * 1000) - SEARCH_DB_CACHE["MAX_AGE_MS"]
     since_iso = datetime.fromtimestamp(since_ms / 1000, tz=timezone.utc).isoformat()
 
@@ -78,6 +85,7 @@ def find_search_verdict_in_db(
             .eq("origin", origin)
             .eq("destination", destination)
             .eq("departure_date", departure)
+            .eq("user_id", user_id)
             .gte("created_at", since_iso)
             .order("created_at", desc=True)
             .limit(10)

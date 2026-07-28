@@ -14,5 +14,13 @@ def build_search_cache_key(params: SearchParams) -> str:
     return f"search:{o}|{d}|{dep_seg}|{ret_seg}|{pax}|{cab}"
 
 
+def build_user_verdict_cache_key(params: SearchParams, user_id: str) -> str:
+    """Verdict-reuse key (L1). MUST include the user: since wallet-fit
+    selection (#2 step c), verdicts are wallet-dependent — a cross-user
+    verdict reuse can serve user B a winner picked for user A's wallet.
+    (The payload cache is the shared, user-agnostic layer instead.)"""
+    return f"user:{user_id}|{build_search_cache_key(params)}"
+
+
 def build_flight_cache_key(flight_id: str, airline: str) -> str:
     return f"flight:{str(flight_id).strip()}|{normalize(airline)}"
