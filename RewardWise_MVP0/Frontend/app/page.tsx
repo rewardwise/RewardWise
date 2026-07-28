@@ -174,7 +174,7 @@ function LandingPageContent() {
 					</h1>
 					<p className="mx-auto mt-4 max-w-xl text-base leading-7 text-white/90 sm:text-lg">
 						Tell us where you&apos;re going. We&apos;ll find the smartest way to
-						pay. Free account, verdict in seconds.
+						pay. Now private — invitation only.
 					</p>
 
 					{/* Search card (reskinned slim pill) */}
@@ -348,7 +348,7 @@ function LandingPageContent() {
 					</div>
 
 					<p className="mt-4 text-mtw-small text-white/85">
-						Create a free account and your search comes with you.
+						Invitation only for now — request access at mytravelwalletai@gmail.com.
 					</p>
 				</div>
 			</section>
@@ -441,7 +441,7 @@ function LandingPageContent() {
 							onClick={() => handleAuthRoute("/signup")}
 							className="inline-flex items-center gap-2 rounded-mtw bg-mtw-emerald px-5 py-2.5 text-mtw-small font-semibold text-white transition-opacity hover:opacity-90"
 						>
-							Connect your wallet <ArrowRight className="h-4 w-4" />
+							Request access <ArrowRight className="h-4 w-4" />
 						</button>
 						<button
 							type="button"

@@ -551,15 +551,16 @@ describe("settings page subscription tab", () => {
 });
 
 describe("profile Tools fold (in Account)", () => {
-  it("routes the kept tools (Concierge, Health) — nav-redundant launchers dropped", async () => {
+  it("routes Health; Concierge REMOVED (paid CTA on a payments-disabled product, audit #2)", async () => {
     await renderUi(<ProfilePage />); // Account is the default section; Tools render here
 
     // The old nav-redundant quick actions are gone.
     expectPageNotToContain("My Wallet");
     expectPageNotToContain("Past Searches");
+    // Paid Concierge CTA must not exist anywhere on the page.
+    expectPageNotToContain("Concierge");
+    expectPageNotToContain("$19");
 
-    await clickElement(findButtonByText(/concierge/i));
-    expect(mocks.routerPush).toHaveBeenLastCalledWith("/concierge");
     await clickElement(findButtonByText(/health check-in/i));
     expect(mocks.routerPush).toHaveBeenLastCalledWith("/health-check");
   });

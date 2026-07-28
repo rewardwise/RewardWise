@@ -281,9 +281,9 @@ export default function ProfilePage() {
   };
 
   // Tools fold (from the old Actions launcher): nav-redundant links dropped;
-  // Concierge + Health kept; Admin only when the user is a PM tester.
+  // Health check-in only (Concierge removed — payments are disabled; a paid
+  // CTA contradicted the private-mode posture, audit #2). Admin only for PM testers.
   const tools = [
-    { icon: Coffee, label: "Concierge", desc: "Human help from $19", page: "/concierge" },
     { icon: BarChart3, label: "Health check-in", desc: "Review your rewards setup", page: "/health-check" },
     ...(canViewAnalytics
       ? [{ icon: ShieldCheck, label: "Product analytics", desc: "Admin dashboard", page: "/admin/analytics" }]
