@@ -57,6 +57,37 @@ class UserWallet(TypedDict):
     balances: dict[str, int]
 
 
+AWARD_TAXES_SANITY_USD = 3000  # max realistic carrier surcharge is ~$2k
+
+
+def _make_award_cleaner(travelers: int):
+    """Ingestion-time award hygiene. Provider junk exists in the wild: a delta
+    row with $14,300 "taxes" (cents field) and byte-identical duplicate rows
+    (observed SEA-NRT business 2026-07-28). cpp scoring already neutralized
+    junk for SELECTION, but the rows still rendered to users (a -7.25cpp
+    "option") — drop them here instead. Also enforces seats >= travelers."""
+
+    def _clean_awards(raw: list[dict]) -> list[dict]:
+        seen: set[tuple] = set()
+        out = []
+        for a in raw:
+            if a.get("remaining_seats", 0) < travelers:
+                continue
+            if float(a.get("taxes") or 0) > AWARD_TAXES_SANITY_USD * 100:  # cents
+                continue
+            key = (
+                a.get("program"), a.get("points"), a.get("taxes"), a.get("date"),
+                a.get("origin_airport"), a.get("destination_airport"),
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(a)
+        return out
+
+    return _clean_awards
+
+
 def _get_user_programs(supabase, user_id: str) -> UserWallet:
     """
     Fetch the user's wallet from Supabase and return three representations:
@@ -243,6 +274,8 @@ async def search(
         cached_verdict_details = cached_verdict_row["details"]
 
     # --- Parallel fetch ---
+    _clean_awards = _make_award_cleaner(travelers)
+
     async def outbound_task():
         raw = await search_award_availability(
             origin,
@@ -252,7 +285,7 @@ async def search(
             end_date=departure_date_end,
             max_stops=max_stops,
         )
-        return [a for a in raw if a.get("remaining_seats", 0) >= travelers]
+        return _clean_awards(raw)
 
     async def return_task():
         if not return_date:
@@ -265,7 +298,7 @@ async def search(
             end_date=return_date_end,
             max_stops=max_stops,
         )
-        return [a for a in raw if a.get("remaining_seats", 0) >= travelers]
+        return _clean_awards(raw)
 
     outbound_awards, cash_data, return_awards = await asyncio.gather(
         outbound_task(),
