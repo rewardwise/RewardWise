@@ -198,8 +198,10 @@ async def search_award_availability(
                         })
                     else:
                         trip_candidates.append((tid, total_duration, stops))
-            except Exception:
-                pass
+            except Exception as exc:
+                # Per-trip isolation: one malformed AvailabilityTrips entry
+                # must not sink the row — but never silently.
+                print(f"seats trips parse failed for one entry (skipped): {str(exc)[:100]}")
 
         # max_stops filter. "any" leaves both trip lists untouched (regression
         # guard). "nonstop" relies on seats.aero's top-level Direct boolean

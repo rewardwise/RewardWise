@@ -122,7 +122,11 @@ def _flex_data() -> dict:
     try:
         with open(_FLEX_PATH, encoding="utf-8") as fh:
             return json.load(fh)
-    except Exception:
+    except Exception as exc:
+        # An unreadable transfer table silently disables ALL transfer
+        # reachability (every b2 turns into "can't book"). Same silent-zero
+        # class as the L2 bug — log loudly, still fail soft.
+        print(f"ownership: flexible_transfers.json UNREADABLE — transfer reachability disabled: {str(exc)[:120]}")
         return {"currencies": []}
 
 
