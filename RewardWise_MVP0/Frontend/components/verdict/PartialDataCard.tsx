@@ -13,6 +13,13 @@ type Props = {
 	verdict: Verdict;
 	onTryDifferentDate?: () => void;
 	variant?: PartialDataVariant;
+	/** Round trips must show BOTH legs (or say the return has no award) —
+	 *  the explanation prose quotes a whole-trip points total, and an
+	 *  outbound-only booking box read as if it were the whole trip. */
+	isRoundtrip?: boolean;
+	/** Same pick the full verdict's booking grid uses (engine return_winner
+	 *  preferred, top return-award fallback). */
+	returnAward?: { program: string; points: number | null; taxes: number | null } | null;
 };
 
 const HEADLINES: Record<PartialDataVariant, string> = {
@@ -59,6 +66,8 @@ export default function PartialDataCard({
 	verdict,
 	onTryDifferentDate,
 	variant = "missing_cash_horizon",
+	isRoundtrip = false,
+	returnAward = null,
 }: Props) {
 	const headline = HEADLINES[variant];
 	const explanation = verdict.explanation ?? "";
@@ -138,6 +147,32 @@ export default function PartialDataCard({
 							? ` plus $${winner.taxes.toFixed(0)} in taxes`
 							: ""}
 					</p>
+					{isRoundtrip ? (
+						returnAward && returnAward.points != null ? (
+							<div
+								data-testid="partial-data-return"
+								className="mt-3 border-t border-white/10 pt-3"
+							>
+								<p className="text-base font-bold text-white">
+									{fmtProgram(returnAward.program)}
+								</p>
+								<p className="mt-1 text-sm text-slate-300">
+									{`${returnAward.points.toLocaleString()} points (return, per traveler)`}
+									{returnAward.taxes != null && returnAward.taxes > 0
+										? ` plus $${returnAward.taxes.toFixed(0)} in taxes`
+										: ""}
+								</p>
+							</div>
+						) : (
+							<p
+								data-testid="partial-data-no-return"
+								className="mt-3 border-t border-white/10 pt-3 text-sm text-slate-400"
+							>
+								No return-leg award space found — the points above cover
+								the outbound only; the return would be a separate booking.
+							</p>
+						)
+					) : null}
 				</div>
 			) : null}
 
