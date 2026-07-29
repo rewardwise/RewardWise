@@ -344,14 +344,21 @@ async def search(
                 destination, origin, return_dates, cabin, travelers, max_stops=max_stops
             ),
         )
-        # Populate the shared payload cache for the next searcher (any user).
-        put_cached_payload(supabase, cache_params, {
-            "cash_data": cash_data,
-            "outbound_awards": outbound_awards,
-            "return_awards": return_awards,
-            "cash_out_by_date": cash_out_by_date,
-            "cash_ret_by_date": cash_ret_by_date,
-        })
+        # Populate the shared payload cache for the next searcher (any user) —
+        # but NEVER cache a cash-failed fetch (quota/outage): that serves the
+        # outage to every repeat searcher for 30 minutes, including searches
+        # made AFTER the provider recovers (2026-07-29: failed pre-warm runs
+        # poisoned the demo routes with null-cash payloads).
+        if cash_data.get("cash_price") is not None:
+            put_cached_payload(supabase, cache_params, {
+                "cash_data": cash_data,
+                "outbound_awards": outbound_awards,
+                "return_awards": return_awards,
+                "cash_out_by_date": cash_out_by_date,
+                "cash_ret_by_date": cash_ret_by_date,
+            })
+        else:
+            print("payload_cache SKIP_WRITE (cash unavailable — not caching a failed fetch)")
 
     award_options = _build_award_options_with_per_date_cash(
         outbound_awards, cash_out_by_date, include_endpoint_airports=True
