@@ -689,6 +689,8 @@ export default function VerdictCard({
             verdict={verdict}
             variant="missing_cash_horizon"
             onTryDifferentDate={onTryDifferentDate}
+            isRoundtrip={Boolean(isRoundtrip)}
+            returnAward={returnPick}
           />
         );
       case "missing_cash_upstream":
@@ -697,6 +699,8 @@ export default function VerdictCard({
             verdict={verdict}
             variant="missing_cash_upstream"
             onTryDifferentDate={onTryDifferentDate}
+            isRoundtrip={Boolean(isRoundtrip)}
+            returnAward={returnPick}
           />
         );
       case "missing_awards":
@@ -710,6 +714,8 @@ export default function VerdictCard({
             verdict={verdict}
             variant="defensive"
             onTryDifferentDate={onTryDifferentDate}
+            isRoundtrip={Boolean(isRoundtrip)}
+            returnAward={returnPick}
           />
         );
     }

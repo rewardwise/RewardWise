@@ -325,3 +325,40 @@ describe("PartialDataCard", () => {
 		expect(ctaRow?.className).toContain("sm:flex-row");
 	});
 });
+
+// ── Two-leg scope (2026-07-29): the prose quotes a WHOLE-TRIP points total,
+// so a round trip must show both legs in the booking box, or say explicitly
+// that the return has no award space. One-ways are untouched.
+
+describe("round-trip award-booking scope", () => {
+	it("roundtrip with a return award renders BOTH legs", () => {
+		render(
+			<PartialDataCard
+				verdict={buildVerdict()}
+				isRoundtrip
+				returnAward={{ program: "delta", points: 55000, taxes: 6 }}
+			/>,
+		);
+		const ret = container.querySelector('[data-testid="partial-data-return"]');
+		expect(ret).not.toBeNull();
+		expect(ret!.textContent).toContain("Delta");
+		expect(ret!.textContent).toContain("55,000 points (return, per traveler)");
+		expect(ret!.textContent).toContain("plus $6 in taxes");
+		expect(container.querySelector('[data-testid="partial-data-no-return"]')).toBeNull();
+	});
+
+	it("roundtrip WITHOUT a return award says so explicitly", () => {
+		render(<PartialDataCard verdict={buildVerdict()} isRoundtrip returnAward={null} />);
+		const none = container.querySelector('[data-testid="partial-data-no-return"]');
+		expect(none).not.toBeNull();
+		expect(none!.textContent).toContain("No return-leg award space found");
+		expect(none!.textContent).toContain("outbound only");
+		expect(container.querySelector('[data-testid="partial-data-return"]')).toBeNull();
+	});
+
+	it("one-way renders neither return row nor no-return note", () => {
+		render(<PartialDataCard verdict={buildVerdict()} />);
+		expect(container.querySelector('[data-testid="partial-data-return"]')).toBeNull();
+		expect(container.querySelector('[data-testid="partial-data-no-return"]')).toBeNull();
+	});
+});

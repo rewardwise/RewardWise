@@ -52,3 +52,38 @@ describe("buildZoeVerdictContext — basis-consistent, no fabrication fuel", () 
 		expect(s).toContain("avoid about $206");
 	});
 });
+
+// ── Partial-data stance (2026-07-29): no cash baseline -> the context must
+// forbid a points recommendation outright, so a context-consuming agent can
+// never nudge toward points in the cash-unavailable state.
+
+describe("cash-unavailable stance", () => {
+	it("no cash price -> explicit do-not-recommend-points line", () => {
+		const ctx = buildZoeVerdictContext({
+			origin: "SEA",
+			destination: "NRT,HND",
+			date: "2027-03-15",
+			return_date: "2027-03-31",
+			is_roundtrip: true,
+			travelers: 1,
+			cabin: "economy",
+			cash_price: null,
+			verdict: { recommendation: "wait", metrics: { cash_price: null, points_cost: 135000 } },
+		});
+		expect(ctx).toContain("Live cash price UNAVAILABLE");
+		expect(ctx).toContain("Do NOT recommend booking points");
+		expect(ctx).toContain("never invent or estimate a cash price");
+	});
+
+	it("cash present -> stance line absent", () => {
+		const ctx = buildZoeVerdictContext({
+			origin: "SEA",
+			destination: "NRT,HND",
+			date: "2027-03-15",
+			is_roundtrip: false,
+			verdict: { recommendation: "pay_cash", metrics: { cash_price: 2010 } },
+		});
+		expect(ctx).toContain("Live TOTAL cash fare for the whole trip: $2,010.");
+		expect(ctx).not.toContain("Do NOT recommend booking points");
+	});
+});

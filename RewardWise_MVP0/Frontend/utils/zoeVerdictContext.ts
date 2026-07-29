@@ -71,6 +71,15 @@ export function buildZoeVerdictContext(r: ZoeContextInput): string {
 		`Engine verdict: ${recLabel}${v.confidence ? ` (${v.confidence} confidence)` : ""}.`,
 	];
 	if (cash) lines.push(`Live TOTAL cash fare for the whole trip: ${cash}.`);
+	else
+		// Partial-data (cash-unavailable) stance: a context-consuming agent must
+		// never be nudged toward points when there is no cash baseline. Explicit
+		// and imperative on purpose — this line IS the guardrail once the
+		// Xpectrum template starts consuming verdict_context (spec Req 3).
+		lines.push(
+			"Live cash price UNAVAILABLE for this trip: it cannot be determined whether points beats cash. " +
+			"Do NOT recommend booking points on value grounds, and never invent or estimate a cash price.",
+		);
 	if (totalPts) {
 		lines.push(
 			`Best award TOTAL for the whole trip: ${totalPts}${totalTaxes ? ` + ${totalTaxes} taxes` : ""}${
