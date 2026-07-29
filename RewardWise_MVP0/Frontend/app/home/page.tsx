@@ -481,13 +481,14 @@ export default function HomePage() {
 	const searchAbortRef = useRef<AbortController | null>(null);
 
 	const runSearch = async () => {
-		const myRun = ++searchRunIdRef.current;
-		searchAbortRef.current?.abort();
-		const abort = new AbortController();
-		searchAbortRef.current = abort;
+		// NOTE: the run id is NOT claimed here. A run that fails validation
+		// below must leave any in-flight search untouched — claiming the id (and
+		// aborting) up front let a BLOCKED attempt orphan a live search: the
+		// superseded run's finally refused to clear `searching`, stranding the
+		// loading card with the form gone (found by the P0 live verify
+		// 2026-07-29: held conflict fill killed the in-flight retry search).
 		const isZoeTrigger = zoeTriggerRef.current;
 		const triggerSource = isZoeTrigger ? "zoe" : "manual";
-		const searchStartedAt = Date.now();
 		zoeTriggerRef.current = false; // reset immediately
 
 		trackAnalyticsEvent("search_started", {
@@ -567,6 +568,13 @@ export default function HomePage() {
 			});
 			return;
 		}
+
+		// All gates passed — NOW claim the run id and cancel the previous search.
+		const myRun = ++searchRunIdRef.current;
+		searchAbortRef.current?.abort();
+		const abort = new AbortController();
+		searchAbortRef.current = abort;
+		const searchStartedAt = Date.now();
 
 		setSearchError("");
 		setResults(null);
