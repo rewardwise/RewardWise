@@ -5,9 +5,20 @@ they never rot as the calendar advances. The node's clock is the source of
 truth for "today" — the LLM's sense of the date is never trusted.
 """
 
+import sys
+import types
 from datetime import date as date_cls, datetime, timedelta
 
 import pytest
+
+# The node targets the Dify sandbox, which ships `requests`; the backend CI
+# env does not (the app uses httpx). Every test here either exercises the
+# pure date logic or monkeypatches the fetchers, so a stub satisfies the
+# node's top-level import without ever being called.
+try:
+    import requests  # noqa: F401
+except ModuleNotFoundError:
+    sys.modules["requests"] = types.ModuleType("requests")
 
 import xpectrum_searchflight_node as node
 
