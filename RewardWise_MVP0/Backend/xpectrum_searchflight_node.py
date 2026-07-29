@@ -1,4 +1,6 @@
 import json
+from datetime import datetime, timedelta
+
 import requests
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -69,6 +71,97 @@ PROGRAM_URL_OVERRIDES = {
     "alaska": "https://www.alaskaair.com/",
     "ana": "https://www.ana.co.jp/",
 }
+
+
+# ── Deterministic date handling (runs BEFORE any API call) ───────────────────
+# The LLM has no reliable "today" — it extracts dates from conversation and
+# routinely produces last year's date or one past the booking horizon. The
+# node's own clock (datetime.now()) is authoritative. Every date goes through
+# _resolve_date; an invalid date returns a structured refusal and the provider
+# APIs are never called with garbage.
+
+BOOKING_HORIZON_DAYS = 330  # airline schedules open ~330 days out
+
+_DATE_FORMATS = (
+    "%Y-%m-%d", "%Y/%m/%d", "%m/%d/%Y", "%m-%d-%Y",
+    "%B %d, %Y", "%B %d %Y", "%b %d, %Y", "%b %d %Y",
+    "%d %B %Y", "%d %b %Y",
+)
+_YEARLESS_FORMATS = ("%B %d", "%b %d", "%d %B", "%d %b", "%m/%d", "%m-%d")
+
+
+def _next_occurrence(d, today):
+    """Same month/day, first year >= today. Feb 29 falls back to Feb 28."""
+    year = today.year
+    while True:
+        try:
+            candidate = d.replace(year=year)
+        except ValueError:  # Feb 29 in a non-leap year
+            candidate = d.replace(year=year, day=28)
+        if candidate >= today:
+            return candidate
+        year += 1
+
+
+def _resolve_date(raw, today=None):
+    """Normalize/validate a travel date against the node's real clock.
+
+    Returns {"ok": True, "date": "YYYY-MM-DD", "adjusted": bool, "original": raw}
+    or      {"ok": False, "reason": <slug>, "message": <agent-speakable>}.
+    Reasons: unparseable | past | too_far | return_before_depart (from main).
+    """
+    today = today or datetime.now().date()
+    text = (str(raw) if raw is not None else "").strip()
+    if not text:
+        return {"ok": False, "reason": "unparseable",
+                "message": "I couldn't read a travel date from that — can you give it like 2027-03-15?"}
+
+    parsed, yearless = None, False
+    for fmt in _DATE_FORMATS:
+        try:
+            parsed = datetime.strptime(text, fmt).date()
+            break
+        except ValueError:
+            continue
+    if parsed is None:
+        for fmt in _YEARLESS_FORMATS:
+            try:
+                parsed = datetime.strptime(text, fmt).date().replace(year=today.year)
+                yearless = True
+                break
+            except ValueError:
+                continue
+    if parsed is None:
+        return {"ok": False, "reason": "unparseable",
+                "message": "I couldn't read \"{}\" as a travel date — can you give it like 2027-03-15?".format(text)}
+
+    adjusted = False
+    if parsed < today:
+        # A yearless date is an interpretation, not a mistake: "August 15"
+        # always means its next occurrence. A DATED past entry is trusted only
+        # within a year (a wrong-year LLM slip); older is refused, not guessed.
+        if not yearless and (today - parsed).days > 366:
+            return {"ok": False, "reason": "past",
+                    "message": "{} is in the past — I can only search upcoming dates. What date did you mean?".format(text)}
+        parsed = _next_occurrence(parsed, today)
+        adjusted = True
+
+    horizon = today + timedelta(days=BOOKING_HORIZON_DAYS)
+    if parsed > horizon:
+        return {"ok": False, "reason": "too_far",
+                "message": "That's too far out — airlines only open bookings about {} days ahead. The latest date I can search is {}.".format(
+                    BOOKING_HORIZON_DAYS, horizon.strftime("%Y-%m-%d"))}
+
+    return {"ok": True, "date": parsed.strftime("%Y-%m-%d"), "adjusted": adjusted,
+            "original": raw if isinstance(raw, str) else text}
+
+
+def _invalid_result(res, date_input):
+    """Structured refusal for the three node outputs — never a silent bad call."""
+    struct = {"ok": False, "reason": res["reason"], "message": res["message"],
+              "date_input": date_input}
+    return {"verdict": res["message"], "recommendation": "invalid_date",
+            "result": json.dumps(struct)}
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -328,16 +421,41 @@ def _pack(recommendation, label, headline, explanation, cash_price, program, poi
 
 # ── Entry point (Dify Code node) ─────────────────────────────────────────────
 
-def main(date, departure, destination):
+def main(date, departure, destination, return_date=None):
     travelers = ADULTS
     departure = (departure or "").strip().upper()
     destination = (destination or "").strip().upper()
 
-    cash_price, cash_url = _fetch_cash(date, departure, destination)
-    awards = _fetch_awards(date, departure, destination, travelers)
+    # Date gate — deterministic, node-clock-based, BEFORE any provider call.
+    res = _resolve_date(date)
+    if not res["ok"]:
+        return _invalid_result(res, date)
+    resolved_date = res["date"]
+
+    # return_date is not in the current 3-arg tool schema; when Xpectrum wires
+    # it, this validates it the same way (and orders it against departure).
+    if return_date:
+        rres = _resolve_date(return_date)
+        if not rres["ok"]:
+            return _invalid_result(rres, return_date)
+        if rres["date"] < resolved_date:
+            return _invalid_result({
+                "reason": "return_before_depart",
+                "message": "The return date {} is before the departure {} — which one should I fix?".format(
+                    rres["date"], resolved_date),
+            }, return_date)
+
+    cash_price, cash_url = _fetch_cash(resolved_date, departure, destination)
+    awards = _fetch_awards(resolved_date, departure, destination, travelers)
     verdict_str, recommendation, struct = _verdict(
-        cash_price, cash_url, awards, travelers, departure, destination, date
+        cash_price, cash_url, awards, travelers, departure, destination, resolved_date
     )
+
+    struct["date_resolution"] = res
+    if res["adjusted"]:
+        # Disclose the roll-forward in the spoken verdict — never silent.
+        verdict_str = "Note: that date already passed, so I searched its next occurrence, {}. {}".format(
+            resolved_date, verdict_str)
 
     return {
         "verdict": verdict_str,
