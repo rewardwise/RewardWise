@@ -8,6 +8,7 @@ import { useAuth } from "@/context/AuthProvider";
 import { useWallet } from "@/context/WalletContext";
 import { zoeNarration, zoeWelcome } from "@/utils/zoeNarration";
 import { buildZoeVerdictContext } from "@/utils/zoeVerdictContext";
+import demoSnapshot from "@/utils/demoSnapshot.json";
 import { findMetroByCsv } from "@/components/metro-groups";
 import type { Verdict as CanonicalVerdict, Ownership } from "@/types/verdict";
 import { useSearchFill } from "@/context/SearchFillContext";
@@ -260,6 +261,20 @@ export default function HomePage() {
 	const { searchCount, setSearchCount, session } = useAuth();
 	const { userPrograms, hasWallet } = useWallet();
 	const { searchFill } = useSearchFill();
+
+	// ── Demo snapshot mode (?demo=1) ─────────────────────────────────────────
+	// Recording aid, isolated + removable: when the flag is on AND the search
+	// EXACTLY matches the frozen demo case, runSearch serves the captured real
+	// engine payload (utils/demoSnapshot.json) with zero network — no SerpAPI,
+	// no seats.aero, no backend. Any other search, or no flag, is untouched.
+	const demoModeRef = useRef(false);
+	useEffect(() => {
+		try {
+			demoModeRef.current = new URLSearchParams(window.location.search).get("demo") === "1";
+		} catch {
+			demoModeRef.current = false;
+		}
+	}, []);
 	const { searchDefaults: prefsDefaults, loaded: prefsLoaded } = usePreferences();
 	useABTest();
 
@@ -570,6 +585,25 @@ export default function HomePage() {
 				search_error_message: message,
 				metadata: { ...currentSearchAnalyticsPayload(triggerSource).metadata, error_name: "return_before_depart" },
 			});
+			return;
+		}
+
+		// Demo snapshot short-circuit — exact-match only, gates already passed.
+		if (
+			demoModeRef.current &&
+			origin === "NRT,HND" && destination === "SEA" &&
+			departDate === "2027-03-23" && tripType === "oneway" &&
+			cabin === "business" && travelers === 1
+		) {
+			const demoRun = ++searchRunIdRef.current;
+			setSearchError("");
+			setResults(null);
+			setSearching(true);
+			setTimeout(() => {
+				if (demoRun !== searchRunIdRef.current) return;
+				setResults(demoSnapshot as any);
+				setSearching(false);
+			}, 1200);
 			return;
 		}
 
