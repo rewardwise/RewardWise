@@ -119,6 +119,11 @@ export interface CurrentTrip {
 	destination?: string | null;
 	date?: string | null;
 	return_date?: string | null;
+	/** The FORM's trip type. Without it, planTripFill judged completeness
+	 *  blind to the round-trip default: a fill with no return date planned
+	 *  as "will autorun" while home's autorun (which sees the form) held —
+	 *  Zoe said "running it now" and nothing ever ran (2026-07-29 demo). */
+	tripType?: "roundtrip" | "oneway" | null;
 }
 
 export function extractTripParams(
@@ -315,8 +320,12 @@ export function extractTripParams(
 
 	const hasSignal = Boolean(
 		out.unresolved_place ||
-		out.origin || out.destination || out.date || out.return_date || out.travelers || out.cabin
+		out.origin || out.destination || out.date || out.return_date || out.travelers ||
+		out.cabin || out.tripType
 	);
+	// tripType counts as a signal: when Zoe asks "what's your return date?"
+	// the honest answer may be "one way" — discarding it dead-ended the
+	// conversation (the message fell through to the agent as a non-trip turn).
 	if (!hasSignal) return null;
 	return out;
 }
@@ -350,6 +359,11 @@ export function planTripFill(
 	if (!merged.origin) missing.push("origin");
 	if (!merged.destination) missing.push("destination");
 	if (!merged.date) missing.push("date");
-	if (extracted.tripType === "roundtrip" && !merged.return_date) missing.push("return_date");
+	// Completeness is judged on the MERGED trip type — the fill's if stated,
+	// else the FORM's (default roundtrip). Judging only the fill's let a
+	// return-less fill on a round-trip form plan as runnable while home's
+	// autorun refused: the ack promised a search that never fired.
+	const mergedTripType = extracted.tripType || current?.tripType || null;
+	if (mergedTripType === "roundtrip" && !merged.return_date) missing.push("return_date");
 	return { willAutorun: missing.length === 0, missing };
 }

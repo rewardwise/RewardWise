@@ -399,7 +399,11 @@ export default function HomePage() {
 		if (data.travelers) setTravelers(data.travelers);
 		if (data.date) setDepartDate(data.date);
 		if (data.tripType) setTripType(data.tripType);
-		if ("return_date" in data) setReturnDate(data.return_date || "");
+		// A one-way fill clears any leftover return date, exactly like the
+		// manual One Way button — otherwise stale state lingers behind the
+		// unmounted field and reappears on a flip back to Round Trip.
+		if (data.tripType === "oneway") setReturnDate("");
+		else if ("return_date" in data) setReturnDate(data.return_date || "");
 
 		// Completeness must be judged on the MERGED state (fill + what the form
 		// already had), not the fill alone.
@@ -1030,6 +1034,7 @@ export default function HomePage() {
 								destination: destination || null,
 								date: departDate || null,
 								return_date: returnDate || null,
+								tripType: tripType as "roundtrip" | "oneway",
 							}}
 							welcome={zoeWelcome()}
 						/>
