@@ -193,3 +193,12 @@ def test_unresolved_place_ack_holds_and_asks():
     assert "didn't catch that city" in ack
     assert "held off searching" in ack
     assert "running it now" not in ack
+
+
+def test_return_before_depart_ack_holds_and_asks():
+    # P0 2026-07-28: conflicting post-merge dates must produce a friendly ask,
+    # never run the search (which 422s and rendered a raw validation error).
+    ack = zs.new_trip_ack(False, ["return_before_depart"])
+    assert "return" in ack.lower()
+    assert "coming back" in ack.lower()
+    assert "run" in ack.lower()

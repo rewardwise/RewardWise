@@ -193,6 +193,58 @@ export function extractTripParams(
 
 	Object.assign(out, extractDates(msg, today));
 
+	// Return-phrase dates ("coming back Mar 31", "back on April 2", "returning
+	// the 31st"). The range parser above only understands connector ranges
+	// ("Mar 15 to 31") — a P0 (2026-07-28): "…Mar 15 coming back Mar 31" left
+	// the return stale, ran return<depart, and dumped a raw validation error.
+	const RET_PHRASE =
+		/\b(?:coming\s+back|come\s+back|coming\s+home|come\s+home|heading\s+back|going\s+back|returning|return|back)\s+(?:on\s+|home\s+on\s+)?((?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s*\d{4})?|\d{4}-\d{2}-\d{2}|the\s+\d{1,2}(?:st|nd|rd|th)?\b)/i;
+	const rp = msg.match(RET_PHRASE);
+	if (rp) {
+		const frag = rp[1];
+		let retIso: string | undefined;
+		const isoFrag = frag.match(/^\d{4}-\d{2}-\d{2}$/);
+		const monthFrag = frag.match(/^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s*(\d{4}))?$/i);
+		const dayFrag = frag.match(/^the\s+(\d{1,2})(?:st|nd|rd|th)?$/i);
+		if (isoFrag) {
+			retIso = frag;
+		} else if (monthFrag) {
+			const rm = MONTHS[monthFrag[1].toLowerCase()];
+			const rd = parseInt(monthFrag[2], 10);
+			if (rm && rd >= 1 && rd <= 31) {
+				const ry = monthFrag[3] ? parseInt(monthFrag[3], 10) : futureYearFor(rm, rd, today);
+				retIso = toISO(ry, rm, rd);
+			}
+		} else if (dayFrag) {
+			// "back the 31st" — anchor month/year from the depart date in this
+			// same message, else the form's current dates.
+			const day = parseInt(dayFrag[1], 10);
+			const anchorIso = out.date || current?.date || current?.return_date || undefined;
+			if (day >= 1 && day <= 31 && anchorIso && /^\d{4}-\d{2}-\d{2}$/.test(anchorIso)) {
+				const [ay, am, ad] = anchorIso.split("-").map(Number);
+				retIso = toISO(ay, am, day);
+				// Return day before the depart day in the anchor month = next month.
+				if (out.date && day < ad) {
+					retIso = am === 12 ? toISO(ay + 1, 1, day) : toISO(ay, am + 1, day);
+				}
+			}
+		}
+		if (retIso) {
+			// If the ONLY date the range parser saw was this return-phrased one,
+			// it landed in out.date — "coming back Mar 31" alone must move the
+			// RETURN, not the departure (the stale-depart half of the P0).
+			if (out.date === retIso && !out.return_date) delete out.date;
+			// Depart-then-return wraparound ("Dec 28 coming back Jan 2").
+			const departIso = out.date || current?.date || undefined;
+			if (departIso && retIso <= departIso) {
+				const [ry, rm2, rd2] = retIso.split("-").map(Number);
+				const [, dm2] = departIso.split("-").map(Number);
+				if (rm2 < dm2) retIso = toISO(ry + 1, rm2, rd2);
+			}
+			out.return_date = retIso;
+		}
+	}
+
 	// Incremental day-only update ("what about the 20th instead?", "come back
 	// on the 25th"): only when a month-anchored date was NOT already extracted
 	// and the FORM already has a date to borrow month/year context from.
@@ -287,6 +339,13 @@ export function planTripFill(
 		date: extracted.date || current?.date || null,
 		return_date: extracted.return_date || current?.return_date || null,
 	};
+	// Invalid-combination hold (P0 2026-07-28, same discipline as
+	// unresolved_place): a post-merge return before departure must never run —
+	// it 422s in the engine and the user sees a raw validation error. Hold and
+	// let the backend ack ask a friendly question instead.
+	if (merged.date && merged.return_date && merged.return_date < merged.date) {
+		return { willAutorun: false, missing: ["return_before_depart"] };
+	}
 	const missing: string[] = [];
 	if (!merged.origin) missing.push("origin");
 	if (!merged.destination) missing.push("destination");

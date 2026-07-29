@@ -474,6 +474,27 @@ if (prefillRaw && onFillSearch) {
 		if (typing || !text.trim()) return;
 		const trimmed = text.trim();
 
+		// Retry phrases are a RE-RUN of the current search through the engine,
+		// never a free-form agent turn (P0 2026-07-28: "try again" fell through
+		// to the agent's searchFlight tool, which priced the trip itself). Same
+		// deterministic discipline as the new-trip kill-switch. Only intercepts
+		// when the form actually has a runnable search to repeat.
+		const RETRY_RE = /^(?:please\s+)?(?:(?:try|search)(?:\s+(?:it|that))?\s+again|retry|run\s+(?:it|that|the\s+search)\s+again|run\s+again|search\s+it\s+again|try\s+once\s+more)\s*[.!?]*$/i;
+		if (RETRY_RE.test(trimmed) && onAutoSearch && currentSearch?.origin && currentSearch?.destination && currentSearch?.date) {
+			setMessages(prev => [
+				...prev,
+				{ role: "user", content: trimmed },
+				{ role: "assistant", content: "On it — running that search again. ✈️", thumbs: null },
+			]);
+			setInput("");
+			trackAnalyticsEvent("zoe_retry_rerun", {
+				event_type: "zoe",
+				metadata: { phrase: trimmed.toLowerCase().slice(0, 40) },
+			});
+			onAutoSearch();
+			return;
+		}
+
 		setMessages(prev => [...prev, { role: "user", content: trimmed }]);
 		setInput("");
 		setTyping(true);

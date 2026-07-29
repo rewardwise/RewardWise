@@ -18,8 +18,18 @@ describe("planTripFill — auto-run completeness", () => {
 		expect(planTripFill(ex, null)).toEqual({ willAutorun: false, missing: ["origin", "date"] });
 	});
 
-	it("merges with the existing form: date-only update on a complete form autoruns", () => {
+	it("date-only update that jumps PAST the return holds and asks (was the P0 422)", () => {
+		// Depart moves to the 20th but the form's return stays the 14th —
+		// pre-fix this auto-ran and the engine's raw validation error rendered.
 		const ex = extractTripParams("what about the 20th instead?", TODAY, {
+			origin: "DEN", destination: "AUS", date: "2026-09-10", return_date: "2026-09-14",
+		});
+		expect(planTripFill(ex, { origin: "DEN", destination: "AUS", date: "2026-09-10", return_date: "2026-09-14" }))
+			.toEqual({ willAutorun: false, missing: ["return_before_depart"] });
+	});
+
+	it("merges with the existing form: date-only update that stays valid autoruns", () => {
+		const ex = extractTripParams("what about the 12th instead?", TODAY, {
 			origin: "DEN", destination: "AUS", date: "2026-09-10", return_date: "2026-09-14",
 		});
 		expect(planTripFill(ex, { origin: "DEN", destination: "AUS", date: "2026-09-10", return_date: "2026-09-14" }))

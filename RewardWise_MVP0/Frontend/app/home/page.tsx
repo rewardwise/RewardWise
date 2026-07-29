@@ -551,6 +551,23 @@ export default function HomePage() {
 			}
 		}
 
+		// Return-before-departure guard — BOTH trigger paths (P0 2026-07-28: a
+		// stale return + fresh depart ran anyway and the engine's raw validation
+		// error rendered in the UI). Only fires when both dates are present, so
+		// the Zoe-trigger state-lag exemption above is unaffected.
+		if (tripType === "roundtrip" && departDate && returnDate && returnDate < departDate) {
+			const message = "That return date is before departure — when are you coming back? Fix the return date and I'll run it.";
+			setSearchError(message);
+			trackAnalyticsEvent("search_validation_failed", {
+				event_type: "search",
+				...currentSearchAnalyticsPayload(triggerSource),
+				search_success: false,
+				search_error_message: message,
+				metadata: { ...currentSearchAnalyticsPayload(triggerSource).metadata, error_name: "return_before_depart" },
+			});
+			return;
+		}
+
 		setSearchError("");
 		setResults(null);
 		setSearching(true);
@@ -591,10 +608,19 @@ export default function HomePage() {
 			if (!res.ok) {
 				const errData = await res.json().catch(() => null);
 				const detail = errData?.detail;
-				const message = Array.isArray(detail)
+				let message = Array.isArray(detail)
 					? (detail[0]?.msg?.replace("Value error, ", "") ??
 						`Server error: ${res.status}`)
 					: (detail ?? `Server error: ${res.status}`);
+				if (typeof message !== "string") message = `Server error: ${res.status}`;
+				// A raw framework validation error must never reach the UI
+				// (P0 2026-07-28). Map the known date conflict to a friendly ask;
+				// anything else validation-shaped gets a generic friendly line.
+				if (/return.?date/i.test(message) && /(before|after|earlier|later|greater|less)/i.test(message)) {
+					message = "That return date is before departure — when are you coming back? Fix the return date and I'll run it.";
+				} else if (/validation error|pydantic|input should be|\[\{|field required/i.test(message)) {
+					message = "Something about that search didn't line up — double-check the dates and airports and I'll run it again.";
+				}
 				throw new Error(message);
 			}
 
