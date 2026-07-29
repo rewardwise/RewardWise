@@ -539,12 +539,20 @@ def _gray_zone_response(
     display_points, _display_taxes_unused = _display_award_totals(
         points, 0, inbound_winner, travelers
     )
-    trip_basis = "for the whole trip" if inbound_winner else "for the outbound leg"
+    # Narrative scope must match the SEARCH type (2026-07-29: a one-way card
+    # read "versus $1920 cash for the round trip" while fare/metrics said
+    # "one way"). Leg-split wording only exists on round trips.
+    if is_roundtrip:
+        trip_basis = " for the whole trip" if inbound_winner else " for the outbound leg"
+        cash_scope = "cash for the round trip"
+    else:
+        trip_basis = ""
+        cash_scope = "cash one way"
     if recommendation == "pay_cash":
         verdict_label = "Pay Cash"
         headline = "Pay cash. Save your points for a stronger redemption."
         explanation = (
-            f"I found {program_label} at {display_points:,} points {trip_basis} versus {cash_label} cash for the round trip."
+            f"I found {program_label} at {display_points:,} points{trip_basis} versus {cash_label} {cash_scope}."
             f" At {cpp:.2f}¢/pt, the award value here is below the threshold where points typically beat cash."
             " Paying cash preserves your points for a higher-value redemption on a different trip."
         )
@@ -559,7 +567,7 @@ def _gray_zone_response(
         verdict_label = "Use Points"
         headline = "Use points. Better than paying cash, though not the strongest redemption."
         explanation = (
-            f"I found {program_label} at {display_points:,} points {trip_basis} versus {cash_label} cash for the round trip."
+            f"I found {program_label} at {display_points:,} points{trip_basis} versus {cash_label} {cash_scope}."
             f" At {cpp:.2f}¢/pt, this beats paying cash, but it is not at premium-redemption levels."
             " If you have flexibility, you might find better value on a different route or date."
         )
@@ -769,7 +777,11 @@ async def generate_verdict(
     # Awards only, no cash comparison.
     if cash_price is None:
         wait_pts, _wt = _display_award_totals(points, 0, costing_inbound, travelers)
-        wait_basis = "for the whole trip" if costing_inbound else "for the outbound leg"
+        wait_basis = (
+            ("for the whole trip" if costing_inbound else "for the outbound leg")
+            if is_roundtrip
+            else "one way"
+        )
         response = _base_response(
             recommendation="wait",
             verdict_label="Wait",
@@ -832,8 +844,9 @@ async def generate_verdict(
         display_points, display_taxes = _display_award_totals(
             points, taxes, inbound_winner, travelers
         )
+        cheap_scope = "for the whole trip" if is_roundtrip else "one way"
         explanation = (
-            f"Cash is only {_cash_label(cash_price)} for the whole trip, while the best award"
+            f"Cash is only {_cash_label(cash_price)} {cheap_scope}, while the best award"
             f" I found is {display_points:,} points"
             f"{' plus about $' + str(int(round(display_taxes))) + ' in taxes' if display_taxes else ''}"
             " for the same trip. Your points are likely worth more on a different trip."
@@ -883,7 +896,11 @@ async def generate_verdict(
         strong_pts, strong_taxes = _display_award_totals(
             points, taxes, costing_inbound, travelers
         )
-        strong_basis = "for the whole trip" if costing_inbound else "for the outbound leg"
+        strong_basis = (
+            ("for the whole trip" if costing_inbound else "for the outbound leg")
+            if is_roundtrip
+            else "one way"
+        )
         explanation = (
             f"The best award is {strong_pts:,} points"
             f"{' plus about $' + str(int(round(strong_taxes))) + ' in taxes' if strong_taxes else ''}"

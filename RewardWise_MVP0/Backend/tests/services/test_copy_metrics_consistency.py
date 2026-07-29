@@ -86,3 +86,51 @@ def test_ingestion_drops_junk_taxes_and_dupes():
     assert programs.count(("emirates", 201000)) == 1, "dupes collapse to one"
     assert ("alaska", 130000) in programs
     assert ("united", 80000) not in programs, "zero-seat rows still drop"
+
+
+# ── Narrative trip-scope guard (2026-07-29, biz-win showcase catch) ──────────
+# A ONE-WAY verdict's narrative said "versus $1920 cash for the round trip"
+# while the fare/metrics lines said "one way". The narrative's trip-type
+# wording must match the search.
+
+ONEWAY_AWARD = [
+    {"program": "flyingblue", "points": 114500, "taxes": 150.06, "cpp": 1.55, "date": "2027-03-23", "remaining_seats": 4},
+]
+
+
+async def _oneway_verdict(cash=1920.0, awards=ONEWAY_AWARD):
+    return await vs.generate_verdict(
+        origin="NRT,HND", destination="SEA", date="2027-03-23", cabin="business",
+        travelers=1, is_roundtrip=False, return_date=None,
+        cash_price=cash, award_options=awards, return_award_options=[],
+        user_programs=["flyingblue"],
+    )
+
+
+@pytest.mark.asyncio
+async def test_oneway_narrative_says_one_way_not_round_trip():
+    v = await _oneway_verdict()  # gray-zone use_points (the Mar 23 case shape)
+    exp = (v.get("explanation") or "").lower()
+    assert "round trip" not in exp, f"one-way narrative claims round trip: {exp}"
+    assert "outbound leg" not in exp, f"one-way narrative claims a leg split: {exp}"
+    assert "one way" in exp or "one-way" in exp, f"one-way narrative must scope itself: {exp}"
+
+
+@pytest.mark.asyncio
+async def test_oneway_strong_and_cheap_branches_stay_scoped():
+    # Strong use_points branch (cpp >= 1.8)
+    strong = [{"program": "flyingblue", "points": 80000, "taxes": 50.0, "cpp": 2.3, "date": "2027-03-23", "remaining_seats": 4}]
+    v = await _oneway_verdict(cash=1900.0, awards=strong)
+    exp = (v.get("explanation") or "").lower()
+    assert "round trip" not in exp and "outbound leg" not in exp, exp
+    # Cheap-cash pay_cash branch
+    v2 = await _oneway_verdict(cash=180.0)
+    exp2 = (v2.get("explanation") or "").lower()
+    assert "round trip" not in exp2 and "whole trip" not in exp2, exp2
+
+
+@pytest.mark.asyncio
+async def test_roundtrip_narrative_keeps_roundtrip_scope():
+    v = await _verdict()  # the existing RT harness
+    exp = (v.get("explanation") or "").lower()
+    assert "one way" not in exp and "one-way" not in exp, exp
