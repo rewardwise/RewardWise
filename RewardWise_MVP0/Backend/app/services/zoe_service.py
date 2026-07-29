@@ -92,6 +92,14 @@ def new_trip_ack(will_autorun: bool, missing: list[str] | None = None) -> str:
             "I didn't catch that city — where to exactly? "
             "I've held off searching so we don't run the wrong trip. ✈️"
         )
+    if "return_before_depart" in (missing or []):
+        # Post-merge dates conflict (return earlier than departure). Running
+        # would 422 in the engine and surface a raw validation error — hold
+        # and ask instead (P0 2026-07-28).
+        return (
+            "That return's before departure — when are you coming back? "
+            "I'll run it as soon as the dates line up. ✈️"
+        )
     asks = [_MISSING_LABELS[m] for m in (missing or []) if m in _MISSING_LABELS]
     ask = " and ".join(asks) if asks else "the missing details"
     return (

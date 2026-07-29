@@ -214,3 +214,80 @@ describe("cabin extraction (search-business incident 2026-07-28)", () => {
 		expect(planTripFill(e, null).willAutorun).toBe(true);
 	});
 });
+
+// ── Return-phrase dates + invalid-combination hold (P0 2026-07-28) ──────────
+// "coming back Mar 31" wasn't parsed (range parser only knows connectors), so
+// the return stayed stale, return<depart ran, and a raw validation error hit
+// the UI.
+
+describe("return-phrase date extraction", () => {
+	it("depart + 'coming back <date>' fills both dates (the incident message)", () => {
+		const r = extractTripParams("SEA to Tokyo Mar 15 coming back Mar 31", TODAY);
+		expect(r?.origin).toBe("SEA");
+		expect(r?.destination).toBe("NRT,HND");
+		expect(r?.date).toBe("2027-03-15");
+		expect(r?.return_date).toBe("2027-03-31");
+		expect(r?.tripType).toBe("roundtrip");
+	});
+
+	it("'back on <date>' variant", () => {
+		const r = extractTripParams("Denver to Austin Sep 10, back on Sep 14", TODAY);
+		expect(r?.date).toBe("2026-09-10");
+		expect(r?.return_date).toBe("2026-09-14");
+	});
+
+	it("'returning <date>' variant", () => {
+		const r = extractTripParams("from Boise to Spokane October 13 returning October 16", TODAY);
+		expect(r?.return_date).toBe("2026-10-16");
+	});
+
+	it("'coming home <date>' variant", () => {
+		const r = extractTripParams("SEA to Denver Aug 3 coming home Aug 9", TODAY);
+		expect(r?.date).toBe("2026-08-03");
+		expect(r?.return_date).toBe("2026-08-09");
+	});
+
+	it("'back the Nth' anchors to the depart month in the same message", () => {
+		const r = extractTripParams("SEA to Tokyo Mar 15, back the 31st", TODAY);
+		expect(r?.date).toBe("2027-03-15");
+		expect(r?.return_date).toBe("2027-03-31");
+	});
+
+	it("incremental 'coming back Mar 31' moves the RETURN, not the departure", () => {
+		const r = extractTripParams("coming back Mar 31", TODAY, {
+			origin: "SEA",
+			destination: "NRT,HND",
+			date: "2027-03-15",
+			return_date: "2026-08-31",
+		});
+		expect(r?.date).toBeUndefined();
+		expect(r?.return_date).toBe("2027-03-31");
+	});
+
+	it("depart-then-return month wraparound ('Dec 28 coming back Jan 2')", () => {
+		const r = extractTripParams("SEA to Tokyo Dec 28 coming back Jan 2", TODAY);
+		expect(r?.date).toBe("2026-12-28");
+		expect(r?.return_date).toBe("2027-01-02");
+	});
+});
+
+describe("planTripFill — return-before-depart hold", () => {
+	it("conflicting post-merge dates never auto-run; ask instead", () => {
+		// Fresh depart moves to Mar 2027, stale form return stays Aug 2026.
+		const plan = planTripFill(
+			{ date: "2027-03-15" },
+			{ origin: "SEA", destination: "NRT,HND", date: "2026-08-10", return_date: "2026-08-31" },
+		);
+		expect(plan.willAutorun).toBe(false);
+		expect(plan.missing).toEqual(["return_before_depart"]);
+	});
+
+	it("valid pair still auto-runs", () => {
+		const plan = planTripFill(
+			{ date: "2027-03-15", return_date: "2027-03-31" },
+			{ origin: "SEA", destination: "NRT,HND", date: "2026-08-10", return_date: "2026-08-31" },
+		);
+		expect(plan.willAutorun).toBe(true);
+		expect(plan.missing).toEqual([]);
+	});
+});
