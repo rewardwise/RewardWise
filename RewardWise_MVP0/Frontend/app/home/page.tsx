@@ -787,7 +787,11 @@ export default function HomePage() {
 			{/* TIER 1 — island entry band (island spec v2, ⓒ): header + search pill
 			    (left) and the Zoe pane (right) sit ON the island; the verdict renders
 			    LIGHT in TIER 2 below. */}
-			<section className="relative isolate overflow-hidden">
+			{/* min-h fills the hero photo to the fold (nav ~3.5rem + footer ~4rem)
+			    so the compact no-verdict content doesn't leave a white band above
+			    the footer — the CONTENT stays sized-to-content (density fix); only
+			    the photo backdrop extends. */}
+			<section className="relative isolate overflow-hidden lg:min-h-[calc(100dvh-7.5rem)]">
 				<Image
 					src="/hero-island.jpg"
 					alt=""
