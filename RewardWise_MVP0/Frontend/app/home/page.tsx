@@ -1039,8 +1039,14 @@ export default function HomePage() {
 
 					</div>{/* /LEFT COLUMN (entry) */}
 
-					{/* RIGHT COLUMN (42%) — Zoe docked (kept dark; light restyle deferred) */}
-					<div className="mt-4 lg:mt-0 lg:min-h-[calc(100vh-3rem)] lg:h-auto">
+					{/* RIGHT COLUMN (42%) — Zoe docked (kept dark; light restyle deferred).
+					    Density fix (2026-07-29): the old lg:min-h-[calc(100vh-3rem)] reserved
+					    a full viewport regardless of content, and the grid's items-stretch
+					    propagated it to the left column — ~430px of empty hero below the
+					    form at 900px viewports, far worse on tall monitors. The panel now
+					    sizes to its conversation (capped in ZoeChat) and sticks beside the
+					    verdict while the left column scrolls. */}
+					<div className="mt-4 lg:mt-0 lg:self-start lg:sticky lg:top-6">
 						<ZoeChat
 							isOpen={isChatOpen}
 							setIsOpen={setIsChatOpen}

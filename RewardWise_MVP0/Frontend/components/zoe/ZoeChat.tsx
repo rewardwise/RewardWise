@@ -921,7 +921,7 @@ className={`flex min-h-11 min-w-11 flex-shrink-0 items-center justify-center rou
 		return (
 			<div
 				data-testid="zoe-docked"
-				className="zoe-light relative flex h-full min-h-[560px] w-full flex-col overflow-hidden rounded-2xl border border-mtw-border bg-mtw-surface shadow-sm"
+				className="zoe-light relative flex h-auto min-h-[480px] max-h-[calc(100dvh-6rem)] w-full flex-col overflow-hidden rounded-2xl border border-mtw-border bg-mtw-surface shadow-sm"
 			>
 				{/* Custom light header — no Expand/Close in docked mode (persistent pane). */}
 				<div className="flex items-center gap-2 border-b border-mtw-border bg-white px-4 py-3">
