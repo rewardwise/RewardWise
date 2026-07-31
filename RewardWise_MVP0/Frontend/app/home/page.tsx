@@ -23,6 +23,14 @@ const DEMO_SNAPSHOTS = [
 		returnDate: "2027-03-31", tripType: "roundtrip", cabin: "economy", travelers: 1,
 		payload: demoSnapshotSeaSfo,
 	},
+	{
+		// Same case, metro autocomplete pick: typing "SFO" + Enter selects the
+		// Bay Area group ("SFO,OAK,SJC"), not the exact airport — both spellings
+		// must hit the frozen payload or the demo silently takes the real path.
+		origin: "SEA", destination: "SFO,OAK,SJC", departDate: "2027-03-15",
+		returnDate: "2027-03-31", tripType: "roundtrip", cabin: "economy", travelers: 1,
+		payload: demoSnapshotSeaSfo,
+	},
 ] as const;
 import { findMetroByCsv } from "@/components/metro-groups";
 import type { Verdict as CanonicalVerdict, Ownership } from "@/types/verdict";
