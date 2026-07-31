@@ -9,6 +9,21 @@ import { useWallet } from "@/context/WalletContext";
 import { zoeNarration, zoeWelcome } from "@/utils/zoeNarration";
 import { buildZoeVerdictContext } from "@/utils/zoeVerdictContext";
 import demoSnapshot from "@/utils/demoSnapshot.json";
+import demoSnapshotSeaSfo from "@/utils/demoSnapshotSeaSfo.json";
+
+// ?demo=1 registry — frozen demo cases, each a captured real engine response.
+const DEMO_SNAPSHOTS = [
+	{
+		origin: "NRT,HND", destination: "SEA", departDate: "2027-03-23",
+		returnDate: "", tripType: "oneway", cabin: "business", travelers: 1,
+		payload: demoSnapshot,
+	},
+	{
+		origin: "SEA", destination: "SFO", departDate: "2027-03-15",
+		returnDate: "2027-03-31", tripType: "roundtrip", cabin: "economy", travelers: 1,
+		payload: demoSnapshotSeaSfo,
+	},
+] as const;
 import { findMetroByCsv } from "@/components/metro-groups";
 import type { Verdict as CanonicalVerdict, Ownership } from "@/types/verdict";
 import { useSearchFill } from "@/context/SearchFillContext";
@@ -589,19 +604,25 @@ export default function HomePage() {
 		}
 
 		// Demo snapshot short-circuit — exact-match only, gates already passed.
-		if (
+		// Registry of frozen GENUINE engine payloads (captured, not authored);
+		// any params not in the registry take the real path even with ?demo=1.
+		const demoHit =
 			demoModeRef.current &&
-			origin === "NRT,HND" && destination === "SEA" &&
-			departDate === "2027-03-23" && tripType === "oneway" &&
-			cabin === "business" && travelers === 1
-		) {
+			DEMO_SNAPSHOTS.find(
+				(s) =>
+					origin === s.origin && destination === s.destination &&
+					departDate === s.departDate && tripType === s.tripType &&
+					cabin === s.cabin && travelers === s.travelers &&
+					(s.tripType !== "roundtrip" || returnDate === s.returnDate),
+			);
+		if (demoHit) {
 			const demoRun = ++searchRunIdRef.current;
 			setSearchError("");
 			setResults(null);
 			setSearching(true);
 			setTimeout(() => {
 				if (demoRun !== searchRunIdRef.current) return;
-				setResults(demoSnapshot as any);
+				setResults(demoHit.payload as any);
 				setSearching(false);
 			}, 1200);
 			return;

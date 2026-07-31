@@ -54,3 +54,30 @@ test("without the flag the same search hits the backend", async ({ page }) => {
 	expect(searches.length, "real path unaffected").toBe(1);
 	console.log("REAL PATH: search calls =", searches.length);
 });
+
+test("?demo=1 SEA→SFO round trip renders the frozen $262 card, zero calls", async ({ page }) => {
+	test.setTimeout(240_000);
+	const searches: string[] = [];
+	page.on("request", (req) => {
+		if (req.url().includes("/api/search") && req.method() === "POST") searches.push(req.url());
+	});
+	await page.goto("/home?demo=1");
+	const a = page.locator('input[placeholder="City or airport"]');
+	const d = page.locator('input[type="date"]');
+	await a.nth(0).fill("SEA"); await a.nth(0).press("Enter");
+	await a.nth(1).fill("SFO"); await a.nth(1).press("Enter");
+	await d.nth(0).fill("2027-03-15");
+	await d.nth(1).fill("2027-03-31");
+	await page.getByRole("button", { name: /Search Flights/ }).click();
+	await expect(page.getByText("Use points", { exact: false }).first()).toBeVisible({ timeout: 20_000 });
+	await page.waitForTimeout(4000);
+	const text = (await page.locator("body").textContent()) ?? "";
+	expect(text).toContain("10,000");
+	expect(text).toContain("$262");
+	expect(text).not.toContain("$267");
+	expect(text).toContain("You can book this");
+	expect(text).toContain("1,000,000");
+	expect(searches.length, "ZERO search calls in demo mode").toBe(0);
+	console.log("DEMO SEA-SFO: frozen card rendered, search calls =", searches.length);
+	await page.screenshot({ path: "playwright/.artifacts/demo-snapshot-seasfo-1440.png", fullPage: true });
+});
