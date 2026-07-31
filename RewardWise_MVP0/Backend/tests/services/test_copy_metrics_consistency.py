@@ -134,3 +134,38 @@ async def test_roundtrip_narrative_keeps_roundtrip_scope():
     v = await _verdict()  # the existing RT harness
     exp = (v.get("explanation") or "").lower()
     assert "one way" not in exp and "one-way" not in exp, exp
+
+
+# ── Narrative savings basis (2026-07-30, SEA-SFO $262-vs-$267 card) ─────────
+# The headline derives from metrics.estimated_savings (cash − BOTH legs'
+# taxes × travelers) but the body's "saves about $X" subtracted only the
+# outbound leg's taxes — one card, two savings figures.
+
+SEA_SFO_AWARDS = [
+    {"program": "alaska", "points": 5000, "taxes": 5.60, "cpp": 2.62, "date": "2027-03-15", "remaining_seats": 5},
+]
+SEA_SFO_RETURNS = [
+    {"program": "alaska", "points": 5000, "taxes": 5.60, "cpp": 2.62, "date": "2027-03-31", "remaining_seats": 5},
+]
+
+
+def _explanation_savings(text: str) -> list[int]:
+    return [int(x.replace(",", "")) for x in re.findall(r"saves about \$([\d,]+)", text)]
+
+
+@pytest.mark.asyncio
+async def test_body_savings_equals_metrics_savings():
+    v = await vs.generate_verdict(
+        origin="SEA", destination="SFO", date="2027-03-15", cabin="economy",
+        travelers=1, is_roundtrip=True, return_date="2027-03-31",
+        cash_price=273.0, award_options=SEA_SFO_AWARDS, return_award_options=SEA_SFO_RETURNS,
+        user_programs=["alaska"],
+    )
+    assert v["recommendation"] == "use_points"
+    body = _explanation_savings(v.get("explanation") or "")
+    assert body, "strong-branch explanation must state a savings figure"
+    m = v["metrics"]
+    for s in body:
+        assert abs(s - round(m["estimated_savings"])) <= 1, (
+            f"body says ${s}, metrics say ${m['estimated_savings']} — one card, two numbers"
+        )
