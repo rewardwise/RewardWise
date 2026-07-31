@@ -830,7 +830,7 @@ export default function HomePage() {
 					className="-z-10 object-cover object-center"
 				/>
 				<div className="absolute inset-0 -z-10 bg-[linear-gradient(180deg,rgba(6,20,14,0.55),rgba(6,20,14,0.30)_45%,rgba(6,20,14,0.55))]" />
-				<main className="relative z-10 max-w-6xl mx-auto px-6 py-6 lg:grid lg:grid-cols-[58fr_42fr] lg:gap-6 lg:items-stretch">
+				<main className="relative z-10 max-w-6xl xl:max-w-7xl 2xl:max-w-[1400px] mx-auto px-6 py-6 lg:grid lg:grid-cols-[58fr_42fr] lg:gap-6 lg:items-stretch">
 					{/* LEFT — entry. NOT mtw-light so the header stays white on the photo;
 					    the search pill is wrapped in its own mtw-light below so its
 					    hardcoded dark inputs still remap to light. */}
