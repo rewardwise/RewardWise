@@ -822,7 +822,12 @@ async def generate_verdict(
         )
         return response
 
-    savings = max(0, round(cash_price - taxes, 2))
+    # Narrative savings MUST share metrics.estimated_savings' basis: cash minus
+    # BOTH legs' taxes x travelers (2026-07-30: subtracting only the outbound
+    # leg's taxes put "Save ~$262" in the headline and "saves about $267" in
+    # the body of the same card).
+    _, _total_award_taxes = _display_award_totals(0, taxes, costing_inbound, travelers)
+    savings = max(0.0, round(cash_price - _total_award_taxes, 2))
     urgency = 0 < remaining_seats <= 3
 
     # Recommendation gates use MATCHED-SCOPE cpp — full-booking cash net of
