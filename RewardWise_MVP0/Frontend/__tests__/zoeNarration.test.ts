@@ -39,11 +39,18 @@ function ownership(over: Partial<Ownership>): Ownership {
 }
 
 describe("zoeNarration — consistency (Zoe never contradicts the verdict)", () => {
-	it("b2 owned_sufficient → use_points lead, tells you to use points", () => {
+	it("b2 owned_sufficient → points-win lead that COMPLEMENTS the card: value word + balance-after, no cash echo", () => {
 		const n = zoeNarration(verdict("use_points"), ownership({}));
 		expect(n.recommendation).toBe("use_points");
-		expect(n.lead.toLowerCase()).toContain("use your points");
-		expect(n.lead).toContain("you've got them");
+		expect(n.lead.toLowerCase()).toContain("points win this one");
+		// cpp 3.2 >= 1.8 → the "strong" claim is supported by the card's cpp
+		expect(n.lead.toLowerCase()).toContain("strong redemption");
+		// balance-after-booking: 300,000 − 237,000
+		expect(n.lead).toContain("63,000");
+		expect(n.lead.toLowerCase()).toContain("after booking");
+		// Never echo the card's cash figure
+		expect(n.lead).not.toContain("$740");
+		expect(n.lead.toLowerCase()).not.toContain("cash would run");
 	});
 
 	it("b3 short → pay_cash lead, NEVER says use/book points", () => {
@@ -58,11 +65,32 @@ describe("zoeNarration — consistency (Zoe never contradicts the verdict)", () 
 		expect(n.lead.toLowerCase()).not.toMatch(/book .* points/);
 	});
 
-	it("base pay_cash → cash lead, never use/book points", () => {
+	it("base pay_cash → cash-wins lead with the WHY, never use/book points", () => {
 		const n = zoeNarration(verdict("pay_cash", { metrics: { cash_price: 200, cpp: 0.9, estimated_savings: 0 } }));
 		expect(n.recommendation).toBe("pay_cash");
-		expect(n.lead.toLowerCase()).toContain("pay cash");
+		expect(n.lead.toLowerCase()).toContain("cash wins");
+		// cpp 0.9 < 1.5 → the below-the-bar reason is the supported claim
+		expect(n.lead.toLowerCase()).toContain("below the bar");
 		expect(n.lead.toLowerCase()).not.toContain("use your points");
+	});
+
+	it("cheap-cash pay_cash with a DECENT cpp never claims 'below the bar' (unsupported)", () => {
+		const n = zoeNarration(verdict("pay_cash", { metrics: { cash_price: 180, cpp: 2.0, estimated_savings: 0 } }));
+		expect(n.recommendation).toBe("pay_cash");
+		expect(n.lead.toLowerCase()).not.toContain("below the bar");
+		expect(n.lead.toLowerCase()).toContain("low enough");
+		expect(n.lead.toLowerCase()).not.toContain("use your points");
+	});
+
+	it("value claims track the engine's cpp bars: strong >=1.8, solid 1.5-1.8, NO claim below 1.5", () => {
+		const strong = zoeNarration(verdict("use_points", { metrics: { cash_price: 740, cpp: 2.6, estimated_savings: 500 } }), ownership({ redemption_cpp: 2.6 }));
+		expect(strong.lead.toLowerCase()).toContain("strong redemption");
+		const solid = zoeNarration(verdict("use_points", { metrics: { cash_price: 740, cpp: 1.6, estimated_savings: 300 } }), ownership({ redemption_cpp: 1.6 }));
+		expect(solid.lead.toLowerCase()).toContain("solid redemption");
+		expect(solid.lead.toLowerCase()).not.toContain("strong redemption");
+		const weak = zoeNarration(verdict("use_points", { metrics: { cash_price: 740, cpp: 1.3, estimated_savings: 100 } }), ownership({ redemption_cpp: 1.3 }));
+		expect(weak.lead.toLowerCase()).not.toContain("redemption");
+		expect(weak.lead.toLowerCase()).not.toContain("strong");
 	});
 
 	it("matches the OwnershipFork DISPLAYED call: only owned_sufficient → use points; every short → pay cash (incl. worth_it)", () => {

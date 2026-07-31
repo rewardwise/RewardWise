@@ -66,7 +66,6 @@ export function zoeNarration(
 	const m = verdict.metrics ?? {};
 	const o = ownership && ownership.applicable ? ownership : null;
 	const program = o?.program_label || verdict.winner?.program || "the program";
-	const cash = m.cash_price ?? null;
 	const savings = m.estimated_savings ?? null;
 	const redemptionCpp = m.cpp ?? null;
 
@@ -78,17 +77,46 @@ export function zoeNarration(
 		ctx?.origin && ctx?.destination ? `${ctx.origin} → ${ctx.destination}` : "your trip";
 	const found = `🎉 Found it! Your ${route} flight`;
 
+	// Complement the card, never echo it (2026-07-30 redundancy fix): the card
+	// already states the verdict, savings, and cash figure right next to this
+	// panel. Zoe adds what the card DOESN'T say — a value word derived from the
+	// SAME cpp bars the engine gates on (>=1.8 strong, >=1.5 solid, no claim
+	// below: never a value claim the card's cpp doesn't support) and the
+	// balance left after booking.
 	let lead: string;
 	if (r === "use_points") {
-		lead =
-			o && o.can_afford
-				? `${found} — use your points on this one, you've got them. Cash would run ${money(cash)}.`
-				: `${found} — use your points here, it's the better deal. Cash would run ${money(cash)}.`;
+		const remaining =
+			o && o.owned_balance != null && o.points_needed != null && o.owned_balance >= o.points_needed
+				? o.owned_balance - o.points_needed
+				: null;
+		const valueNote =
+			redemptionCpp != null && redemptionCpp >= 1.8
+				? `at ${cpp(redemptionCpp)} this is a strong redemption`
+				: redemptionCpp != null && redemptionCpp >= 1.5
+					? `at ${cpp(redemptionCpp)} it beats cash — a solid redemption`
+					: null;
+		const balanceNote =
+			remaining != null
+				? `you'd still have ${pts(remaining)} ${program} points after booking`
+				: null;
+		const notes = [valueNote, balanceNote].filter(Boolean).join(", and ");
+		lead = notes
+			? `${found} — points win this one: ${notes}. 🙌`
+			: `${found} — points win this one, it's the better deal. 🙌`;
 	} else if (r === "pay_cash") {
-		lead =
-			o && !o.can_afford
-				? `${found} is ${money(cash)}. You're ${pts(o.shortfall)} short for ${program}, so pay the cash and keep your points for a trip where they go further.`
-				: `${found} is ${money(cash)} — pay cash on this one and save your points for a bigger trip. 🙌`;
+		if (o && !o.can_afford) {
+			lead = `${found} — cash is the honest call: you're ${pts(o.shortfall)} points short of the ${pts(o.points_needed)} needed for ${program}. Pay the cash and your points keep their value for the next trip.`;
+		} else {
+			// Reason mirrors the engine's actual gate: below-bar cpp, or a cash
+			// fare cheap enough that points can't earn their keep (the cheap-cash
+			// branch can fire even with a decent cpp — never claim "below the
+			// bar" when the card's cpp says otherwise).
+			const reason =
+				redemptionCpp != null && redemptionCpp < 1.5
+					? "the award prices below the bar where points pay off"
+					: "the cash fare is low enough that points wouldn't earn their keep";
+			lead = `${found} — cash wins this one: ${reason}. Keep your points for a long-haul trip where they go further. 🙌`;
+		}
 	} else {
 		lead = `🤔 The pricing came back thin here — try the search again, or check nearby dates.`;
 	}
