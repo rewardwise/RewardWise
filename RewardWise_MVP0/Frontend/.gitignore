@@ -46,3 +46,7 @@ next-env.d.ts
 playwright-report/
 test-results/
 playwright/.auth/
+
+# Playwright run outputs (regenerable screenshots/artifacts)
+playwright/.artifacts/
+test-results/
