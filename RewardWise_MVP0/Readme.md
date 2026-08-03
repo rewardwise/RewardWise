@@ -306,7 +306,7 @@ erDiagram
 * `NVIDIA_API_KEY` — powers the default Zoe brain (NVIDIA NIM). Required.
 * `ZOE_LLM_PROVIDER` — `nvidia` (default) or `xpectrum`. Leave unset/`nvidia` for prod; set to `xpectrum` to flip Zoe to the Xpectrum agent.
 * `XPECTRUM_API_KEY` — Xpectrum (Dify) app key, format `app-...`. Required only when `ZOE_LLM_PROVIDER=xpectrum`. Placeholder: `app-xxxxxxxxxxxxxxxxxxxxxxxx`. **Never commit the real value** — local lives in `~/.config/secrets/xpectrum.env`, prod in Render.
-* `XPECTRUM_BASE_URL` — defaults to `https://cloud.xpectrum.dev/api/v1`; override only if the tenant URL differs.
+* `XPECTRUM_BASE_URL` — defaults to `https://cloud.xpectrum.dev/v1`; override only if the tenant URL differs.
 
 ## Frontend
 
